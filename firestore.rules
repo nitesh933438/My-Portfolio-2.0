@@ -9,7 +9,6 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      // In Firebase Auth, check if authenticated user is the portfolio owner
       return isAuthenticated() && (
         request.auth.token.email == 'nitesh933438@gmail.com' ||
         request.auth.token.admin == true
@@ -18,12 +17,7 @@ service cloud.firestore {
 
     // Public Academic Records: Read-only for portfolio visitors, writeable only by authenticated admin
     match /academic_records/{recordId} {
-      allow read: if isAdmin() || resource.data.keys().hasOnly([
-        'id', 'type', 'institution', 'degree', 'branch', 'session', 'status', 'location',
-        'description', 'semesters', 'cgpa', 'cgpaMax', 'highlights', 'updatedAt',
-        'standard', 'qualificationTitle', 'board', 'boardFullName', 'stream', 'passingYear',
-        'totalMarks', 'maxMarks', 'percentage', 'division'
-      ]);
+      allow read: if true;
       allow write: if isAdmin();
     }
 
@@ -32,16 +26,35 @@ service cloud.firestore {
       allow read, write: if isAdmin();
     }
 
+    // Certifications: published records are readable publicly; all records and write operations restricted to admin
+    match /certifications/{certificateId} {
+      allow read: if resource.data.published == true || isAdmin();
+      allow create, update, delete: if isAdmin();
+    }
 
-// Certifications: only published metadata is readable publicly; writes require the portfolio admin.
-match /certifications/{certificateId} {
-  allow read: if resource.data.published == true || (request.auth != null && request.auth.token.email == 'nitesh933438@gmail.com');
-  allow create, update, delete: if request.auth != null && request.auth.token.email == 'nitesh933438@gmail.com';
-}
+    // Projects: published projects are readable publicly; write operations restricted to admin
+    match /projects/{projectId} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
+    }
 
-    // Public catalog state is readable only for the certificate catalog marker.
+    // Contact Messages: Anyone can submit an inquiry; read, update (mark read), and delete restricted to admin
+    match /contact_messages/{messageId} {
+      allow create: if request.resource.data.name is string &&
+                       request.resource.data.name.size() > 0 &&
+                       request.resource.data.name.size() <= 120 &&
+                       request.resource.data.email is string &&
+                       request.resource.data.email.size() > 0 &&
+                       request.resource.data.email.size() <= 150 &&
+                       request.resource.data.message is string &&
+                       request.resource.data.message.size() > 0 &&
+                       request.resource.data.message.size() <= 5000;
+      allow read, update, delete: if isAdmin();
+    }
+
+    // Portfolio Metadata & Settings: Configuration readable publicly; modified only by admin
     match /site_metadata/{documentId} {
-      allow read: if documentId == 'certificates' && resource.data.publicVisible == true;
+      allow read: if true;
       allow create, update, delete: if isAdmin();
     }
 

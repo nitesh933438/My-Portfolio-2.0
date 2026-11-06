@@ -2,8 +2,12 @@ rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
     function isAdmin() {
-      return request.auth != null && request.auth.token.email == 'nitesh933438@gmail.com';
+      return request.auth != null && (
+        request.auth.token.email == 'nitesh933438@gmail.com' ||
+        request.auth.token.admin == true
+      );
     }
+
     // Public certificate files may be viewed; only the portfolio administrator can upload/delete.
     match /certifications/{fileName} {
       allow read: if true;
@@ -12,6 +16,16 @@ service firebase.storage {
         && request.resource.contentType.matches('image/(jpeg|png|webp)|application/pdf');
       allow delete: if isAdmin();
     }
+
+    // Project screenshots and banners: publicly readable, admin writeable.
+    match /projects/{fileName} {
+      allow read: if true;
+      allow create, update: if isAdmin()
+        && request.resource.size < 15 * 1024 * 1024
+        && request.resource.contentType.matches('image/(jpeg|png|webp|gif)');
+      allow delete: if isAdmin();
+    }
+
     // Original marksheets and academic source documents are private to the portfolio administrator.
     match /academic-private/{fileName} {
       allow read, delete: if isAdmin();
@@ -19,6 +33,7 @@ service firebase.storage {
         && request.resource.size < 15 * 1024 * 1024
         && request.resource.contentType.matches('image/(jpeg|png|webp)|application/pdf');
     }
+
     // All other uploaded documents remain private by default.
     match /{allPaths=**} {
       allow read, write: if false;

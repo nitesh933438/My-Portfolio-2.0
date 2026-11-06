@@ -52,7 +52,7 @@ const App: FC = () => {
         <Route path="/*" element={<PublicPortfolio theme={theme} setTheme={setTheme} />} />
         <Route path="/admin" element={
           <AdminAuthGuard>
-            <AdminLayout />
+            <AdminLayout theme={theme} setTheme={setTheme} />
           </AdminAuthGuard>
         }>
           <Route index element={

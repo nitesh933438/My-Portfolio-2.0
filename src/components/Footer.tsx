@@ -78,6 +78,14 @@ export const Footer: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-4">
+            <a
+              href="#/admin"
+              className="text-[10px] font-bold uppercase tracking-widest text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors flex items-center gap-1.5 px-3 py-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-900"
+              title="Administrator CMS Console"
+            >
+              <span>Admin CMS</span>
+            </a>
+
             <button
               onClick={scrollToTop}
               aria-label="Back to top"
