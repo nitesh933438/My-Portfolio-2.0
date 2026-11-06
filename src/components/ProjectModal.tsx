@@ -302,21 +302,21 @@ export const ProjectModal: FC<ProjectModalProps> = ({ project, onClose }) => {
           initial={{ opacity: 0, scale: 0.95, y: 20 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 20 }}
-          className="relative w-full max-w-6xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-[2rem] shadow-2xl overflow-hidden max-h-[92vh] flex flex-col my-auto"
+          className="relative w-full max-w-6xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl sm:rounded-[2rem] shadow-2xl overflow-hidden max-h-[92vh] flex flex-col my-auto"
           onClick={(e) => e.stopPropagation()}
         >
           
           {/* Header */}
-          <div className="flex items-center justify-between px-6 sm:px-8 py-5 border-b border-slate-100 dark:border-slate-800 shrink-0 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md sticky top-0 z-30">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-2xl bg-indigo-600/10 dark:bg-indigo-400/10 flex items-center justify-center shrink-0">
-                <Tag className="w-6 h-6 text-indigo-600 dark:text-indigo-400" />
+          <div className="flex items-center justify-between px-4 sm:px-8 py-3.5 sm:py-5 border-b border-slate-100 dark:border-slate-800 shrink-0 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md sticky top-0 z-30">
+            <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+              <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-indigo-600/10 dark:bg-indigo-400/10 flex items-center justify-center shrink-0">
+                <Tag className="w-5 h-5 sm:w-6 sm:h-6 text-indigo-600 dark:text-indigo-400" />
               </div>
               <div className="min-w-0">
-                <h3 className="text-xl font-bold text-slate-900 dark:text-white truncate">
+                <h3 className="text-base sm:text-xl font-bold text-slate-900 dark:text-white truncate">
                   {project.title}
                 </h3>
-                <div className="flex flex-wrap items-center gap-2 mt-0.5">
+                <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 mt-0.5">
                   <span className="text-[10px] font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-400">
                     {project.category}
                   </span>
@@ -330,15 +330,15 @@ export const ProjectModal: FC<ProjectModalProps> = ({ project, onClose }) => {
             </div>
             <button
               onClick={onClose}
-              className="p-3 rounded-2xl text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-all active:scale-90"
+              className="p-2 sm:p-3 rounded-2xl text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-all active:scale-90 shrink-0"
               title="Close Modal (Esc)"
             >
-              <X className="w-6 h-6" />
+              <X className="w-5 h-5 sm:w-6 sm:h-6" />
             </button>
           </div>
 
           {/* Scrollable Content */}
-          <div className="overflow-y-auto custom-scrollbar flex-1 p-6 sm:p-10 space-y-12">
+          <div className="overflow-y-auto custom-scrollbar flex-1 p-4 sm:p-10 space-y-8 sm:space-y-12">
             
             {/* 1. Premium Project Cover Banner (Always First) */}
             <section className="relative isolate min-h-[280px] overflow-hidden rounded-[1.75rem] border border-slate-800 bg-slate-950 sm:min-h-[340px] shadow-xl">

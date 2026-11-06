@@ -30,24 +30,24 @@ export const Navbar: FC<NavbarProps> = ({ theme, setTheme, onOpenResume }) => {
         ? 'bg-white/90 dark:bg-slate-950/90 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 shadow-sm' 
         : 'bg-transparent'
     }`}>
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 grid grid-cols-[1fr_auto_1fr] items-center gap-6">
+      <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 h-16 sm:h-20 flex items-center justify-between gap-2 sm:gap-6">
         
         {/* Brand */}
-        <div className="flex items-center justify-start">
-          <a href="#" className="flex items-center gap-3 group whitespace-nowrap">
-            <div className="relative group-hover:scale-105 transition-transform duration-300">
-              <NKLogo className="w-10 h-10" showGlow={true} animated={false} />
+        <div className="flex items-center justify-start min-w-0">
+          <a href="#" className="flex items-center gap-2 sm:gap-3 group select-none">
+            <div className="relative group-hover:scale-105 transition-transform duration-300 shrink-0">
+              <NKLogo className="w-8 h-8 sm:w-10 sm:h-10" showGlow={true} animated={false} />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-lg font-bold tracking-tight text-slate-900 dark:text-white block leading-tight">
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5 sm:gap-2">
+                <span className="text-base sm:text-lg font-bold tracking-tight text-slate-900 dark:text-white block leading-tight truncate">
                   {SITE_CONFIG.name}
                 </span>
-                <span className="hidden sm:inline-flex px-1.5 py-0.5 text-[9px] font-extrabold uppercase tracking-widest rounded bg-gradient-to-r from-blue-500/10 to-violet-500/10 dark:from-blue-500/20 dark:to-violet-500/20 border border-blue-500/30 text-blue-600 dark:text-cyan-400">
+                <span className="inline-flex px-1.5 py-0.5 text-[8px] sm:text-[9px] font-extrabold uppercase tracking-widest rounded bg-gradient-to-r from-blue-500/10 to-violet-500/10 dark:from-blue-500/20 dark:to-violet-500/20 border border-blue-500/30 text-blue-600 dark:text-cyan-400 shrink-0">
                   PRO
                 </span>
               </div>
-              <span className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold uppercase tracking-wider block">
+              <span className="text-[9px] sm:text-[10px] text-slate-500 dark:text-slate-400 font-semibold uppercase tracking-wider block truncate">
                 Full-Stack Developer
               </span>
             </div>
@@ -68,25 +68,25 @@ export const Navbar: FC<NavbarProps> = ({ theme, setTheme, onOpenResume }) => {
         </nav>
 
         {/* Actions */}
-        <div className="flex items-center justify-end gap-3">
+        <div className="flex items-center justify-end gap-1.5 sm:gap-3 shrink-0">
           <button
             onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
             aria-label="Toggle Theme"
-            className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors active:scale-90"
+            className="p-2 sm:p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors active:scale-90"
           >
             {theme === 'dark' ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-slate-700" />}
           </button>
 
           <button
             onClick={onOpenResume}
-            className="hidden sm:inline-flex items-center gap-2 px-5 py-2.5 text-[10px] font-bold uppercase tracking-widest text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl transition-all shadow-md shadow-indigo-600/20 active:scale-95 whitespace-nowrap"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 sm:px-4 sm:py-2 text-[9px] sm:text-[10px] font-bold uppercase tracking-wider sm:tracking-widest text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl transition-all shadow-md shadow-indigo-600/20 active:scale-95 whitespace-nowrap"
           >
             Resume
           </button>
 
           <button
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="lg:hidden p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 active:scale-90"
+            className="lg:hidden p-2 sm:p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 active:scale-90"
             aria-label="Toggle Menu"
           >
             {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}

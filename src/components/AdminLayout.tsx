@@ -115,42 +115,42 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ theme = 'dark', setThe
         {/* Main Content Area */}
         <div className="flex-1 flex flex-col min-w-0">
           {/* Top Header */}
-          <header className="sticky top-0 z-30 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 px-6 py-4 flex items-center justify-between gap-4">
-            <div className="flex items-center gap-4">
+          <header className="sticky top-0 z-30 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 px-3 sm:px-6 py-3 sm:py-4 flex items-center justify-between gap-2 sm:gap-4">
+            <div className="flex items-center gap-2 sm:gap-4 min-w-0">
               <button 
                 onClick={() => setSidebarOpen(true)} 
-                className="lg:hidden p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+                className="lg:hidden p-2 sm:p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 shrink-0"
               >
-                <Menu size={20} />
+                <Menu size={18} />
               </button>
-              <div>
-                <h2 className="text-sm font-black text-slate-900 dark:text-white capitalize">
+              <div className="min-w-0">
+                <h2 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white capitalize truncate">
                   {location.pathname === '/admin' ? 'Dashboard Overview' : location.pathname.split('/').pop()}
                 </h2>
-                <span className="text-[10px] text-slate-400 font-medium">Last synced at {lastRefreshed}</span>
+                <span className="text-[9px] sm:text-[10px] text-slate-400 font-medium truncate block">Last synced at {lastRefreshed}</span>
               </div>
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
               <button
                 onClick={handleRefresh}
                 title="Refresh Data"
-                className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                className="p-2 sm:p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
               >
-                <RefreshCw size={16} />
+                <RefreshCw size={15} />
               </button>
 
               <button
                 onClick={toggleTheme}
                 title="Toggle Theme"
-                className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                className="p-2 sm:p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
               >
-                {theme === 'dark' ? <Sun size={16} className="text-amber-400" /> : <Moon size={16} className="text-indigo-600" />}
+                {theme === 'dark' ? <Sun size={15} className="text-amber-400" /> : <Moon size={15} className="text-indigo-600" />}
               </button>
 
               <button
                 onClick={() => signOut(auth)}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 font-bold text-xs transition-colors"
+                className="flex items-center gap-1.5 px-3 py-2 sm:px-4 sm:py-2.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 font-bold text-xs transition-colors"
               >
                 <LogOut size={14} />
                 <span className="hidden sm:inline">Sign Out</span>
@@ -159,7 +159,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ theme = 'dark', setThe
           </header>
 
           {/* Page Outlet */}
-          <main className="flex-1 p-6 sm:p-10 overflow-y-auto">
+          <main className="flex-1 p-3.5 sm:p-6 lg:p-10 overflow-y-auto min-w-0 max-w-full">
             <Outlet />
           </main>
         </div>
