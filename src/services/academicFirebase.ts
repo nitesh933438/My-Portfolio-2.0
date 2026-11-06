@@ -27,6 +27,14 @@ googleProvider.setCustomParameters({ prompt: 'select_account' });
 // Use the databaseId provisioned in firebase-applet-config.json
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 
+// Enable offline persistence
+import { enableIndexedDbPersistence } from 'firebase/firestore';
+try {
+  enableIndexedDbPersistence(db);
+} catch (err: any) {
+  console.warn('Firestore persistence not enabled:', err.code);
+}
+
 export const ADMIN_EMAIL = 'nitesh933438@gmail.com';
 
 export const isUserAdmin = (user: User | null): boolean => {

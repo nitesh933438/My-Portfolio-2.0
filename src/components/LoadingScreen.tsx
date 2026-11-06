@@ -22,7 +22,7 @@ export const LoadingScreen: React.FC = () => {
           initial={{ opacity: 1 }}
           exit={{ opacity: 0, scale: 1.02 }}
           transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
-          className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-slate-950 text-white select-none pointer-events-auto"
+          className="fixed inset-0 z-[10] flex flex-col items-center justify-center bg-slate-950 text-white select-none pointer-events-auto"
         >
           {/* Subtle ambient background glow */}
           <div className="absolute w-72 h-72 rounded-full bg-gradient-to-tr from-cyan-500/15 via-blue-600/20 to-purple-600/15 blur-3xl pointer-events-none" />

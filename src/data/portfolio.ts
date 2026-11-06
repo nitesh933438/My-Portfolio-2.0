@@ -187,9 +187,9 @@ export const SITE_CONFIG = {
 
 export const NAV_LINKS: NavLink[] = [
   { name: 'About', href: '#about' },
+  { name: 'Education', href: '#education' },
   { name: 'Skills', href: '#skills' },
   { name: 'Projects', href: '#projects' },
-  { name: 'Education', href: '#education' },
   { name: 'Certifications', href: '#certifications' },
   { name: 'Contact', href: '#contact' },
 ];
