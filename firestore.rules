@@ -1,0 +1,53 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      // In Firebase Auth, check if authenticated user is the portfolio owner
+      return isAuthenticated() && (
+        request.auth.token.email == 'nitesh933438@gmail.com' ||
+        request.auth.token.admin == true
+      );
+    }
+
+    // Public Academic Records: Read-only for portfolio visitors, writeable only by authenticated admin
+    match /academic_records/{recordId} {
+      allow read: if isAdmin() || resource.data.keys().hasOnly([
+        'id', 'type', 'institution', 'degree', 'branch', 'session', 'status', 'location',
+        'description', 'semesters', 'cgpa', 'cgpaMax', 'highlights', 'updatedAt',
+        'standard', 'qualificationTitle', 'board', 'boardFullName', 'stream', 'passingYear',
+        'totalMarks', 'maxMarks', 'percentage', 'division'
+      ]);
+      allow write: if isAdmin();
+    }
+
+    // Marksheet Audit & Upload Trails: Private to authenticated admin only
+    match /academic_audit/{auditId} {
+      allow read, write: if isAdmin();
+    }
+
+
+// Certifications: only published metadata is readable publicly; writes require the portfolio admin.
+match /certifications/{certificateId} {
+  allow read: if resource.data.published == true || (request.auth != null && request.auth.token.email == 'nitesh933438@gmail.com');
+  allow create, update, delete: if request.auth != null && request.auth.token.email == 'nitesh933438@gmail.com';
+}
+
+    // Public catalog state is readable only for the certificate catalog marker.
+    match /site_metadata/{documentId} {
+      allow read: if documentId == 'certificates' && resource.data.publicVisible == true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    // Default deny all other paths
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

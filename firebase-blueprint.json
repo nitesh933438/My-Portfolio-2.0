@@ -1,0 +1,52 @@
+{
+  "entities": {
+    "AcademicRecord": {
+      "title": "AcademicRecord",
+      "description": "Verified educational records including University B.Tech degrees and BSEB Secondary / Higher Secondary education",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique record key" },
+        "type": { "type": "string", "enum": ["university", "school"] },
+        "institution": { "type": "string" },
+        "degree": { "type": "string" },
+        "branch": { "type": "string" },
+        "session": { "type": "string" },
+        "status": { "type": "string" },
+        "location": { "type": "string" },
+        "description": { "type": "string" },
+        "semesters": { "type": "array" },
+        "cgpa": { "type": "number" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "type", "institution"]
+    },
+    "MarksheetAudit": {
+      "title": "MarksheetAudit",
+      "description": "Audit history and document extraction record for uploaded marksheets",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "fileName": { "type": "string" },
+        "fileHash": { "type": "string" },
+        "semesterNumber": { "type": "number" },
+        "sgpa": { "type": "number" },
+        "declarationDate": { "type": "string" },
+        "extractedData": { "type": "object" },
+        "approvedBy": { "type": "string" },
+        "approvedAt": { "type": "string" },
+        "status": { "type": "string", "enum": ["PENDING", "APPROVED", "REJECTED"] }
+      },
+      "required": ["id", "fileName", "status"]
+    }
+  },
+  "firestore": {
+    "/academic_records/{recordId}": {
+      "schema": "AcademicRecord",
+      "description": "Public verified academic records published to the portfolio"
+    },
+    "/academic_audit/{auditId}": {
+      "schema": "MarksheetAudit",
+      "description": "Private audit trails and marksheet extraction history"
+    }
+  }
+}
