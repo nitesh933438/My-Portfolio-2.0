@@ -1,23 +1,7 @@
 import { useState, useEffect, FC, lazy, Suspense } from 'react';
-import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { Navbar } from './components/Navbar';
-import { Hero } from './components/Hero';
-import { About } from './components/About';
-import { Education } from './components/Education';
-import { Skills } from './components/Skills';
-import { FeaturedProjects } from './components/FeaturedProjects';
-import { ProjectsCatalogue } from './components/ProjectsCatalogue';
-import { EducationExperience } from './components/EducationExperience';
-import { GithubSection } from './components/GithubSection';
-import { Contact } from './components/Contact';
-import { Footer } from './components/Footer';
-import { ProjectModal } from './components/ProjectModal';
-import { ResumeModal } from './components/ResumeModal';
-import { ScrollProgressBar } from './components/ScrollProgressBar';
-import { ScrollReveal } from './components/ScrollReveal';
+import { HashRouter, Routes, Route } from 'react-router-dom';
 import { LoadingScreen } from './components/LoadingScreen';
-import { Certifications } from './components/Certifications';
-import { Project, validatePortfolioData } from './data/portfolio';
+import { PublicPortfolio } from './components/PublicPortfolio';
 import { ACADEMIC_DATA, UniversityRecord } from './data/education';
 import { subscribeToUniversityRecord, initializeAcademicDataInFirestore } from './services/academicFirebase';
 
@@ -33,8 +17,6 @@ const App: FC = () => {
     return (localStorage.getItem('nitesh_portfolio_theme') as ThemeMode) || 'system';
   });
 
-  const [selectedProject, setSelectedProject] = useState<Project | null>(null);
-  const [resumeModalOpen, setResumeModalOpen] = useState(false);
   const [liveUniversity, setLiveUniversity] = useState<UniversityRecord>(ACADEMIC_DATA.university);
 
   useEffect(() => {
@@ -47,50 +29,23 @@ const App: FC = () => {
 
   useEffect(() => {
     localStorage.setItem('nitesh_portfolio_theme', theme);
-    
     const root = document.documentElement;
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-    
     const applyTheme = (t: ThemeMode) => {
       const isDark = t === 'dark' || (t === 'system' && mediaQuery.matches);
       if (isDark) root.classList.add('dark');
       else root.classList.remove('dark');
     };
-
     applyTheme(theme);
-    
     const listener = () => applyTheme(theme);
     mediaQuery.addEventListener('change', listener);
     return () => mediaQuery.removeEventListener('change', listener);
   }, [theme]);
 
-  const PublicPortfolio = () => (
-    <div className="relative min-h-screen bg-white dark:bg-slate-950 transition-colors duration-500 overflow-x-hidden">
-      <LoadingScreen />
-      <ScrollProgressBar />
-      <Navbar theme={theme} setTheme={setTheme} onOpenResume={() => setResumeModalOpen(true)} />
-      <main className="relative">
-        <Hero onOpenResume={() => setResumeModalOpen(true)} />
-        <About />
-        <Education />
-        <Skills />
-        <FeaturedProjects onSelectProject={(p) => setSelectedProject(p)} />
-        <ProjectsCatalogue onSelectProject={(p) => setSelectedProject(p)} />
-        <EducationExperience />
-        <Certifications />
-        <GithubSection />
-        <Contact />
-      </main>
-      <Footer />
-      <ProjectModal project={selectedProject} onClose={() => setSelectedProject(null)} />
-      <ResumeModal isOpen={resumeModalOpen} onClose={() => setResumeModalOpen(false)} />
-    </div>
-  );
-
   return (
     <HashRouter>
       <Routes>
-        <Route path="/*" element={<PublicPortfolio />} />
+        <Route path="/*" element={<PublicPortfolio theme={theme} setTheme={setTheme} />} />
         <Route path="/admin" element={
           <AdminAuthGuard>
             <AdminLayout />

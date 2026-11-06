@@ -160,7 +160,6 @@ export const ACADEMIC_DATA: AcademicProfileData = {
       },
     ],
     // Kept undefined until officially available
-    cgpa: undefined,
     highlights: [
       "Semester 1 SGPA: 7.91 (Declared 28 Feb 2026)",
       "Semester 2 SGPA: 9.23 (Declared 20 Jul 2026)",
