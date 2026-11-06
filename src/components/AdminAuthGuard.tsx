@@ -3,6 +3,7 @@ import { onAuthStateChanged, User, signInWithPopup } from 'firebase/auth';
 import { auth, isUserAdmin, googleProvider } from '../services/academicFirebase';
 import { LoadingScreen } from './LoadingScreen';
 import { Lock } from 'lucide-react';
+import { GoogleIcon } from './GoogleIcon';
 
 export const AdminAuthGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
@@ -28,9 +29,10 @@ export const AdminAuthGuard: React.FC<{ children: React.ReactNode }> = ({ childr
           <p className="text-slate-400 mb-6">Please sign in to access the admin console.</p>
           <button 
             onClick={() => signInWithPopup(auth, googleProvider)}
-            className="bg-indigo-600 hover:bg-indigo-700 px-6 py-3 rounded-xl font-bold"
+            className="group flex items-center gap-3 bg-white dark:bg-white text-slate-900 px-6 py-3 rounded-xl font-bold shadow-md hover:bg-slate-50 transition-all active:scale-95"
           >
-            Sign In with Google
+            <GoogleIcon className="w-5 h-5" />
+            Sign in with Google
           </button>
         </div>
       </div>

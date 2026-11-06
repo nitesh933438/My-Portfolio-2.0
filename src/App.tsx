@@ -10,6 +10,8 @@ import { AdminAuthGuard } from './components/AdminAuthGuard';
 import { AdminLayout } from './components/AdminLayout';
 const AdminDashboardPage = lazy(() => import('./components/AdminDashboardPage').then(m => ({ default: m.AdminDashboardPage })));
 const CertificateAdminPage = lazy(() => import('./components/CertificateAdminPage').then(m => ({ default: m.CertificateAdminPage })));
+const ProjectsManager = lazy(() => import('./components/admin/ProjectsManager').then(m => ({ default: m.ProjectsManager })));
+const EducationManager = lazy(() => import('./components/admin/EducationManager').then(m => ({ default: m.EducationManager })));
 
 const App: FC = () => {
   type ThemeMode = 'light' | 'dark' | 'system';
@@ -59,6 +61,16 @@ const App: FC = () => {
           <Route path="certificates" element={
             <Suspense fallback={<LoadingScreen />}>
               <CertificateAdminPage onBack={() => window.location.href = '#/admin'} />
+            </Suspense>
+          } />
+          <Route path="projects" element={
+            <Suspense fallback={<LoadingScreen />}>
+              <ProjectsManager />
+            </Suspense>
+          } />
+          <Route path="education" element={
+            <Suspense fallback={<LoadingScreen />}>
+              <EducationManager />
             </Suspense>
           } />
         </Route>
