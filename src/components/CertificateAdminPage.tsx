@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { onAuthStateChanged, signInWithPopup, signOut, User } from 'firebase/auth';
 import { motion, AnimatePresence } from 'motion/react';
-import { ArrowLeft, Upload, LogOut, Trash2, Edit2, Eye, EyeOff, Loader2, Plus, Save, Search, Award, CheckCircle2, AlertCircle } from 'lucide-react';
+import { ArrowLeft, Upload, LogOut, Trash2, Edit2, Eye, EyeOff, Loader2, Plus, Save, Search, Award, CheckCircle2, AlertCircle, RefreshCw, FileText } from 'lucide-react';
 import { auth, googleProvider, isUserAdmin } from '../services/academicFirebase';
-import { markBundledCertificatesImported, removeCertificate, saveCertificate, subscribeToCertificates, uploadCertificateFile } from '../services/certificateFirebase';
+import { markBundledCertificatesImported, removeCertificate, saveCertificate, subscribeToCertificates, uploadCertificateFile, uploadCertificateBlob } from '../services/certificateFirebase';
 import { CERTIFICATE_CATEGORIES, type PortfolioCertificate } from '../types/certificate';
 import { BUNDLED_CERTIFICATES } from '../data/certificates';
 
@@ -38,8 +38,15 @@ export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
   
+  // Bulk import state with accurate progress tracking & stats
   const [importing, setImporting] = useState(false);
   const [importProgress, setImportProgress] = useState(0);
+  const [importStage, setImportStage] = useState('');
+  const [currentFileName, setCurrentFileName] = useState('');
+  const [importStats, setImportStats] = useState({ total: 42, completed: 0, skipped: 0, failed: 0 });
+  const [failedCertificates, setFailedCertificates] = useState<{ item: PortfolioCertificate; error: string }[]>([]);
+  const [importSummary, setImportSummary] = useState<{ total: number; imported: number; skipped: number; failed: number } | null>(null);
+
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [deletingCert, setDeletingCert] = useState<PortfolioCertificate | null>(null);
@@ -59,7 +66,7 @@ export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
 
   const showToast = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
     setToast({ message, type });
-    setTimeout(() => setToast(null), 4000);
+    setTimeout(() => setToast(null), 5000);
   };
 
   const change = (key: string, value: unknown) => setForm(old => ({ ...old, [key]: value }));
@@ -72,35 +79,179 @@ export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const importBundled = async () => {
-    if (!confirm(`Import ${BUNDLED_CERTIFICATES.length} supplied certificate files into Firebase Storage and Firestore? Existing matching titles will be skipped.`)) return;
-    setImporting(true);
-    let done = 0;
-    try {
-      for (const item of BUNDLED_CERTIFICATES) {
-        if (items.some(x => x.title === item.title && x.issuer === item.issuer)) {
-          done++;
-          setImportProgress(Math.round((done / BUNDLED_CERTIFICATES.length) * 100));
-          continue;
-        }
-        const response = await fetch(item.fileUrl);
-        if (!response.ok) throw new Error(`Could not read ${item.title}`);
+  /**
+   * Defensive asset resolver that tries multiple path candidates to avoid subpath or SPA HTML fallback errors.
+   */
+  const fetchCertificateBlob = async (item: PortfolioCertificate): Promise<Blob> => {
+    const cleanPath = (item.fileUrl || '').replace(/^\/+/, '');
+    const baseUrl = import.meta.env.BASE_URL || '/';
+    const prefixedBase = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
+    const assetFile = item.sourceAsset || `${item.id}.jpg`;
+
+    const candidates = [
+      `${prefixedBase}${cleanPath}`,
+      item.fileUrl,
+      `./certificates/${assetFile}`,
+      `/certificates/${assetFile}`,
+      `certificates/${assetFile}`
+    ];
+
+    const uniqueCandidates = Array.from(new Set(candidates.filter(Boolean)));
+    let lastError: any = null;
+
+    for (const url of uniqueCandidates) {
+      try {
+        const response = await fetch(url);
+        if (!response.ok) continue;
+
+        const cType = response.headers.get('content-type') || '';
+        // If server returned index.html SPA fallback, that's not our image binary
+        if (cType.includes('text/html')) continue;
+
         const blob = await response.blob();
-        const fileObj = new File([blob], item.sourceAsset || `${item.id}.jpg`, { type: blob.type || 'image/jpeg' });
-        const url = await uploadCertificateFile(fileObj, () => {});
-        const { id, sourceAsset, createdAt, updatedAt, ...payload } = item;
-        await saveCertificate({ ...payload, imageUrl: url, fileUrl: url }, undefined);
-        done++;
-        setImportProgress(Math.round((done / BUNDLED_CERTIFICATES.length) * 100));
+        if (blob && blob.size > 500) {
+          return blob;
+        }
+      } catch (err) {
+        lastError = err;
       }
-      await markBundledCertificatesImported();
-      showToast(`Import finished successfully: ${done} certificates processed.`, 'success');
-    } catch (err: any) {
-      showToast(err instanceof Error ? err.message : 'Import failed.', 'error');
+    }
+
+    throw lastError || new Error(`Could not load local asset "${assetFile}".`);
+  };
+
+  /**
+   * Processes a list of certificates in batches of 3 with duplicate detection,
+   * granular progress tracking, and error isolation.
+   */
+  const processImportList = async (targetItems: PortfolioCertificate[]) => {
+    if (!targetItems.length) return;
+    setImporting(true);
+    setImportSummary(null);
+    setImportProgress(0);
+
+    const totalCount = targetItems.length;
+    let completedCount = 0;
+    let skippedCount = 0;
+    let failedCount = 0;
+    const newFailures: { item: PortfolioCertificate; error: string }[] = [];
+
+    setImportStats({
+      total: totalCount,
+      completed: 0,
+      skipped: 0,
+      failed: 0
+    });
+
+    const BATCH_SIZE = 3;
+
+    try {
+      for (let i = 0; i < targetItems.length; i += BATCH_SIZE) {
+        const batch = targetItems.slice(i, i + BATCH_SIZE);
+        const batchNum = Math.floor(i / BATCH_SIZE) + 1;
+        const totalBatches = Math.ceil(targetItems.length / BATCH_SIZE);
+
+        setImportStage(`Processing batch ${batchNum} of ${totalBatches}...`);
+
+        await Promise.all(
+          batch.map(async item => {
+            const fileName = item.sourceAsset || `${item.id}.jpg`;
+            setCurrentFileName(fileName);
+
+            // 1. Check for duplicates in existing items (Idempotent)
+            const isDuplicate = items.some(x =>
+              (x.id && x.id === item.id) ||
+              (x.title?.trim().toLowerCase() === item.title?.trim().toLowerCase() &&
+               x.issuer?.trim().toLowerCase() === item.issuer?.trim().toLowerCase()) ||
+              (x.sourceAsset && item.sourceAsset && x.sourceAsset === item.sourceAsset)
+            );
+
+            if (isDuplicate) {
+              skippedCount++;
+              setImportStats(prev => ({ ...prev, skipped: skippedCount }));
+              return;
+            }
+
+            // 2. Fetch local asset & Upload to Firebase Storage
+            try {
+              setImportStage(`Fetching asset ${fileName}...`);
+              const blob = await fetchCertificateBlob(item);
+
+              setImportStage(`Uploading ${fileName} to Storage...`);
+              const downloadUrl = await uploadCertificateBlob(blob, fileName);
+
+              setImportStage(`Saving ${item.title} to Firestore...`);
+              const { id, createdAt, updatedAt, ...payload } = item;
+              await saveCertificate(
+                {
+                  ...payload,
+                  imageUrl: downloadUrl,
+                  fileUrl: downloadUrl,
+                  sourceAsset: fileName
+                },
+                item.id
+              );
+
+              completedCount++;
+              setImportStats(prev => ({ ...prev, completed: completedCount }));
+            } catch (err: any) {
+              console.error(`Failed to import ${item.title}:`, err);
+              const errMsg = err?.message || 'Upload failed';
+              failedCount++;
+              newFailures.push({ item, error: errMsg });
+              setImportStats(prev => ({ ...prev, failed: failedCount }));
+            } finally {
+              const processedSoFar = completedCount + skippedCount + failedCount;
+              setImportProgress(Math.min(99, Math.round((processedSoFar / totalCount) * 100)));
+            }
+          })
+        );
+      }
+
+      // Mark metadata if any items were saved
+      if (completedCount > 0) {
+        try {
+          await markBundledCertificatesImported();
+        } catch (metaErr) {
+          console.warn('Metadata mark failed:', metaErr);
+        }
+      }
+
+      // Settle progress at 100% ONLY when entire batch loop finishes
+      setImportProgress(100);
+      setFailedCertificates(newFailures);
+
+      const summary = {
+        total: totalCount,
+        imported: completedCount,
+        skipped: skippedCount,
+        failed: failedCount
+      };
+      setImportSummary(summary);
+
+      if (failedCount === 0) {
+        showToast(`Import completed successfully! ${completedCount} imported, ${skippedCount} skipped.`, 'success');
+      } else {
+        showToast(`Import finished: ${completedCount} imported, ${skippedCount} skipped, ${failedCount} failed. Review errors below.`, 'error');
+      }
+    } catch (globalErr: any) {
+      console.error('Bulk import encountered a fatal error:', globalErr);
+      showToast(globalErr?.message || 'Bulk import failed.', 'error');
     } finally {
       setImporting(false);
-      setImportProgress(0);
+      setCurrentFileName('');
     }
+  };
+
+  const importBundled = async () => {
+    if (!confirm(`Import ${BUNDLED_CERTIFICATES.length} bundled certificates into Firebase Storage and Firestore? Existing records will be skipped automatically.`)) return;
+    await processImportList(BUNDLED_CERTIFICATES);
+  };
+
+  const retryFailedImports = async () => {
+    if (!failedCertificates.length) return;
+    const toRetry = failedCertificates.map(f => f.item);
+    await processImportList(toRetry);
   };
 
   const submit = async (e: React.FormEvent) => {
@@ -185,20 +336,167 @@ export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
           <h1 className="text-2xl font-black">Certificates Manager</h1>
           <p className="text-xs text-slate-500 mt-0.5">Manage professional credentials, categories, and public display visibility.</p>
         </div>
-        <button
-          type="button"
-          disabled={importing}
-          onClick={importBundled}
-          className="rounded-2xl bg-cyan-600 hover:bg-cyan-700 text-white px-5 py-3 text-xs font-bold shadow-lg shadow-cyan-600/20 disabled:opacity-50 flex items-center gap-2"
-        >
-          {importing ? <Loader2 className="animate-spin" size={14} /> : <Upload size={14} />}
-          <span>{importing ? `Importing ${importProgress}%` : `Import 42 Bundled Certificates`}</span>
-        </button>
+        <div className="flex items-center gap-3">
+          {failedCertificates.length > 0 && !importing && (
+            <button
+              type="button"
+              onClick={retryFailedImports}
+              className="rounded-2xl bg-rose-600 hover:bg-rose-700 text-white px-4 py-3 text-xs font-bold shadow-lg shadow-rose-600/20 flex items-center gap-2"
+            >
+              <RefreshCw size={14} />
+              <span>Retry {failedCertificates.length} Failed</span>
+            </button>
+          )}
+          <button
+            type="button"
+            disabled={importing}
+            onClick={importBundled}
+            className="rounded-2xl bg-cyan-600 hover:bg-cyan-700 text-white px-5 py-3 text-xs font-bold shadow-lg shadow-cyan-600/20 disabled:opacity-50 flex items-center gap-2"
+          >
+            {importing ? <Loader2 className="animate-spin" size={14} /> : <Upload size={14} />}
+            <span>{importing ? `Importing ${importProgress}%` : items.length >= 42 ? 'Re-sync 42 Bundled Certificates' : 'Import 42 Bundled Certificates'}</span>
+          </button>
+        </div>
       </div>
 
+      {/* Real-time Import Progress Card */}
       {importing && (
-        <div className="h-2 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
-          <div className="h-full bg-cyan-500 transition-all" style={{ width: `${importProgress}%` }} />
+        <div className="rounded-3xl border border-cyan-500/30 bg-cyan-500/10 p-5 sm:p-6 space-y-4 shadow-sm animate-pulse-none">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div className="flex items-center gap-2.5">
+              <Loader2 className="w-5 h-5 text-cyan-500 animate-spin shrink-0" />
+              <div>
+                <h3 className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-wider">
+                  Bulk Import in Progress
+                </h3>
+                <p className="text-[11px] text-slate-600 dark:text-slate-400 font-medium">
+                  {importStage || 'Processing certificate catalog in safe batches of 3...'}
+                </p>
+              </div>
+            </div>
+            <div className="text-right">
+              <span className="text-xl font-black text-cyan-600 dark:text-cyan-400">
+                {importProgress}%
+              </span>
+              <span className="text-[10px] text-slate-500 dark:text-slate-400 block font-bold">
+                {importStats.completed + importStats.skipped + importStats.failed} of {importStats.total} processed
+              </span>
+            </div>
+          </div>
+
+          {/* Progress Bar */}
+          <div className="h-3 w-full rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden">
+            <div
+              className="h-full bg-gradient-to-r from-cyan-500 via-indigo-500 to-purple-600 transition-all duration-300 rounded-full"
+              style={{ width: `${importProgress}%` }}
+            />
+          </div>
+
+          {/* Granular Counters */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-1 text-xs">
+            <div className="bg-white/80 dark:bg-slate-900/80 p-3 rounded-2xl border border-slate-200 dark:border-slate-800">
+              <span className="text-slate-400 block text-[10px] uppercase font-bold">Total Batch</span>
+              <span className="font-black text-slate-800 dark:text-slate-200 text-sm">{importStats.total}</span>
+            </div>
+            <div className="bg-emerald-500/10 p-3 rounded-2xl border border-emerald-500/20">
+              <span className="text-emerald-500 block text-[10px] uppercase font-bold">Uploaded</span>
+              <span className="font-black text-emerald-600 dark:text-emerald-400 text-sm">{importStats.completed}</span>
+            </div>
+            <div className="bg-amber-500/10 p-3 rounded-2xl border border-amber-500/20">
+              <span className="text-amber-500 block text-[10px] uppercase font-bold">Skipped (Existed)</span>
+              <span className="font-black text-amber-600 dark:text-amber-400 text-sm">{importStats.skipped}</span>
+            </div>
+            <div className="bg-rose-500/10 p-3 rounded-2xl border border-rose-500/20">
+              <span className="text-rose-500 block text-[10px] uppercase font-bold">Errors</span>
+              <span className="font-black text-rose-600 dark:text-rose-400 text-sm">{importStats.failed}</span>
+            </div>
+          </div>
+
+          {currentFileName && (
+            <div className="flex items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400 pt-1 border-t border-cyan-500/10">
+              <FileText size={12} className="text-cyan-500" />
+              <span>Current file:</span>
+              <span className="font-mono font-bold text-slate-700 dark:text-slate-300">{currentFileName}</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Import Result Summary Card */}
+      {importSummary && !importing && (
+        <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4 shadow-md">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              {importSummary.failed === 0 ? (
+                <div className="w-10 h-10 rounded-2xl bg-emerald-500/15 text-emerald-500 flex items-center justify-center">
+                  <CheckCircle2 className="w-5 h-5" />
+                </div>
+              ) : (
+                <div className="w-10 h-10 rounded-2xl bg-amber-500/15 text-amber-500 flex items-center justify-center">
+                  <AlertCircle className="w-5 h-5" />
+                </div>
+              )}
+              <div>
+                <h3 className="font-black text-base text-slate-900 dark:text-white">
+                  {importSummary.failed === 0 ? 'Bulk Import Complete' : 'Bulk Import Completed with Warnings'}
+                </h3>
+                <p className="text-xs text-slate-500">
+                  {importSummary.imported} certificates newly imported, {importSummary.skipped} already in database.
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => setImportSummary(null)}
+              className="text-xs font-bold text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800"
+            >
+              Dismiss
+            </button>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+            <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800">
+              <span className="text-slate-400 block text-[10px] uppercase font-bold">Total Catalog</span>
+              <span className="font-black text-slate-900 dark:text-white text-lg">{importSummary.total}</span>
+            </div>
+            <div className="p-3.5 rounded-2xl bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-200/50 dark:border-emerald-800/50">
+              <span className="text-emerald-500 block text-[10px] uppercase font-bold">Imported</span>
+              <span className="font-black text-emerald-600 dark:text-emerald-400 text-lg">{importSummary.imported}</span>
+            </div>
+            <div className="p-3.5 rounded-2xl bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200/50 dark:border-amber-800/50">
+              <span className="text-amber-500 block text-[10px] uppercase font-bold">Skipped (Duplicate)</span>
+              <span className="font-black text-amber-600 dark:text-amber-400 text-lg">{importSummary.skipped}</span>
+            </div>
+            <div className="p-3.5 rounded-2xl bg-rose-50/50 dark:bg-rose-950/20 border border-rose-200/50 dark:border-rose-800/50">
+              <span className="text-rose-500 block text-[10px] uppercase font-bold">Failed</span>
+              <span className="font-black text-rose-600 dark:text-rose-400 text-lg">{importSummary.failed}</span>
+            </div>
+          </div>
+
+          {failedCertificates.length > 0 && (
+            <div className="space-y-3 pt-3 border-t border-slate-100 dark:border-slate-800">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <span className="text-xs font-bold text-rose-500">
+                  {failedCertificates.length} certificate(s) failed to upload or save:
+                </span>
+                <button
+                  type="button"
+                  onClick={retryFailedImports}
+                  className="rounded-xl bg-rose-600 hover:bg-rose-700 text-white px-3 py-1.5 text-xs font-bold shadow-sm flex items-center gap-1.5 self-start sm:self-auto"
+                >
+                  <RefreshCw size={12} />
+                  <span>Retry Failed Items</span>
+                </button>
+              </div>
+              <div className="max-h-48 overflow-y-auto space-y-2 pr-1">
+                {failedCertificates.map((f, i) => (
+                  <div key={i} className="p-3 rounded-2xl bg-rose-500/10 border border-rose-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                    <span className="font-bold text-slate-800 dark:text-slate-200 truncate">{f.item.title}</span>
+                    <span className="text-rose-500 font-mono text-[11px] shrink-0">{f.error}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
