@@ -12,6 +12,8 @@ const AdminDashboardPage = lazy(() => import('./components/AdminDashboardPage').
 const CertificateAdminPage = lazy(() => import('./components/CertificateAdminPage').then(m => ({ default: m.CertificateAdminPage })));
 const ProjectsManager = lazy(() => import('./components/admin/ProjectsManager').then(m => ({ default: m.ProjectsManager })));
 const EducationManager = lazy(() => import('./components/admin/EducationManager').then(m => ({ default: m.EducationManager })));
+const MessagesManager = lazy(() => import('./components/admin/MessagesManager').then(m => ({ default: m.MessagesManager })));
+const SettingsManager = lazy(() => import('./components/admin/SettingsManager').then(m => ({ default: m.SettingsManager })));
 
 const App: FC = () => {
   type ThemeMode = 'light' | 'dark' | 'system';
@@ -71,6 +73,16 @@ const App: FC = () => {
           <Route path="education" element={
             <Suspense fallback={<LoadingScreen />}>
               <EducationManager />
+            </Suspense>
+          } />
+          <Route path="messages" element={
+            <Suspense fallback={<LoadingScreen />}>
+              <MessagesManager />
+            </Suspense>
+          } />
+          <Route path="settings" element={
+            <Suspense fallback={<LoadingScreen />}>
+              <SettingsManager />
             </Suspense>
           } />
         </Route>
