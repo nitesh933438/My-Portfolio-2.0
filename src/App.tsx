@@ -1,4 +1,4 @@
-import { useState, useEffect, FC } from 'react';
+import { useState, useEffect, FC, lazy, Suspense } from 'react';
 import { Navbar } from './components/Navbar';
 import { Hero } from './components/Hero';
 import { About } from './components/About';
@@ -15,9 +15,9 @@ import { ResumeModal } from './components/ResumeModal';
 import { ScrollProgressBar } from './components/ScrollProgressBar';
 import { ScrollReveal } from './components/ScrollReveal';
 import { LoadingScreen } from './components/LoadingScreen';
-import { AdminDashboardPage } from './components/AdminDashboardPage';
+const AdminDashboardPage = lazy(() => import('./components/AdminDashboardPage').then(m => ({ default: m.AdminDashboardPage })));
 import { Certifications } from './components/Certifications';
-import { CertificateAdminPage } from './components/CertificateAdminPage';
+const CertificateAdminPage = lazy(() => import('./components/CertificateAdminPage').then(m => ({ default: m.CertificateAdminPage })));
 import { Project, validatePortfolioData } from './data/portfolio';
 import { ACADEMIC_DATA, UniversityRecord } from './data/education';
 import { subscribeToUniversityRecord, initializeAcademicDataInFirestore } from './services/academicFirebase';
@@ -87,7 +87,11 @@ const App: FC = () => {
   const isCertificateAdminRoute = currentPath.includes('#admin-certificates') || currentPath.includes('/admin/certificates');
 
   if (isCertificateAdminRoute) {
-    return <CertificateAdminPage onBack={() => { window.location.hash = ''; window.history.pushState(null, '', '/'); setCurrentPath('/'); }} />;
+    return (
+      <Suspense fallback={<LoadingScreen />}>
+        <CertificateAdminPage onBack={() => { window.location.hash = ''; window.history.pushState(null, '', '/'); setCurrentPath('/'); }} />
+      </Suspense>
+    );
   }
 
   const isAdminRoute = 
@@ -97,16 +101,18 @@ const App: FC = () => {
 
   if (isAdminRoute) {
     return (
-      <AdminDashboardPage
-        theme={theme}
-        setTheme={setTheme}
-        onNavigateHome={() => {
-          window.location.hash = '';
-          window.history.pushState(null, '', '/');
-          setCurrentPath('/');
-        }}
-        currentUniversity={liveUniversity}
-      />
+      <Suspense fallback={<LoadingScreen />}>
+        <AdminDashboardPage
+          theme={theme}
+          setTheme={setTheme}
+          onNavigateHome={() => {
+            window.location.hash = '';
+            window.history.pushState(null, '', '/');
+            setCurrentPath('/');
+          }}
+          currentUniversity={liveUniversity}
+        />
+      </Suspense>
     );
   }
 

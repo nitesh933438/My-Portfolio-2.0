@@ -10,6 +10,9 @@ export default defineConfig(({ command }) => {
       ? '/My-Portfolio-2.0/'
       : './',
     plugins: [react(), tailwindcss()],
+    build: {
+      chunkSizeWarningLimit: 2000,
+    },
     resolve: {
       alias: {
         '@': path.resolve(import.meta.dirname, '.'),
