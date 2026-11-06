@@ -11,6 +11,9 @@ export const subscribeToProjects = (callback: (projects: Project[]) => void) => 
   return onSnapshot(q, (snapshot) => {
     const projects = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project));
     callback(projects);
+  }, (err) => {
+    console.warn('Projects listener offline fallback:', err.message);
+    callback([]);
   });
 };
 
