@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Project, ProjectCategory, ProjectStatus } from '../../data/portfolio';
-import { subscribeToProjects, saveProject, deleteProject } from '../../services/projectFirebase';
-import { uploadCertificateFile } from '../../services/certificateFirebase';
-import { Plus, Trash2, Edit2, Loader2, Save, X, Search, ExternalLink, Github, Eye, EyeOff, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Project, ProjectCategory } from '../../data/portfolio';
+import { subscribeToProjects, saveProject, deleteProject, resolveProjectImageUrl } from '../../services/projectFirebase';
+import { auth, isUserAdmin } from '../../services/academicFirebase';
+import { uploadFileProxy, validateFile } from '../../services/supabaseStorage';
+import { Plus, Trash2, Edit2, Loader2, Save, X, Search, ExternalLink, Github, Eye, EyeOff, Info, Database, FileText, AlertCircle } from 'lucide-react';
 import { useAdminToast } from './AdminToastContext';
 
 const categories: ProjectCategory[] = [
@@ -46,7 +47,6 @@ export const ProjectsManager: React.FC = () => {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(blankProject());
   const [mainImageFile, setMainImageFile] = useState<File | null>(null);
-  const [uploadProgress, setUploadProgress] = useState(0);
   const [saving, setSaving] = useState(false);
 
   // Delete confirmation state
@@ -71,7 +71,6 @@ export const ProjectsManager: React.FC = () => {
     setEditingId(null);
     setForm(blankProject());
     setMainImageFile(null);
-    setUploadProgress(0);
     setIsModalOpen(true);
   };
 
@@ -94,20 +93,26 @@ export const ProjectsManager: React.FC = () => {
       keyFeatures: proj.keyFeatures || [],
     });
     setMainImageFile(null);
-    setUploadProgress(0);
     setIsModalOpen(true);
   };
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    const idToken = await auth.currentUser?.getIdToken();
+    if (!idToken) return showToast('Unauthorized: Please sign in.', 'error');
+
     setSaving(true);
     try {
-      let mainUrl = form.mainScreenshot;
+      let mainScreenshot = form.mainScreenshot;
+
       if (mainImageFile) {
-        mainUrl = await uploadCertificateFile(mainImageFile, setUploadProgress);
+        validateFile(mainImageFile, ['image/jpeg', 'image/png', 'image/webp', 'image/gif'], 20 * 1024 * 1024);
+        const { path } = await uploadFileProxy(mainImageFile, 'projects', idToken);
+        mainScreenshot = path;
       }
-      if (!mainUrl) {
-        throw new Error('Please provide or upload a main screenshot for the project.');
+
+      if (!mainScreenshot) {
+        throw new Error('Project screenshot is required.');
       }
 
       const generatedSlug = form.slug || form.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
@@ -115,10 +120,10 @@ export const ProjectsManager: React.FC = () => {
       await saveProject({
         ...form,
         slug: generatedSlug,
-        mainScreenshot: mainUrl,
+        mainScreenshot,
       }, editingId || undefined);
 
-      showToast(editingId ? 'Project updated successfully' : 'Project created successfully', 'success');
+      showToast(editingId ? 'Project metadata updated' : 'Project created with Supabase storage', 'success');
       setIsModalOpen(false);
       setForm(blankProject());
       setEditingId(null);
@@ -127,7 +132,6 @@ export const ProjectsManager: React.FC = () => {
       showToast(err.message || 'Failed to save project', 'error');
     } finally {
       setSaving(false);
-      setUploadProgress(0);
     }
   };
 
@@ -135,8 +139,10 @@ export const ProjectsManager: React.FC = () => {
     if (!deletingProject) return;
     setDeleting(true);
     try {
-      await deleteProject(deletingProject.id, [deletingProject.mainScreenshot, ...(deletingProject.additionalScreenshots || [])]);
-      showToast(`Deleted "${deletingProject.title}" successfully`, 'success');
+      // Include all Supabase assets for deletion
+      const assets = [deletingProject.mainScreenshot, ...(deletingProject.additionalScreenshots || [])];
+      await deleteProject(deletingProject.id, assets);
+      showToast(`Deleted "${deletingProject.title}" and its assets`, 'success');
       setDeletingProject(null);
     } catch (err: any) {
       showToast(err.message || 'Failed to delete project', 'error');
@@ -156,8 +162,11 @@ export const ProjectsManager: React.FC = () => {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-black">Projects Manager</h1>
-          <p className="text-sm text-slate-500">Add, edit, and organize your full-stack applications and AI models.</p>
+          <h1 className="text-2xl font-black text-slate-900 dark:text-white">Projects Manager</h1>
+          <div className="flex items-center gap-2 text-[11px] text-blue-500 font-bold uppercase tracking-wider mt-1">
+            <Database size={12} />
+            <span>Supabase Storage Integration</span>
+          </div>
         </div>
         <button
           onClick={openAddModal}
@@ -205,7 +214,7 @@ export const ProjectsManager: React.FC = () => {
       ) : filteredProjects.length === 0 ? (
         <div className="rounded-3xl border border-dashed border-slate-300 dark:border-slate-800 p-16 text-center space-y-3 bg-white dark:bg-slate-900">
           <h3 className="font-bold text-lg">No Projects Found</h3>
-          <p className="text-xs text-slate-500 max-w-sm mx-auto">Get started by creating your first featured portfolio project.</p>
+          <p className="text-xs text-slate-500 max-w-sm mx-auto">Create your first project metadata and upload screenshots to Supabase.</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -218,8 +227,13 @@ export const ProjectsManager: React.FC = () => {
               className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl overflow-hidden shadow-sm flex flex-col justify-between group hover:border-indigo-500/50 transition-all"
             >
               <div>
-                <div className="relative h-48 overflow-hidden bg-slate-100 dark:bg-slate-950">
-                  <img src={project.mainScreenshot} alt={project.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                <div className="relative h-48 overflow-hidden bg-slate-100 dark:bg-slate-950 flex items-center justify-center">
+                  <img 
+                    src={resolveProjectImageUrl(project.mainScreenshot)} 
+                    alt={project.title} 
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" 
+                    onError={e => (e.currentTarget.src = 'https://placehold.co/400x300?text=Asset+Error')} 
+                  />
                   <div className="absolute top-3 right-3 flex gap-2">
                     <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase backdrop-blur-md bg-emerald-500/90 text-white">
                       {project.status}
@@ -230,6 +244,9 @@ export const ProjectsManager: React.FC = () => {
                       </span>
                     )}
                   </div>
+                  {project.mainScreenshot.includes('/') && (
+                    <span className="absolute bottom-3 left-3 px-2 py-0.5 rounded-md bg-blue-600/90 text-white text-[8px] font-black uppercase">Supabase</span>
+                  )}
                 </div>
 
                 <div className="p-6 space-y-3">
@@ -238,13 +255,6 @@ export const ProjectsManager: React.FC = () => {
                     <h3 className="font-black text-lg text-slate-900 dark:text-white mt-0.5">{project.title}</h3>
                   </div>
                   <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed">{project.shortDescription}</p>
-                  <div className="flex flex-wrap gap-1.5 pt-1">
-                    {(project.techStack || []).slice(0, 4).map((tech: string, idx: number) => (
-                      <span key={idx} className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-[10px] font-bold text-slate-600 dark:text-slate-300">
-                        {tech}
-                      </span>
-                    ))}
-                  </div>
                 </div>
               </div>
 
@@ -326,119 +336,44 @@ export const ProjectsManager: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="grid sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-bold uppercase text-slate-400 mb-1">Status *</label>
-                    <select
-                      value={form.status}
-                      onChange={e => handleChange('status', e.target.value)}
-                      className="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-bold"
-                    >
-                      <option value="Completed">Completed</option>
-                      <option value="In Progress">In Progress</option>
-                      <option value="Planning">Planning</option>
-                      <option value="Coming Soon">Coming Soon</option>
-                      <option value="Archived">Archived</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold uppercase text-slate-400 mb-1">Display Order</label>
-                    <input
-                      type="number"
-                      value={form.displayOrder}
-                      onChange={e => handleChange('displayOrder', parseInt(e.target.value) || 100)}
-                      className="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-medium"
-                    />
-                  </div>
-                </div>
-
                 <div>
-                  <label className="block text-xs font-bold uppercase text-slate-400 mb-1">Short Description *</label>
-                  <input
-                    type="text"
-                    required
-                    value={form.shortDescription}
-                    onChange={e => handleChange('shortDescription', e.target.value)}
-                    className="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-medium"
-                    placeholder="Brief 1-sentence overview"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold uppercase text-slate-400 mb-1">Detailed Description *</label>
-                  <textarea
-                    rows={4}
-                    required
-                    value={form.detailedDescription}
-                    onChange={e => handleChange('detailedDescription', e.target.value)}
-                    className="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-medium leading-relaxed"
-                    placeholder="Detailed architecture and features..."
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold uppercase text-slate-400 mb-1">Tech Stack (comma separated) *</label>
-                  <input
-                    type="text"
-                    required
-                    value={form.techStack.join(', ')}
-                    onChange={e => handleChange('techStack', e.target.value.split(',').map(s => s.trim()).filter(Boolean))}
-                    className="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-medium"
-                    placeholder="React, TypeScript, Firebase, Tailwind"
-                  />
-                </div>
-
-                <div className="grid sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-bold uppercase text-slate-400 mb-1">GitHub URL</label>
-                    <input
-                      type="url"
-                      value={form.githubUrl}
-                      onChange={e => handleChange('githubUrl', e.target.value)}
-                      className="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-medium"
-                      placeholder="https://github.com/..."
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold uppercase text-slate-400 mb-1">Live Demo URL</label>
-                    <input
-                      type="url"
-                      value={form.liveDemoUrl}
-                      onChange={e => handleChange('liveDemoUrl', e.target.value)}
-                      className="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-medium"
-                      placeholder="https://..."
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold uppercase text-slate-400 mb-1">Main Screenshot / Image *</label>
+                  <label className="block text-xs font-bold uppercase text-slate-400 mb-1">Main Screenshot (Supabase Storage) *</label>
                   <input
                     type="file"
                     accept="image/*"
                     onChange={e => setMainImageFile(e.target.files?.[0] || null)}
                     className="w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-indigo-50 file:text-indigo-600 dark:file:bg-slate-800 dark:file:text-indigo-400"
                   />
-                  {form.mainScreenshot && !mainImageFile && (
-                    <p className="text-[11px] text-emerald-500 mt-1">Current image attached. Upload a new file to replace it.</p>
+                  {editingId && !mainImageFile && (
+                    <p className="text-[10px] text-slate-500 italic mt-1">Leave empty to keep current screenshot.</p>
                   )}
-                  {uploadProgress > 0 && (
-                    <div className="mt-2 h-2 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
-                      <div className="h-full bg-indigo-600 transition-all" style={{ width: `${uploadProgress}%` }} />
-                    </div>
+                  {form.mainScreenshot && (
+                    <code className="text-[9px] text-blue-500 block mt-1 truncate">Current: {form.mainScreenshot}</code>
                   )}
                 </div>
 
-                <div className="flex items-center gap-6 pt-2">
-                  <label className="flex items-center gap-2 text-xs font-bold cursor-pointer">
+                <div className="space-y-4">
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-black uppercase text-slate-400 tracking-wider">Short Description *</label>
                     <input
-                      type="checkbox"
-                      checked={form.featured}
-                      onChange={e => handleChange('featured', e.target.checked)}
-                      className="rounded text-indigo-600 focus:ring-indigo-500"
+                      type="text"
+                      required
+                      value={form.shortDescription}
+                      onChange={e => handleChange('shortDescription', e.target.value)}
+                      className="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-medium"
+                      placeholder="Brief overview"
                     />
-                    Featured Project
-                  </label>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-black uppercase text-slate-400 tracking-wider">Detailed Description *</label>
+                    <textarea
+                      rows={4}
+                      required
+                      value={form.detailedDescription}
+                      onChange={e => handleChange('detailedDescription', e.target.value)}
+                      className="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-medium"
+                    />
+                  </div>
                 </div>
 
                 <div className="flex gap-3 pt-4 border-t border-slate-200 dark:border-slate-800">
@@ -455,7 +390,7 @@ export const ProjectsManager: React.FC = () => {
                     className="flex-1 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-lg shadow-indigo-600/20 flex items-center justify-center gap-2 disabled:opacity-50"
                   >
                     {saving ? <Loader2 className="animate-spin" size={16} /> : <Save size={16} />}
-                    <span>{saving ? 'Saving Project...' : 'Save Project'}</span>
+                    <span>{saving ? 'Saving...' : 'Save Project'}</span>
                   </button>
                 </div>
               </form>
@@ -479,7 +414,7 @@ export const ProjectsManager: React.FC = () => {
               </div>
               <h3 className="text-lg font-bold">Delete Project?</h3>
               <p className="text-xs text-slate-500">
-                Are you sure you want to delete <strong className="text-slate-800 dark:text-slate-200">"{deletingProject.title}"</strong>? This action cannot be undone.
+                Are you sure you want to delete <strong className="text-slate-800 dark:text-slate-200">"{deletingProject.title}"</strong> and all its Supabase assets?
               </p>
               <div className="flex gap-3 pt-2">
                 <button

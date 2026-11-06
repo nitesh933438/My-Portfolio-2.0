@@ -1,10 +1,19 @@
 import { collection, addDoc, updateDoc, deleteDoc, doc, onSnapshot, query, orderBy } from 'firebase/firestore';
-import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { db, auth, isUserAdmin } from './academicFirebase';
 import { Project } from '../data/portfolio';
+import { getStorageUrl, deleteFileProxy } from './supabaseStorage';
 
-const storage = getStorage();
-const projectsColRef = collection(db, 'projects');
+export const resolveProjectImageUrl = (pathOrUrl: string): string => {
+  if (!pathOrUrl) return '';
+  if (pathOrUrl.startsWith('http')) return pathOrUrl;
+  if (pathOrUrl.includes('/')) return getStorageUrl(pathOrUrl);
+  
+  const baseUrl = import.meta.env.BASE_URL || '/';
+  const prefix = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
+  return `${prefix}projects/${pathOrUrl}`;
+};
+
+export const projectsColRef = collection(db, 'projects');
 
 export const subscribeToProjects = (callback: (projects: Project[]) => void) => {
   const q = query(projectsColRef, orderBy('displayOrder', 'asc'));
@@ -27,25 +36,21 @@ export const saveProject = async (project: Omit<Project, 'id'>, id?: string) => 
   }
 };
 
-export const deleteProject = async (projectId: string, imageUrls: string[]) => {
+export const deleteProject = async (projectId: string, assetPaths: string[]) => {
   if (!isUserAdmin(auth.currentUser)) throw new Error('Unauthorized');
   
-  // Delete images from storage
-  for (const url of imageUrls) {
-    try {
-      const storageRef = ref(storage, url);
-      await deleteObject(storageRef);
-    } catch (e) {
-      console.error('Error deleting image:', e);
+  const idToken = await auth.currentUser?.getIdToken();
+  if (idToken) {
+    for (const path of assetPaths) {
+      if (path && path.includes('/') && !path.startsWith('http')) {
+        try {
+          await deleteFileProxy(path, idToken);
+        } catch (e) {
+          console.warn('Could not delete Supabase project asset:', path, e);
+        }
+      }
     }
   }
-  
-  await deleteDoc(doc(db, 'projects', projectId));
-};
 
-export const uploadProjectImage = async (file: File): Promise<string> => {
-  if (!isUserAdmin(auth.currentUser)) throw new Error('Unauthorized');
-  const storageRef = ref(storage, `projects/${Date.now()}_${file.name}`);
-  const snapshot = await uploadBytes(storageRef, file);
-  return getDownloadURL(snapshot.ref);
+  await deleteDoc(doc(db, 'projects', projectId));
 };

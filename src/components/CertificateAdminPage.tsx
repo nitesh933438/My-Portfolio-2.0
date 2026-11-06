@@ -1,9 +1,38 @@
 import React, { useEffect, useState } from 'react';
 import { onAuthStateChanged, signInWithPopup, signOut, User } from 'firebase/auth';
 import { motion, AnimatePresence } from 'motion/react';
-import { ArrowLeft, Upload, LogOut, Trash2, Edit2, Eye, EyeOff, Loader2, Plus, Save, Search, Award, CheckCircle2, AlertCircle, RefreshCw, FileText } from 'lucide-react';
-import { auth, googleProvider, isUserAdmin } from '../services/academicFirebase';
-import { markBundledCertificatesImported, removeCertificate, saveCertificate, subscribeToCertificates, uploadCertificateFile, uploadCertificateBlob } from '../services/certificateFirebase';
+import {
+  ArrowLeft,
+  Trash2,
+  Edit2,
+  Eye,
+  EyeOff,
+  Loader2,
+  Save,
+  Search,
+  Award,
+  CheckCircle2,
+  AlertCircle,
+  RefreshCw,
+  FileText,
+  Terminal,
+  ExternalLink,
+  Info,
+  Database,
+  CloudUpload,
+  Plus
+} from 'lucide-react';
+import { auth, googleProvider, isUserAdmin, ADMIN_EMAIL } from '../services/academicFirebase';
+import {
+  markBundledCertificatesImported,
+  removeCertificate,
+  saveCertificate,
+  subscribeToCertificates,
+  testSingleCertificateDiagnostic,
+  resolveCertificateUrl,
+  type ImportDiagnostic
+} from '../services/certificateFirebase';
+import { uploadFileProxy, validateFile } from '../services/supabaseStorage';
 import { CERTIFICATE_CATEGORIES, type PortfolioCertificate } from '../types/certificate';
 import { BUNDLED_CERTIFICATES } from '../data/certificates';
 
@@ -34,18 +63,21 @@ export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
   const [form, setForm] = useState(blank());
   const [editing, setEditing] = useState<string | undefined>();
   const [file, setFile] = useState<File | null>(null);
-  const [progress, setProgress] = useState(0);
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
-  
-  // Bulk import state with accurate progress tracking & stats
+
+  // Bulk import state
   const [importing, setImporting] = useState(false);
   const [importProgress, setImportProgress] = useState(0);
   const [importStage, setImportStage] = useState('');
-  const [currentFileName, setCurrentFileName] = useState('');
   const [importStats, setImportStats] = useState({ total: 42, completed: 0, skipped: 0, failed: 0 });
   const [failedCertificates, setFailedCertificates] = useState<{ item: PortfolioCertificate; error: string }[]>([]);
   const [importSummary, setImportSummary] = useState<{ total: number; imported: number; skipped: number; failed: number } | null>(null);
+
+  // Diagnostic Test state
+  const [diagnosticOpen, setDiagnosticOpen] = useState(false);
+  const [diagnosticRunning, setDiagnosticRunning] = useState(false);
+  const [diagnosticResult, setDiagnosticResult] = useState<ImportDiagnostic | null>(null);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
@@ -79,53 +111,36 @@ export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  /**
-   * Defensive asset resolver that tries multiple path candidates to avoid subpath or SPA HTML fallback errors.
-   */
-  const fetchCertificateBlob = async (item: PortfolioCertificate): Promise<Blob> => {
-    const cleanPath = (item.fileUrl || '').replace(/^\/+/, '');
-    const baseUrl = import.meta.env.BASE_URL || '/';
-    const prefixedBase = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
-    const assetFile = item.sourceAsset || `${item.id}.jpg`;
-
-    const candidates = [
-      `${prefixedBase}${cleanPath}`,
-      item.fileUrl,
-      `./certificates/${assetFile}`,
-      `/certificates/${assetFile}`,
-      `certificates/${assetFile}`
-    ];
-
-    const uniqueCandidates = Array.from(new Set(candidates.filter(Boolean)));
-    let lastError: any = null;
-
-    for (const url of uniqueCandidates) {
-      try {
-        const response = await fetch(url);
-        if (!response.ok) continue;
-
-        const cType = response.headers.get('content-type') || '';
-        // If server returned index.html SPA fallback, that's not our image binary
-        if (cType.includes('text/html')) continue;
-
-        const blob = await response.blob();
-        if (blob && blob.size > 500) {
-          return blob;
-        }
-      } catch (err) {
-        lastError = err;
+  const runSingleCertificateTest = async () => {
+    setDiagnosticOpen(true);
+    setDiagnosticRunning(true);
+    setDiagnosticResult(null);
+    try {
+      const result = await testSingleCertificateDiagnostic(user);
+      setDiagnosticResult(result);
+      if (result.success) {
+        showToast('Supabase + Firestore bridge verified!', 'success');
+      } else {
+        showToast('Diagnostic failed. Check report.', 'error');
       }
+    } catch (err: any) {
+      showToast(`System error: ${err.message}`, 'error');
+    } finally {
+      setDiagnosticRunning(false);
     }
-
-    throw lastError || new Error(`Could not load local asset "${assetFile}".`);
   };
 
   /**
-   * Processes a list of certificates in batches of 3 with duplicate detection,
-   * granular progress tracking, and error isolation.
+   * Imports certificates into Supabase Storage and Firestore.
    */
   const processImportList = async (targetItems: PortfolioCertificate[]) => {
     if (!targetItems.length) return;
+    const idToken = await user?.getIdToken();
+    if (!idToken) {
+      showToast('Session expired. Please sign in again.', 'error');
+      return;
+    }
+
     setImporting(true);
     setImportSummary(null);
     setImportProgress(0);
@@ -136,141 +151,110 @@ export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
     let failedCount = 0;
     const newFailures: { item: PortfolioCertificate; error: string }[] = [];
 
-    setImportStats({
-      total: totalCount,
-      completed: 0,
-      skipped: 0,
-      failed: 0
-    });
+    setImportStats({ total: totalCount, completed: 0, skipped: 0, failed: 0 });
 
-    const BATCH_SIZE = 3;
+    const BATCH_SIZE = 3; // Smaller batches for storage uploads
 
     try {
       for (let i = 0; i < targetItems.length; i += BATCH_SIZE) {
         const batch = targetItems.slice(i, i + BATCH_SIZE);
-        const batchNum = Math.floor(i / BATCH_SIZE) + 1;
-        const totalBatches = Math.ceil(targetItems.length / BATCH_SIZE);
-
-        setImportStage(`Processing batch ${batchNum} of ${totalBatches}...`);
+        setImportStage(`Uploading batch ${Math.floor(i / BATCH_SIZE) + 1}...`);
 
         await Promise.all(
           batch.map(async item => {
-            const fileName = item.sourceAsset || `${item.id}.jpg`;
-            setCurrentFileName(fileName);
-
-            // 1. Check for duplicates in existing items (Idempotent)
-            const isDuplicate = items.some(x =>
-              (x.id && x.id === item.id) ||
-              (x.title?.trim().toLowerCase() === item.title?.trim().toLowerCase() &&
-               x.issuer?.trim().toLowerCase() === item.issuer?.trim().toLowerCase()) ||
-              (x.sourceAsset && item.sourceAsset && x.sourceAsset === item.sourceAsset)
-            );
-
+            // Check for duplicates in Firestore
+            const isDuplicate = items.some(x => x.id === item.id || (x.title === item.title && x.issuer === item.issuer));
             if (isDuplicate) {
               skippedCount++;
               setImportStats(prev => ({ ...prev, skipped: skippedCount }));
               return;
             }
 
-            // 2. Fetch local asset & Upload to Firebase Storage
             try {
-              setImportStage(`Fetching asset ${fileName}...`);
-              const blob = await fetchCertificateBlob(item);
+              // 1. Fetch local asset
+              const assetUrl = `/certificates/${item.sourceAsset || `${item.id}.jpg`}`;
+              const response = await fetch(assetUrl);
+              if (!response.ok) throw new Error(`Local asset not found: ${assetUrl}`);
+              const blob = await response.blob();
+              const file = new File([blob], item.sourceAsset || `${item.id}.jpg`, { type: 'image/jpeg' });
 
-              setImportStage(`Uploading ${fileName} to Storage...`);
-              const downloadUrl = await uploadCertificateBlob(blob, fileName);
+              // 2. Upload to Supabase
+              const { path, url } = await uploadFileProxy(file, 'certificates', idToken);
 
-              setImportStage(`Saving ${item.title} to Firestore...`);
+              // 3. Save to Firestore
               const { id, createdAt, updatedAt, ...payload } = item;
-              await saveCertificate(
-                {
-                  ...payload,
-                  imageUrl: downloadUrl,
-                  fileUrl: downloadUrl,
-                  sourceAsset: fileName
-                },
-                item.id
-              );
+              await saveCertificate({
+                ...payload,
+                imageUrl: url,
+                fileUrl: path, // Save the path for future deletion/signed-urls
+                sourceAsset: item.sourceAsset || `${item.id}.jpg`,
+                published: true
+              }, item.id);
 
               completedCount++;
               setImportStats(prev => ({ ...prev, completed: completedCount }));
             } catch (err: any) {
-              console.error(`Failed to import ${item.title}:`, err);
-              const errMsg = err?.message || 'Upload failed';
               failedCount++;
-              newFailures.push({ item, error: errMsg });
+              newFailures.push({ item, error: err.message || 'Import failed' });
               setImportStats(prev => ({ ...prev, failed: failedCount }));
             } finally {
-              const processedSoFar = completedCount + skippedCount + failedCount;
-              setImportProgress(Math.min(99, Math.round((processedSoFar / totalCount) * 100)));
+              const processed = completedCount + skippedCount + failedCount;
+              setImportProgress(Math.round((processed / totalCount) * 100));
             }
           })
         );
       }
 
-      // Mark metadata if any items were saved
-      if (completedCount > 0) {
-        try {
-          await markBundledCertificatesImported();
-        } catch (metaErr) {
-          console.warn('Metadata mark failed:', metaErr);
-        }
-      }
+      if (completedCount > 0) await markBundledCertificatesImported();
 
-      // Settle progress at 100% ONLY when entire batch loop finishes
-      setImportProgress(100);
       setFailedCertificates(newFailures);
-
-      const summary = {
-        total: totalCount,
-        imported: completedCount,
-        skipped: skippedCount,
-        failed: failedCount
-      };
-      setImportSummary(summary);
-
-      if (failedCount === 0) {
-        showToast(`Import completed successfully! ${completedCount} imported, ${skippedCount} skipped.`, 'success');
-      } else {
-        showToast(`Import finished: ${completedCount} imported, ${skippedCount} skipped, ${failedCount} failed. Review errors below.`, 'error');
-      }
-    } catch (globalErr: any) {
-      console.error('Bulk import encountered a fatal error:', globalErr);
-      showToast(globalErr?.message || 'Bulk import failed.', 'error');
+      setImportSummary({ total: totalCount, imported: completedCount, skipped: skippedCount, failed: failedCount });
+      showToast(failedCount === 0 ? 'Sync completed successfully!' : 'Sync completed with warnings.', failedCount === 0 ? 'success' : 'error');
+    } catch (err: any) {
+      showToast(err.message || 'Import failed.', 'error');
     } finally {
       setImporting(false);
-      setCurrentFileName('');
     }
   };
 
-  const importBundled = async () => {
-    if (!confirm(`Import ${BUNDLED_CERTIFICATES.length} bundled certificates into Firebase Storage and Firestore? Existing records will be skipped automatically.`)) return;
-    await processImportList(BUNDLED_CERTIFICATES);
-  };
-
-  const retryFailedImports = async () => {
-    if (!failedCertificates.length) return;
-    const toRetry = failedCertificates.map(f => f.item);
-    await processImportList(toRetry);
+  const importBundled = () => {
+    if (!confirm(`Import ${BUNDLED_CERTIFICATES.length} certificates into Supabase and Firestore? Existing records will be skipped.`)) return;
+    processImportList(BUNDLED_CERTIFICATES);
   };
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const idToken = await user?.getIdToken();
+    if (!idToken) return showToast('Session expired.', 'error');
+
     setBusy(true);
     try {
-      let url = form.fileUrl;
+      let imageUrl = form.imageUrl;
+      let fileUrl = form.fileUrl;
+
       if (file) {
-        url = await uploadCertificateFile(file, setProgress);
+        validateFile(file, ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'], 15 * 1024 * 1024);
+        const { path, url } = await uploadFileProxy(file, 'certificates', idToken);
+        imageUrl = url;
+        fileUrl = path;
       }
-      if (!url) throw new Error('Please upload a certificate image or PDF.');
-      await saveCertificate({ ...form, fileUrl: url, imageUrl: form.fileType === 'image' ? url : '', skills: form.skills }, editing);
-      showToast(editing ? 'Certificate updated successfully.' : 'Certificate saved successfully.', 'success');
+
+      if (!fileUrl && !form.sourceAsset) {
+        throw new Error('Please upload a file or specify a source asset.');
+      }
+
+      await saveCertificate({ 
+        ...form, 
+        imageUrl: imageUrl || resolveCertificateUrl(form.sourceAsset || ''), 
+        fileUrl: fileUrl || form.sourceAsset || '' 
+      }, editing);
+      
+      showToast(editing ? 'Certificate updated.' : 'Certificate saved.', 'success');
       setForm(blank());
       setEditing(undefined);
       setFile(null);
-      setProgress(0);
     } catch (err: any) {
-      showToast(err instanceof Error ? err.message : 'Could not save certificate.', 'error');
+      showToast(err.message || 'Save failed.', 'error');
     } finally {
       setBusy(false);
     }
@@ -280,418 +264,283 @@ export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
     if (!deletingCert) return;
     try {
       await removeCertificate(deletingCert);
-      showToast(`Deleted "${deletingCert.title}" successfully.`, 'success');
+      showToast('Record and storage asset removed.', 'success');
       setDeletingCert(null);
     } catch (err: any) {
-      showToast(err.message || 'Failed to delete certificate.', 'error');
+      showToast(err.message || 'Delete failed.', 'error');
     }
   };
 
   const filteredItems = items.filter(item => {
     const matchesSearch = item.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
                           item.issuer.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesCat = selectedCategory === 'All' || item.category === selectedCategory;
-    return matchesSearch && matchesCat;
+    return matchesSearch && (selectedCategory === 'All' || item.category === selectedCategory);
   });
 
-  if (!user) return (
-    <main className="min-h-screen bg-slate-950 text-white grid place-items-center p-6">
-      <div className="max-w-md w-full rounded-3xl border border-slate-800 bg-slate-900 p-8 text-center space-y-4">
-        <div className="w-12 h-12 rounded-2xl bg-indigo-600/20 text-indigo-400 flex items-center justify-center mx-auto">
-          <Award className="w-6 h-6" />
+  if (!user || !isUserAdmin(user)) return (
+    <main className="min-h-screen bg-slate-950 text-white grid place-items-center p-6 text-center">
+      {!user ? (
+        <div className="max-w-md w-full rounded-3xl border border-slate-800 bg-slate-900 p-8 space-y-4">
+          <Award className="w-12 h-12 text-indigo-400 mx-auto" />
+          <h1 className="text-2xl font-black">Admin Access Required</h1>
+          <button onClick={() => signInWithPopup(auth, googleProvider)} className="w-full rounded-xl bg-indigo-600 py-3 font-bold">Sign in with Google</button>
+          <button onClick={onBack} className="text-xs text-slate-400 underline">Back to portfolio</button>
         </div>
-        <h1 className="text-2xl font-black">Certificate Manager</h1>
-        <p className="text-slate-400 text-xs">Sign in with the authorized administrator Google account to manage professional certificates.</p>
-        <button onClick={() => signInWithPopup(auth, googleProvider)} className="w-full rounded-xl bg-indigo-600 py-3 text-xs font-bold shadow-lg shadow-indigo-600/30">Continue with Google</button>
-        <button onClick={onBack} className="text-xs text-slate-400 hover:text-white underline block mx-auto">Back to portfolio</button>
-      </div>
-    </main>
-  );
-
-  if (!isUserAdmin(user)) return (
-    <main className="min-h-screen bg-slate-950 text-white grid place-items-center p-6">
-      <div className="text-center space-y-3">
-        <h1 className="text-2xl font-bold">Access Denied</h1>
-        <p className="text-slate-400 text-xs">This Google account is not authorized as an administrator.</p>
-        <button onClick={() => signOut(auth)} className="text-xs underline text-indigo-400 font-bold">Sign out</button>
-      </div>
+      ) : (
+        <div className="space-y-4">
+          <h1 className="text-2xl font-bold text-rose-500">Access Denied</h1>
+          <p className="text-slate-400 text-xs">Account {user.email} is not authorized.</p>
+          <button onClick={() => signOut(auth)} className="text-xs font-bold text-indigo-400 underline">Sign out</button>
+        </div>
+      )}
     </main>
   );
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-8 max-w-7xl mx-auto px-4 py-8">
       {/* Toast Notification */}
       {toast && (
-        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 p-4 rounded-2xl shadow-xl border bg-slate-900/95 border-slate-700 text-white backdrop-blur-md">
+        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 p-4 rounded-2xl shadow-xl border bg-slate-900/95 border-slate-700 text-white backdrop-blur-md animate-in fade-in slide-in-from-bottom-4">
           {toast.type === 'success' ? <CheckCircle2 className="w-5 h-5 text-emerald-400" /> : <AlertCircle className="w-5 h-5 text-rose-400" />}
           <span className="text-xs font-bold">{toast.message}</span>
         </div>
       )}
 
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <button onClick={onBack} className="text-xs text-indigo-500 dark:text-indigo-400 flex items-center gap-1.5 mb-2 font-bold hover:underline">
-            <ArrowLeft size={14} /> Back to Dashboard Overview
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="space-y-1">
+          <button onClick={onBack} className="text-xs text-indigo-400 flex items-center gap-1.5 font-bold hover:underline mb-2">
+            <ArrowLeft size={14} /> Back to Dashboard
           </button>
-          <h1 className="text-2xl font-black">Certificates Manager</h1>
-          <p className="text-xs text-slate-500 mt-0.5">Manage professional credentials, categories, and public display visibility.</p>
+          <h1 className="text-3xl font-black">Certificate CMS</h1>
+          <div className="flex items-center gap-2 text-xs text-blue-400 font-bold">
+            <Database size={14} />
+            <span>Supabase Storage + Firestore Bridge</span>
+          </div>
         </div>
-        <div className="flex items-center gap-3">
-          {failedCertificates.length > 0 && !importing && (
-            <button
-              type="button"
-              onClick={retryFailedImports}
-              className="rounded-2xl bg-rose-600 hover:bg-rose-700 text-white px-4 py-3 text-xs font-bold shadow-lg shadow-rose-600/20 flex items-center gap-2"
-            >
-              <RefreshCw size={14} />
-              <span>Retry {failedCertificates.length} Failed</span>
-            </button>
-          )}
-          <button
-            type="button"
-            disabled={importing}
-            onClick={importBundled}
-            className="rounded-2xl bg-cyan-600 hover:bg-cyan-700 text-white px-5 py-3 text-xs font-bold shadow-lg shadow-cyan-600/20 disabled:opacity-50 flex items-center gap-2"
-          >
-            {importing ? <Loader2 className="animate-spin" size={14} /> : <Upload size={14} />}
-            <span>{importing ? `Importing ${importProgress}%` : items.length >= 42 ? 'Re-sync 42 Bundled Certificates' : 'Import 42 Bundled Certificates'}</span>
+        <div className="flex flex-wrap gap-2.5">
+          <button onClick={runSingleCertificateTest} disabled={diagnosticRunning || importing} className="rounded-2xl border border-indigo-500/40 bg-indigo-500/5 hover:bg-indigo-500/10 text-indigo-400 px-4 py-3 text-xs font-bold flex items-center gap-2">
+            {diagnosticRunning ? <Loader2 className="animate-spin" size={14} /> : <Terminal size={14} />}
+            Test Supabase Bridge
+          </button>
+          <button onClick={importBundled} disabled={importing} className="rounded-2xl bg-cyan-600 hover:bg-cyan-700 text-white px-5 py-3 text-xs font-bold shadow-lg flex items-center gap-2">
+            {importing ? <Loader2 className="animate-spin" size={14} /> : <CloudUpload size={14} />}
+            {items.length >= 42 ? 'Migrate 42 Certificates to Supabase' : 'Bulk Import to Supabase'}
           </button>
         </div>
       </div>
 
-      {/* Real-time Import Progress Card */}
+      {/* Progress Card */}
       {importing && (
-        <div className="rounded-3xl border border-cyan-500/30 bg-cyan-500/10 p-5 sm:p-6 space-y-4 shadow-sm animate-pulse-none">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-            <div className="flex items-center gap-2.5">
-              <Loader2 className="w-5 h-5 text-cyan-500 animate-spin shrink-0" />
-              <div>
-                <h3 className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-wider">
-                  Bulk Import in Progress
-                </h3>
-                <p className="text-[11px] text-slate-600 dark:text-slate-400 font-medium">
-                  {importStage || 'Processing certificate catalog in safe batches of 3...'}
-                </p>
-              </div>
+        <div className="rounded-3xl border border-cyan-500/30 bg-cyan-500/5 p-6 space-y-4">
+          <div className="flex justify-between items-end">
+            <div className="space-y-1">
+              <span className="text-[10px] font-black uppercase text-cyan-400 tracking-widest">Supabase Migration</span>
+              <p className="text-xs text-white font-bold">{importStage}</p>
             </div>
-            <div className="text-right">
-              <span className="text-xl font-black text-cyan-600 dark:text-cyan-400">
-                {importProgress}%
-              </span>
-              <span className="text-[10px] text-slate-500 dark:text-slate-400 block font-bold">
-                {importStats.completed + importStats.skipped + importStats.failed} of {importStats.total} processed
-              </span>
-            </div>
+            <span className="text-2xl font-black text-cyan-400">{importProgress}%</span>
           </div>
-
-          {/* Progress Bar */}
-          <div className="h-3 w-full rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden">
-            <div
-              className="h-full bg-gradient-to-r from-cyan-500 via-indigo-500 to-purple-600 transition-all duration-300 rounded-full"
-              style={{ width: `${importProgress}%` }}
-            />
+          <div className="h-2 w-full rounded-full bg-slate-800 overflow-hidden">
+            <div className="h-full bg-cyan-500 transition-all duration-300" style={{ width: `${importProgress}%` }} />
           </div>
-
-          {/* Granular Counters */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-1 text-xs">
-            <div className="bg-white/80 dark:bg-slate-900/80 p-3 rounded-2xl border border-slate-200 dark:border-slate-800">
-              <span className="text-slate-400 block text-[10px] uppercase font-bold">Total Batch</span>
-              <span className="font-black text-slate-800 dark:text-slate-200 text-sm">{importStats.total}</span>
-            </div>
-            <div className="bg-emerald-500/10 p-3 rounded-2xl border border-emerald-500/20">
-              <span className="text-emerald-500 block text-[10px] uppercase font-bold">Uploaded</span>
-              <span className="font-black text-emerald-600 dark:text-emerald-400 text-sm">{importStats.completed}</span>
-            </div>
-            <div className="bg-amber-500/10 p-3 rounded-2xl border border-amber-500/20">
-              <span className="text-amber-500 block text-[10px] uppercase font-bold">Skipped (Existed)</span>
-              <span className="font-black text-amber-600 dark:text-amber-400 text-sm">{importStats.skipped}</span>
-            </div>
-            <div className="bg-rose-500/10 p-3 rounded-2xl border border-rose-500/20">
-              <span className="text-rose-500 block text-[10px] uppercase font-bold">Errors</span>
-              <span className="font-black text-rose-600 dark:text-rose-400 text-sm">{importStats.failed}</span>
-            </div>
-          </div>
-
-          {currentFileName && (
-            <div className="flex items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400 pt-1 border-t border-cyan-500/10">
-              <FileText size={12} className="text-cyan-500" />
-              <span>Current file:</span>
-              <span className="font-mono font-bold text-slate-700 dark:text-slate-300">{currentFileName}</span>
-            </div>
-          )}
         </div>
       )}
 
-      {/* Import Result Summary Card */}
-      {importSummary && !importing && (
-        <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4 shadow-md">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              {importSummary.failed === 0 ? (
-                <div className="w-10 h-10 rounded-2xl bg-emerald-500/15 text-emerald-500 flex items-center justify-center">
-                  <CheckCircle2 className="w-5 h-5" />
-                </div>
-              ) : (
-                <div className="w-10 h-10 rounded-2xl bg-amber-500/15 text-amber-500 flex items-center justify-center">
-                  <AlertCircle className="w-5 h-5" />
-                </div>
-              )}
-              <div>
-                <h3 className="font-black text-base text-slate-900 dark:text-white">
-                  {importSummary.failed === 0 ? 'Bulk Import Complete' : 'Bulk Import Completed with Warnings'}
-                </h3>
-                <p className="text-xs text-slate-500">
-                  {importSummary.imported} certificates newly imported, {importSummary.skipped} already in database.
-                </p>
-              </div>
-            </div>
-            <button
-              onClick={() => setImportSummary(null)}
-              className="text-xs font-bold text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800"
-            >
-              Dismiss
-            </button>
-          </div>
-
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-            <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800">
-              <span className="text-slate-400 block text-[10px] uppercase font-bold">Total Catalog</span>
-              <span className="font-black text-slate-900 dark:text-white text-lg">{importSummary.total}</span>
-            </div>
-            <div className="p-3.5 rounded-2xl bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-200/50 dark:border-emerald-800/50">
-              <span className="text-emerald-500 block text-[10px] uppercase font-bold">Imported</span>
-              <span className="font-black text-emerald-600 dark:text-emerald-400 text-lg">{importSummary.imported}</span>
-            </div>
-            <div className="p-3.5 rounded-2xl bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200/50 dark:border-amber-800/50">
-              <span className="text-amber-500 block text-[10px] uppercase font-bold">Skipped (Duplicate)</span>
-              <span className="font-black text-amber-600 dark:text-amber-400 text-lg">{importSummary.skipped}</span>
-            </div>
-            <div className="p-3.5 rounded-2xl bg-rose-50/50 dark:bg-rose-950/20 border border-rose-200/50 dark:border-rose-800/50">
-              <span className="text-rose-500 block text-[10px] uppercase font-bold">Failed</span>
-              <span className="font-black text-rose-600 dark:text-rose-400 text-lg">{importSummary.failed}</span>
-            </div>
-          </div>
-
-          {failedCertificates.length > 0 && (
-            <div className="space-y-3 pt-3 border-t border-slate-100 dark:border-slate-800">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <span className="text-xs font-bold text-rose-500">
-                  {failedCertificates.length} certificate(s) failed to upload or save:
-                </span>
-                <button
-                  type="button"
-                  onClick={retryFailedImports}
-                  className="rounded-xl bg-rose-600 hover:bg-rose-700 text-white px-3 py-1.5 text-xs font-bold shadow-sm flex items-center gap-1.5 self-start sm:self-auto"
-                >
-                  <RefreshCw size={12} />
-                  <span>Retry Failed Items</span>
-                </button>
-              </div>
-              <div className="max-h-48 overflow-y-auto space-y-2 pr-1">
-                {failedCertificates.map((f, i) => (
-                  <div key={i} className="p-3 rounded-2xl bg-rose-500/10 border border-rose-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
-                    <span className="font-bold text-slate-800 dark:text-slate-200 truncate">{f.item.title}</span>
-                    <span className="text-rose-500 font-mono text-[11px] shrink-0">{f.error}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      <div className="grid lg:grid-cols-[1fr_1.2fr] gap-8">
+      <div className="grid lg:grid-cols-[1fr_1.4fr] gap-8">
         {/* Form */}
-        <form onSubmit={submit} className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 sm:p-8 space-y-4 shadow-sm h-fit">
-          <h2 className="text-lg font-black">{editing ? 'Edit Certificate' : 'Add New Certificate'}</h2>
-          
-          <div className="grid sm:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">Title *</label>
-              <input required value={form.title} onChange={e => change('title', e.target.value)} className="w-full rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-3 text-xs font-bold" placeholder="e.g. AWS Certified Solutions Architect" />
-            </div>
-            <div>
-              <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">Issuer *</label>
-              <input required value={form.issuer} onChange={e => change('issuer', e.target.value)} className="w-full rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-3 text-xs font-bold" placeholder="e.g. Amazon Web Services" />
+        <form onSubmit={submit} className="rounded-3xl border border-slate-800 bg-slate-900 p-6 sm:p-8 space-y-6 h-fit sticky top-8">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-black text-white">{editing ? 'Edit Certificate' : 'Add Certificate'}</h2>
+            <div className="p-2 rounded-xl bg-indigo-500/10 text-indigo-400">
+              {editing ? <Edit2 size={18} /> : <Plus size={18} />}
             </div>
           </div>
 
-          <div className="grid sm:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">Category *</label>
-              <select value={form.category} onChange={e => change('category', e.target.value)} className="w-full rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-3 text-xs font-bold">
-                {CERTIFICATE_CATEGORIES.map(c => <option key={c}>{c}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">Issue Date</label>
-              <input type="date" value={form.issueDate} onChange={e => change('issueDate', e.target.value)} className="w-full rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-3 text-xs font-bold" />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">Skills (comma separated)</label>
-            <input value={form.skills.join(', ')} onChange={e => change('skills', e.target.value.split(',').map(v => v.trim()).filter(Boolean))} className="w-full rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-3 text-xs font-medium" placeholder="Python, TensorFlow, Cloud" />
-          </div>
-
-          <div>
-            <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">Description</label>
-            <textarea rows={3} value={form.description} onChange={e => change('description', e.target.value)} className="w-full rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-3 text-xs font-medium" placeholder="Summary of learning outcomes..." />
-          </div>
-
-          <div className="grid sm:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">Credential ID</label>
-              <input value={form.credentialId || ''} onChange={e => change('credentialId', e.target.value)} className="w-full rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-3 text-xs font-medium" />
-            </div>
-            <div>
-              <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">Verification URL</label>
-              <input type="url" value={form.credentialUrl || ''} onChange={e => change('credentialUrl', e.target.value)} className="w-full rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-3 text-xs font-medium" placeholder="https://..." />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">Certificate File (JPG, PNG, WEBP or PDF; max 15 MB) *</label>
-            <input
-              required={!form.fileUrl}
-              type="file"
-              accept="image/jpeg,image/png,image/webp,application/pdf"
-              onChange={e => {
-                const f = e.target.files?.[0] || null;
-                setFile(f);
-                if (f) {
-                  if (f.size > 15 * 1024 * 1024) {
-                    showToast('File must be smaller than 15 MB.', 'error');
-                    setFile(null);
-                    e.currentTarget.value = '';
-                    return;
-                  }
-                  if (!['image/jpeg', 'image/png', 'image/webp', 'application/pdf'].includes(f.type)) {
-                    showToast('Only JPG, PNG, WEBP or PDF files are accepted.', 'error');
-                    setFile(null);
-                    e.currentTarget.value = '';
-                    return;
-                  }
-                  setProgress(0);
-                  change('fileType', f.type === 'application/pdf' ? 'pdf' : 'image');
-                }
-              }}
-              className="w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-indigo-50 file:text-indigo-600 dark:file:bg-slate-800 dark:file:text-indigo-400"
-            />
-            {progress > 0 && (
-              <div className="mt-2 h-2 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
-                <div className="h-full bg-indigo-600 transition-all" style={{ width: `${progress}%` }} />
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-black uppercase text-slate-500 tracking-wider">Title *</label>
+                <input required value={form.title} onChange={e => change('title', e.target.value)} className="w-full rounded-xl bg-slate-950 border border-slate-800 p-3 text-sm text-white" placeholder="Certificate Name" />
               </div>
-            )}
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-black uppercase text-slate-500 tracking-wider">Issuer *</label>
+                <input required value={form.issuer} onChange={e => change('issuer', e.target.value)} className="w-full rounded-xl bg-slate-950 border border-slate-800 p-3 text-sm text-white" placeholder="Provider" />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-black uppercase text-slate-500 tracking-wider">Category *</label>
+                <select value={form.category} onChange={e => change('category', e.target.value)} className="w-full rounded-xl bg-slate-950 border border-slate-800 p-3 text-sm text-white">
+                  {CERTIFICATE_CATEGORIES.map(c => <option key={c}>{c}</option>)}
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-black uppercase text-slate-500 tracking-wider">Issue Date</label>
+                <input type="date" value={form.issueDate} onChange={e => change('issueDate', e.target.value)} className="w-full rounded-xl bg-slate-950 border border-slate-800 p-3 text-sm text-white" />
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-black uppercase text-slate-500 tracking-wider">Certificate File (Supabase Storage) *</label>
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp,application/pdf"
+                onChange={e => setFile(e.target.files?.[0] || null)}
+                className="w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-indigo-50 file:text-indigo-600 dark:file:bg-slate-800 dark:file:text-indigo-400"
+              />
+              {editing && !file && (
+                <p className="text-[10px] text-slate-500 italic">Leave empty to keep existing file.</p>
+              )}
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-black uppercase text-slate-500 tracking-wider">Skills (Comma Separated)</label>
+              <input value={form.skills.join(', ')} onChange={e => change('skills', e.target.value.split(',').map(s => s.trim()).filter(Boolean))} className="w-full rounded-xl bg-slate-950 border border-slate-800 p-3 text-sm text-white" placeholder="React, Node.js, AWS" />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-black uppercase text-slate-500 tracking-wider">Description</label>
+              <textarea rows={3} value={form.description} onChange={e => change('description', e.target.value)} className="w-full rounded-xl bg-slate-950 border border-slate-800 p-3 text-sm text-white" placeholder="achievement summary..." />
+            </div>
+
+            <div className="flex gap-4 pt-2">
+              <label className="flex items-center gap-2 cursor-pointer group">
+                <input type="checkbox" checked={form.featured} onChange={e => change('featured', e.target.checked)} className="rounded border-slate-700 bg-slate-950 text-indigo-600" />
+                <span className="text-xs font-bold text-slate-400 group-hover:text-white transition-colors">Featured</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer group">
+                <input type="checkbox" checked={form.published} onChange={e => change('published', e.target.checked)} className="rounded border-slate-700 bg-slate-950 text-indigo-600" />
+                <span className="text-xs font-bold text-slate-400 group-hover:text-white transition-colors">Published</span>
+              </label>
+            </div>
           </div>
 
-          <div className="flex flex-wrap gap-6 text-xs font-bold pt-2">
-            <label className="flex gap-2 items-center cursor-pointer">
-              <input type="checkbox" checked={form.featured} onChange={e => change('featured', e.target.checked)} className="rounded text-indigo-600" />
-              Featured Certificate
-            </label>
-            <label className="flex gap-2 items-center cursor-pointer">
-              <input type="checkbox" checked={form.published} onChange={e => change('published', e.target.checked)} className="rounded text-indigo-600" />
-              Publish Publicly
-            </label>
-          </div>
-
-          <div className="flex gap-3 pt-4 border-t border-slate-200 dark:border-slate-800">
-            <button disabled={busy} className="flex-1 rounded-xl bg-indigo-600 hover:bg-indigo-700 py-3 text-xs font-bold text-white shadow-lg shadow-indigo-600/20 flex justify-center gap-2 items-center disabled:opacity-50">
-              {busy ? <Loader2 className="animate-spin" size={16} /> : <Save size={16} />}
-              <span>{busy ? 'Saving...' : 'Save Certificate'}</span>
+          <div className="flex gap-3 pt-6 border-t border-slate-800">
+            <button disabled={busy} className="flex-1 rounded-xl bg-indigo-600 hover:bg-indigo-700 py-3 text-sm font-black text-white shadow-lg shadow-indigo-600/20 flex justify-center items-center gap-2">
+              {busy ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
+              <span>{editing ? 'Update Certificate' : 'Save Certificate'}</span>
             </button>
             {editing && (
-              <button type="button" onClick={() => { setForm(blank()); setEditing(undefined); setFile(null); }} className="rounded-xl border border-slate-200 dark:border-slate-800 px-4 text-xs font-bold text-slate-600 dark:text-slate-300">
-                Cancel
-              </button>
+              <button type="button" onClick={() => { setForm(blank()); setEditing(undefined); setFile(null); }} className="px-6 rounded-xl border border-slate-800 text-sm font-bold text-slate-400 hover:text-white">Cancel</button>
             )}
           </div>
         </form>
 
-        {/* Saved List */}
-        <section className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 sm:p-8 space-y-4 shadow-sm">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div>
-              <h2 className="text-lg font-black">Saved Certificates</h2>
-              <span className="text-xs text-slate-400">{filteredItems.length} of {items.length} records</span>
-            </div>
-            <div className="relative w-full sm:w-56">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
-              <input
-                type="text"
-                placeholder="Search saved..."
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs"
-              />
+        {/* List Section */}
+        <section className="space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <h2 className="text-xl font-black text-white">Certificates ({items.length})</h2>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+              <input value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="Search certificates..." className="pl-10 pr-4 py-2 rounded-xl bg-slate-900 border border-slate-800 text-sm text-white w-full sm:w-64" />
             </div>
           </div>
 
-          {/* Category filter pills */}
-          <div className="flex gap-1.5 overflow-x-auto pb-1 text-xs">
-            {['All', ...CERTIFICATE_CATEGORIES].map(cat => (
-              <button
-                key={cat}
-                onClick={() => setSelectedCategory(cat)}
-                className={`px-3 py-1.5 rounded-lg font-bold whitespace-nowrap transition-colors ${selectedCategory === cat ? 'bg-indigo-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'}`}
-              >
-                {cat}
-              </button>
-            ))}
-          </div>
-
-          {filteredItems.length === 0 ? (
-            <div className="text-center py-16 border border-dashed border-slate-200 dark:border-slate-800 rounded-2xl">
-              <p className="text-xs text-slate-400">No certificates match your search.</p>
-            </div>
-          ) : (
-            <div className="space-y-3 max-h-[600px] overflow-y-auto pr-1">
-              {filteredItems.map(item => (
-                <article key={item.id} className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 p-4 flex items-center justify-between gap-4">
-                  <div className="min-w-0 flex items-center gap-3">
-                    {item.fileUrl && item.fileType === 'image' && (
-                      <img src={item.fileUrl} alt={item.title} className="w-12 h-12 rounded-xl object-cover shrink-0 border border-slate-200 dark:border-slate-800" />
-                    )}
+          <div className="grid gap-3">
+            {filteredItems.map(item => {
+              const displayUrl = resolveCertificateUrl(item.fileUrl || item.sourceAsset || '');
+              return (
+                <article key={item.id} className="group rounded-2xl border border-slate-800 bg-slate-900 p-4 flex items-center justify-between gap-4 hover:border-slate-700 transition-colors">
+                  <div className="flex items-center gap-4 min-w-0">
+                    <div className="w-14 h-14 rounded-xl bg-slate-950 border border-slate-800 overflow-hidden flex-shrink-0 flex items-center justify-center">
+                      {item.fileType === 'pdf' ? (
+                        <FileText className="text-blue-400" size={24} />
+                      ) : (
+                        <img src={displayUrl} alt="" className="w-full h-full object-cover" onError={e => (e.currentTarget.src = 'https://placehold.co/100x100?text=Error')} />
+                      )}
+                    </div>
                     <div className="min-w-0">
-                      <h3 className="font-bold text-xs truncate text-slate-900 dark:text-white">{item.title}</h3>
-                      <p className="text-[11px] text-slate-500 truncate">{item.issuer} · {item.category}</p>
+                      <h3 className="font-bold text-sm text-white truncate">{item.title}</h3>
+                      <div className="flex items-center gap-2 text-[10px] font-bold text-slate-500">
+                        <span className="truncate">{item.issuer}</span>
+                        <span className="w-1 h-1 rounded-full bg-slate-700" />
+                        <span className="text-indigo-400">{item.category}</span>
+                      </div>
+                      <div className="flex items-center gap-1.5 mt-1">
+                        {item.fileUrl?.includes('/') ? (
+                          <span className="px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 text-[8px] font-black uppercase tracking-tighter">Supabase</span>
+                        ) : (
+                          <span className="px-1.5 py-0.5 rounded bg-slate-500/10 text-slate-500 text-[8px] font-black uppercase tracking-tighter">Local</span>
+                        )}
+                        <code className="text-[9px] text-slate-600 truncate max-w-[150px]">{item.fileUrl || item.sourceAsset}</code>
+                      </div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <span className={`text-[10px] font-black uppercase rounded-full px-2.5 py-1 ${item.published ? 'bg-emerald-500/15 text-emerald-500' : 'bg-amber-500/15 text-amber-500'}`}>
-                      {item.published ? 'Published' : 'Draft'}
-                    </span>
-                    <button onClick={() => edit(item)} title="Edit" className="p-2 rounded-xl border border-slate-200 dark:border-slate-800 text-indigo-600 hover:bg-slate-100 dark:hover:bg-slate-800">
-                      <Edit2 size={13} />
+                  <div className="flex items-center gap-2 opacity-50 group-hover:opacity-100 transition-opacity">
+                    <button onClick={() => saveCertificate({ ...item, published: !item.published }, item.id)} title={item.published ? 'Unpublish' : 'Publish'} className={`p-2 rounded-xl ${item.published ? 'text-emerald-400 bg-emerald-400/5' : 'text-amber-400 bg-amber-400/5'}`}>
+                      {item.published ? <Eye size={16} /> : <EyeOff size={16} />}
                     </button>
-                    <button onClick={() => saveCertificate({ ...item, published: !item.published }, item.id)} title={item.published ? 'Unpublish' : 'Publish'} className="p-2 rounded-xl border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800">
-                      {item.published ? <EyeOff size={13} className="text-amber-500" /> : <Eye size={13} className="text-emerald-500" />}
-                    </button>
-                    <button onClick={() => setDeletingCert(item)} title="Delete" className="p-2 rounded-xl border border-rose-200 dark:border-rose-900/50 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-500">
-                      <Trash2 size={13} />
-                    </button>
+                    <button onClick={() => edit(item)} className="p-2 rounded-xl text-indigo-400 bg-indigo-400/5 hover:bg-indigo-400/10"><Edit2 size={16} /></button>
+                    <button onClick={() => setDeletingCert(item)} className="p-2 rounded-xl text-rose-400 bg-rose-400/5 hover:bg-rose-400/10"><Trash2 size={16} /></button>
                   </div>
                 </article>
-              ))}
-            </div>
-          )}
+              );
+            })}
+          </div>
         </section>
       </div>
 
-      {/* DELETE CONFIRMATION MODAL */}
+      {/* Diagnostic Modal */}
+      <AnimatePresence>
+        {diagnosticOpen && (
+          <div className="fixed inset-0 z-[100] bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }} className="bg-slate-900 border border-slate-800 rounded-3xl max-w-lg w-full p-8 space-y-6">
+              <div className="flex justify-between items-start">
+                <div className="space-y-1">
+                  <h3 className="text-xl font-black text-white">Supabase Diagnostic</h3>
+                  <p className="text-xs text-slate-400">Verifying Storage proxy and Firestore persistence.</p>
+                </div>
+                <button onClick={() => setDiagnosticOpen(false)} className="text-slate-500 hover:text-white font-bold text-xs">Dismiss</button>
+              </div>
+
+              {diagnosticRunning ? (
+                <div className="py-12 text-center space-y-4">
+                  <Loader2 className="w-10 h-10 text-indigo-500 animate-spin mx-auto" />
+                  <p className="text-xs font-bold text-slate-300">Testing End-to-End Bridge...</p>
+                  <p className="text-[10px] text-slate-500 uppercase tracking-widest">Auth → Local Fetch → Supabase Proxy → Firestore</p>
+                </div>
+              ) : diagnosticResult ? (
+                <div className="space-y-4">
+                  <div className={`p-4 rounded-2xl flex items-start gap-3 ${diagnosticResult.success ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'}`}>
+                    {diagnosticResult.success ? <CheckCircle2 size={20} /> : <AlertCircle size={20} />}
+                    <div>
+                      <p className="text-sm font-bold">{diagnosticResult.success ? 'System Operational' : 'Diagnostic Failure'}</p>
+                      <p className="text-xs opacity-80 mt-1">{diagnosticResult.details}</p>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 text-[11px] font-mono">
+                    <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
+                      <span className="text-slate-500 block uppercase mb-1">Stage</span>
+                      <span className="text-white font-bold">{diagnosticResult.stage}</span>
+                    </div>
+                    <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
+                      <span className="text-slate-500 block uppercase mb-1">Supabase Path</span>
+                      <span className="text-white font-bold truncate block">{diagnosticResult.storagePath || '---'}</span>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Delete Confirmation */}
       <AnimatePresence>
         {deletingCert && (
-          <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
-            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl text-center">
-              <div className="w-12 h-12 rounded-2xl bg-rose-500/10 text-rose-500 flex items-center justify-center mx-auto">
-                <AlertCircle className="w-6 h-6" />
+          <div className="fixed inset-0 z-[100] bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className="bg-slate-900 border border-slate-800 rounded-3xl max-w-sm w-full p-8 text-center space-y-6">
+              <div className="w-16 h-16 rounded-3xl bg-rose-500/10 text-rose-500 flex items-center justify-center mx-auto">
+                <Trash2 size={32} />
               </div>
-              <h3 className="text-lg font-bold">Delete Certificate?</h3>
-              <p className="text-xs text-slate-500">Are you sure you want to delete <strong className="text-slate-800 dark:text-slate-200">"{deletingCert.title}"</strong>?</p>
-              <div className="flex gap-3 pt-2">
-                <button onClick={() => setDeletingCert(null)} className="flex-1 py-3 rounded-xl border border-slate-200 dark:border-slate-800 text-xs font-bold">Cancel</button>
-                <button onClick={confirmDelete} className="flex-1 py-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold">Confirm Delete</button>
+              <div className="space-y-2">
+                <h3 className="text-xl font-black text-white">Delete Certificate?</h3>
+                <p className="text-xs text-slate-400">Removing <span className="text-white font-bold">"{deletingCert.title}"</span> will delete the Firestore record and the file from Supabase Storage.</p>
+              </div>
+              <div className="flex gap-3">
+                <button onClick={() => setDeletingCert(null)} className="flex-1 py-3 rounded-xl border border-slate-800 text-sm font-bold text-slate-400">Cancel</button>
+                <button onClick={confirmDelete} className="flex-1 py-3 rounded-xl bg-rose-600 text-white text-sm font-black">Delete Everywhere</button>
               </div>
             </motion.div>
           </div>

@@ -3,17 +3,20 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Mail, MessageSquare, Github, Linkedin, Instagram, Copy, Check, Send, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
 import { collection, addDoc } from 'firebase/firestore';
 import { db } from '../services/academicFirebase';
-import { SITE_CONFIG, SOCIAL_LINKS } from '../data/portfolio';
+import { SOCIAL_LINKS } from '../data/portfolio';
+import { usePortfolio } from '../context/PortfolioContext';
+
 import { ScrollReveal } from './ScrollReveal';
 
 export const Contact: React.FC = () => {
+  const { settings } = usePortfolio();
   const [copied, setCopied] = useState(false);
   const [form, setForm] = useState({ name: '', email: '', subject: '', message: '' });
   const [sending, setSending] = useState(false);
   const [submitStatus, setSubmitStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   const handleCopyEmail = () => {
-    navigator.clipboard.writeText(SITE_CONFIG.email);
+    navigator.clipboard.writeText(settings.email);
     setCopied(true);
     setTimeout(() => setCopied(false), 3000);
   };
@@ -23,7 +26,7 @@ export const Contact: React.FC = () => {
   const linkedinLink = SOCIAL_LINKS.find(s => s.platform === 'LinkedIn');
   const instagramLink = SOCIAL_LINKS.find(s => s.platform === 'Instagram');
 
-  const whatsappUrl = whatsappLink?.url || `https://wa.me/${SITE_CONFIG.whatsappNumberDigits}`;
+  const whatsappUrl = whatsappLink?.url || `https://wa.me/${settings.whatsapp.replace(/\+/g, '')}`;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -92,8 +95,8 @@ export const Contact: React.FC = () => {
                     </div>
                     <div className="min-w-0">
                       <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Email Me</div>
-                      <a href={`mailto:${SITE_CONFIG.email}`} className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white hover:underline truncate block">
-                        {SITE_CONFIG.email}
+                      <a href={`mailto:${settings.email}`} className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white hover:underline truncate block">
+                        {settings.email}
                       </a>
                     </div>
                   </div>
@@ -117,7 +120,7 @@ export const Contact: React.FC = () => {
                     <div className="min-w-0">
                       <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">WhatsApp Chat</div>
                       <span className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white truncate block">
-                        {SITE_CONFIG.whatsapp}
+                        {settings.whatsapp}
                       </span>
                     </div>
                   </div>

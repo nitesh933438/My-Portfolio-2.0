@@ -2,6 +2,7 @@ import { useState, useMemo, FC } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Search, ExternalLink, Github, ArrowRight, FolderGit2, XCircle, LayoutGrid, Clock, Rocket, Beaker, Archive } from 'lucide-react';
 import { PROJECTS, Project, ProjectCategory, ProjectStatus, getDerivedData } from '../data/portfolio';
+import { resolveProjectImageUrl } from '../services/projectFirebase';
 
 interface ProjectsCatalogueProps {
   onSelectProject: (project: Project) => void;
@@ -70,7 +71,7 @@ export const ProjectsCatalogue: FC<ProjectsCatalogueProps> = ({ onSelectProject 
     >
       <div className="relative aspect-video overflow-hidden cursor-pointer" onClick={() => onSelectProject(project)}>
         <img
-          src={project.mainScreenshot}
+          src={resolveProjectImageUrl(project.mainScreenshot)}
           alt={project.title}
           loading="lazy"
           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"

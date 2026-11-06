@@ -15,7 +15,9 @@ import {
   serverTimestamp 
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
+import { SITE_CONFIG } from '../data/portfolio';
 import { ACADEMIC_DATA, AcademicProfileData, UniversityRecord, SemesterResult } from '../data/education';
+
 
 // Initialize Firebase App
 export const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
@@ -143,7 +145,7 @@ export const rollbackSemesterResult = async (
   if (!snap.exists()) return false;
 
   const currentUniversity = snap.data() as UniversityRecord;
-  const updatedSemesters = currentUniversity.semesters.map(sem => {
+  const updatedSemesters = currentUniversity.semesters.map((sem: SemesterResult) => {
     if (sem.semesterNumber === semesterNumber) {
       return {
         ...sem,
@@ -202,7 +204,7 @@ export const publishSemesterResult = async (
     : ACADEMIC_DATA.university;
 
   // Replace or update the specific semester
-  const updatedSemesters = currentUniversity.semesters.map((sem) => {
+  const updatedSemesters = currentUniversity.semesters.map((sem: SemesterResult) => {
     if (sem.semesterNumber === semesterData.semesterNumber) {
       return {
         ...sem,
@@ -215,7 +217,7 @@ export const publishSemesterResult = async (
 
   const updatedHighlights = [
     `Semester ${semesterData.semesterNumber} SGPA: ${semesterData.sgpa?.toFixed(2)} (Declared ${semesterData.resultDeclarationDate || 'Recently'})`,
-    ...currentUniversity.highlights.filter(h => !h.includes(`Semester ${semesterData.semesterNumber}`)).slice(0, 3)
+    ...currentUniversity.highlights.filter((h: string) => !h.includes(`Semester ${semesterData.semesterNumber}`)).slice(0, 3)
   ];
 
   const updatePayload: any = {
@@ -252,3 +254,63 @@ export const publishSemesterResult = async (
 
   return true;
 };
+
+/**
+ * Site Metadata & Configuration
+ */
+
+export interface SiteSettings {
+  name: string;
+  title: string;
+  email: string;
+  whatsapp: string;
+  location: string;
+  bio: string;
+  profilePhoto: string;
+  resumeUrl: string;
+  github: string;
+  linkedin: string;
+  instagram: string;
+  updatedAt?: string;
+}
+
+export const initializeSiteSettingsInFirestore = async () => {
+  try {
+    const configDocRef = doc(db, 'site_metadata', 'portfolio_config');
+    const existingSnap = await getDoc(configDocRef);
+
+    if (!existingSnap.exists()) {
+      await setDoc(configDocRef, {
+        ...SITE_CONFIG,
+        updatedAt: new Date().toISOString(),
+      });
+      console.log('Initialized site settings in Firestore');
+    }
+  } catch (error) {
+    console.warn('Could not auto-seed Firestore site settings:', error);
+  }
+};
+
+export const subscribeToSiteSettings = (
+  callback: (data: SiteSettings) => void
+) => {
+  const configDocRef = doc(db, 'site_metadata', 'portfolio_config');
+
+  const unsubscribe = onSnapshot(
+    configDocRef,
+    (docSnap) => {
+      if (docSnap.exists()) {
+        callback(docSnap.data() as SiteSettings);
+      } else {
+        callback(SITE_CONFIG as SiteSettings);
+      }
+    },
+    (error) => {
+      console.warn('Firestore settings subscription fallback:', error.message);
+      callback(SITE_CONFIG as SiteSettings);
+    }
+  );
+
+  return unsubscribe;
+};
+

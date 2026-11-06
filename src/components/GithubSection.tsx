@@ -1,10 +1,12 @@
 import React from 'react';
 import { motion } from 'motion/react';
 import { Github, ExternalLink, GitBranch, GitCommit, Code, Star } from 'lucide-react';
-import { SITE_CONFIG } from '../data/portfolio';
+import { usePortfolio } from '../context/PortfolioContext';
 import { ScrollReveal } from './ScrollReveal';
 
 export const GithubSection: React.FC = () => {
+  const { settings } = usePortfolio();
+  const githubUser = settings.github.split('/').pop() || 'nitesh933438';
   return (
     <section className="py-20 bg-slate-50 dark:bg-slate-950 border-t border-slate-200 dark:border-slate-800 overflow-hidden">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -43,13 +45,13 @@ export const GithubSection: React.FC = () => {
 
             <div className="pt-4">
               <a
-                href="https://github.com/nitesh933438"
+                href={settings.github || 'https://github.com/nitesh933438'}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-2.5 px-6 py-4 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm transition-all shadow-xl shadow-indigo-600/30 active:scale-95"
               >
                 <Github className="w-5 h-5" />
-                <span>Visit @nitesh933438 on GitHub</span>
+                <span>Visit @{githubUser} on GitHub</span>
                 <ExternalLink className="w-4 h-4" />
               </a>
             </div>

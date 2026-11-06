@@ -1,7 +1,8 @@
 import { useState, useEffect, FC } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Moon, Sun, Menu, X } from 'lucide-react';
-import { SITE_CONFIG, NAV_LINKS } from '../data/portfolio';
+import { NAV_LINKS } from '../data/portfolio';
+import { usePortfolio } from '../context/PortfolioContext';
 import { NKLogo } from './NKLogo';
 
 interface NavbarProps {
@@ -11,6 +12,7 @@ interface NavbarProps {
 }
 
 export const Navbar: FC<NavbarProps> = ({ theme, setTheme, onOpenResume }) => {
+  const { settings } = usePortfolio();
   const [isScrolled, setIsScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -41,7 +43,7 @@ export const Navbar: FC<NavbarProps> = ({ theme, setTheme, onOpenResume }) => {
             <div className="min-w-0">
               <div className="flex items-center gap-1.5 sm:gap-2">
                 <span className="text-base sm:text-lg font-bold tracking-tight text-slate-900 dark:text-white block leading-tight truncate">
-                  {SITE_CONFIG.name}
+                  {settings.name}
                 </span>
                 <span className="inline-flex px-1.5 py-0.5 text-[8px] sm:text-[9px] font-extrabold uppercase tracking-widest rounded bg-gradient-to-r from-blue-500/10 to-violet-500/10 dark:from-blue-500/20 dark:to-violet-500/20 border border-blue-500/30 text-blue-600 dark:text-cyan-400 shrink-0">
                   PRO

@@ -1,10 +1,13 @@
 import React from 'react';
 import { motion } from 'motion/react';
 import { User, MapPin, GraduationCap, Briefcase, Mail, Phone } from 'lucide-react';
-import { SITE_CONFIG, EDUCATION_DATA } from '../data/portfolio';
+import { EDUCATION_DATA } from '../data/portfolio';
+import { usePortfolio } from '../context/PortfolioContext';
 import { ScrollReveal } from './ScrollReveal';
 
 export const About: React.FC = () => {
+  const { settings } = usePortfolio();
+
   return (
     <section id="about" className="py-20 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 overflow-hidden">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -12,7 +15,7 @@ export const About: React.FC = () => {
         <ScrollReveal>
           <div className="text-center max-w-3xl mx-auto mb-16">
             <h2 className="text-xs font-bold uppercase tracking-widest text-indigo-600 dark:text-indigo-400 mb-2">Get to Know Me</h2>
-            <h3 className="text-3xl sm:text-4xl font-extrabold text-slate-900 dark:text-white">About Nitesh Kumar</h3>
+            <h3 className="text-3xl sm:text-4xl font-extrabold text-slate-900 dark:text-white">About {settings.name}</h3>
             <p className="mt-4 text-base sm:text-lg text-slate-600 dark:text-slate-300">
               A dedicated software engineering student and full-stack developer committed to building impactful applications.
             </p>
@@ -29,7 +32,7 @@ export const About: React.FC = () => {
                 </h4>
                 
                 <p className="text-slate-600 dark:text-slate-300 leading-relaxed text-base">
-                  {SITE_CONFIG.bio}
+                  {settings.bio}
                 </p>
 
                 <p className="text-slate-600 dark:text-slate-300 leading-relaxed text-base">
@@ -39,7 +42,7 @@ export const About: React.FC = () => {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4">
                   <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/50">
                     <div className="text-xs font-medium text-slate-500 dark:text-slate-400">Location</div>
-                    <div className="text-sm font-semibold text-slate-900 dark:text-white mt-1">{SITE_CONFIG.location}</div>
+                    <div className="text-sm font-semibold text-slate-900 dark:text-white mt-1">{settings.location}</div>
                   </div>
                   <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/50">
                     <div className="text-xs font-medium text-slate-500 dark:text-slate-400">Education</div>
@@ -61,7 +64,7 @@ export const About: React.FC = () => {
               <div className="space-y-4 text-sm">
                 <div className="flex justify-between py-2 border-b border-slate-200 dark:border-slate-800">
                   <span className="text-slate-500 dark:text-slate-400">Full Name</span>
-                  <span className="font-semibold text-slate-900 dark:text-white">{SITE_CONFIG.name}</span>
+                  <span className="font-semibold text-slate-900 dark:text-white">{settings.name}</span>
                 </div>
                 <div className="flex justify-between py-2 border-b border-slate-200 dark:border-slate-800">
                   <span className="text-slate-500 dark:text-slate-400">Degree</span>
@@ -77,7 +80,7 @@ export const About: React.FC = () => {
                 </div>
                 <div className="flex justify-between py-2">
                   <span className="text-slate-500 dark:text-slate-400">Email</span>
-                  <a href={`mailto:${SITE_CONFIG.email}`} className="font-semibold text-indigo-600 dark:text-indigo-400 hover:underline truncate max-w-[150px] sm:max-w-none">{SITE_CONFIG.email}</a>
+                  <a href={`mailto:${settings.email}`} className="font-semibold text-indigo-600 dark:text-indigo-400 hover:underline truncate max-w-[150px] sm:max-w-none">{settings.email}</a>
                 </div>
               </div>
 

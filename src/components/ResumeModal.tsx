@@ -1,7 +1,11 @@
-import { FC } from 'react';
+import React, { useState, useEffect, FC } from 'react';
+
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Download, FileText, CheckCircle, ExternalLink, Printer } from 'lucide-react';
-import { SITE_CONFIG, SOCIAL_LINKS } from '../data/portfolio';
+import { X, Download, FileText, CheckCircle, ExternalLink, Printer, Loader2 } from 'lucide-react';
+import { SOCIAL_LINKS } from '../data/portfolio';
+import { usePortfolio } from '../context/PortfolioContext';
+import { resolveAssetUrl, getSignedUrlProxy } from '../services/supabaseStorage';
+import { auth } from '../services/academicFirebase';
 
 interface ResumeModalProps {
   isOpen: boolean;
@@ -9,6 +13,37 @@ interface ResumeModalProps {
 }
 
 export const ResumeModal: FC<ResumeModalProps> = ({ isOpen, onClose }) => {
+  const { settings } = usePortfolio();
+  const [resolvedUrl, setResolvedUrl] = useState<string>('');
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (isOpen && settings.resumeUrl) {
+      const loadResume = async () => {
+        // If it's a supabase path (e.g. resume/myresume.pdf), we might want a signed URL for better security
+        // even if the bucket has some public access.
+        const isSupabase = settings.resumeUrl.includes('/') && !settings.resumeUrl.startsWith('/') && !settings.resumeUrl.startsWith('.');
+        
+        if (isSupabase) {
+          try {
+            setLoading(true);
+            // We can try to get a signed URL if we are logged in as admin, 
+            // but for public users we just use the public URL resolved by resolveAssetUrl.
+            // Since this modal is for public users too, we use the public URL by default.
+            setResolvedUrl(resolveAssetUrl(settings.resumeUrl, 'resume'));
+          } catch (err) {
+            console.error('Failed to resolve resume URL:', err);
+          } finally {
+            setLoading(false);
+          }
+        } else {
+          setResolvedUrl(resolveAssetUrl(settings.resumeUrl, 'resume'));
+        }
+      };
+      loadResume();
+    }
+  }, [isOpen, settings.resumeUrl]);
+
   if (!isOpen) return null;
 
   const handlePrint = () => {
@@ -39,7 +74,7 @@ export const ResumeModal: FC<ResumeModalProps> = ({ isOpen, onClose }) => {
                 <div className="min-w-0">
                   <h3 className="text-base sm:text-xl font-bold text-slate-900 dark:text-white leading-tight truncate">Curriculum Vitae</h3>
                   <div className="flex items-center gap-2 mt-0.5 sm:mt-1">
-                    <span className="text-[10px] font-bold uppercase tracking-widest text-indigo-600 dark:text-indigo-400 truncate">{SITE_CONFIG.name}</span>
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-indigo-600 dark:text-indigo-400 truncate">{settings.name}</span>
                     <span className="w-1 h-1 rounded-full bg-slate-300 dark:bg-slate-700 shrink-0" />
                     <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500 truncate">Official Document</span>
                   </div>
@@ -101,11 +136,23 @@ export const ResumeModal: FC<ResumeModalProps> = ({ isOpen, onClose }) => {
               {/* PDF Preview Area */}
               <div className="flex-1 bg-slate-200 dark:bg-slate-800 relative group min-h-[400px] flex items-center justify-center">
                 <div className="hidden sm:block w-full h-full">
-                  <iframe
-                    src={`${SITE_CONFIG.resumeUrl}#toolbar=0&navpanes=0&scrollbar=0`}
-                    className="w-full h-full border-none"
-                    title="Resume Preview"
-                  />
+                  {loading ? (
+                    <div className="w-full h-full flex flex-col items-center justify-center gap-4 text-slate-400">
+                      <Loader2 className="animate-spin" size={32} />
+                      <span className="text-xs font-bold uppercase tracking-widest">Loading Document...</span>
+                    </div>
+                  ) : resolvedUrl ? (
+                    <iframe
+                      src={`${resolvedUrl}#toolbar=0&navpanes=0&scrollbar=0`}
+                      className="w-full h-full border-none"
+                      title="Resume Preview"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex flex-col items-center justify-center gap-4 text-slate-400">
+                      <FileText size={32} />
+                      <span className="text-xs font-bold uppercase tracking-widest">No Resume Found</span>
+                    </div>
+                  )}
                 </div>
                 
                 {/* Mobile Preview Placeholder */}
@@ -118,7 +165,7 @@ export const ResumeModal: FC<ResumeModalProps> = ({ isOpen, onClose }) => {
                     <p className="text-xs text-slate-500 dark:text-slate-400">PDF preview is optimized for larger screens. Tap below to view or download the full document.</p>
                   </div>
                   <a
-                    href={SITE_CONFIG.resumeUrl}
+                    href={resolvedUrl || '#'}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex items-center gap-2 px-6 py-3 rounded-xl bg-indigo-600 text-white text-xs font-bold uppercase tracking-widest shadow-lg"
@@ -131,7 +178,7 @@ export const ResumeModal: FC<ResumeModalProps> = ({ isOpen, onClose }) => {
                 {/* PDF Toolbar Overlay (Desktop only) */}
                 <div className="hidden sm:flex absolute top-4 right-4 gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                   <a
-                    href={SITE_CONFIG.resumeUrl}
+                    href={resolvedUrl || '#'}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="p-3 rounded-xl bg-white dark:bg-slate-900 shadow-xl text-slate-900 dark:text-white hover:text-indigo-600 transition-all"
@@ -158,8 +205,8 @@ export const ResumeModal: FC<ResumeModalProps> = ({ isOpen, onClose }) => {
                   Close
                 </button>
                 <a
-                  href={SITE_CONFIG.resumeUrl}
-                  download="Nitesh_Kumar_Resume.pdf"
+                  href={resolvedUrl || '#'}
+                  download={`${settings.name.replace(/\s+/g, '_')}_Resume.pdf`}
                   className="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 sm:gap-3 px-5 sm:px-10 py-3 sm:py-4 rounded-xl sm:rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs uppercase tracking-wider sm:tracking-widest transition-all shadow-lg shadow-indigo-600/20 active:scale-95 text-center"
                 >
                   <Download className="w-4 h-4 sm:w-5 sm:h-5" />

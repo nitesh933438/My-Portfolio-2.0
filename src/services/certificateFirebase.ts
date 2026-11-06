@@ -1,28 +1,34 @@
-import { collection, addDoc, deleteDoc, doc, onSnapshot, orderBy, query, updateDoc, where, setDoc } from 'firebase/firestore';
-import { getStorage, ref, uploadBytesResumable, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
-import { app, db, auth, isUserAdmin } from './academicFirebase';
+import { collection, addDoc, deleteDoc, doc, getDoc, onSnapshot, orderBy, query, setDoc, where } from 'firebase/firestore';
+import { User } from 'firebase/auth';
+import { db, auth, isUserAdmin, ADMIN_EMAIL } from './academicFirebase';
+import { uploadFileProxy, deleteFileProxy, getStorageUrl } from './supabaseStorage';
 import type { PortfolioCertificate } from '../types/certificate';
 
-export const storage = getStorage(app);
 export const certificatesRef = collection(db, 'certifications');
 
-export const getSafeCertificateContentType = (fileName: string, detectedType?: string): string => {
-  if (detectedType && ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'].includes(detectedType)) {
-    return detectedType;
+/**
+ * Resolves the final public URL for a certificate asset.
+ * Checks if it's a Supabase path, a full URL, or a local static asset.
+ */
+export const resolveCertificateUrl = (pathOrUrl: string): string => {
+  if (!pathOrUrl) return '';
+  if (pathOrUrl.startsWith('http')) return pathOrUrl;
+  
+  // If it's a Supabase path (contains a folder structure or starts with common folders)
+  if (pathOrUrl.includes('/') && !pathOrUrl.startsWith('./') && !pathOrUrl.startsWith('/')) {
+    return getStorageUrl(pathOrUrl);
   }
-  const ext = fileName.split('.').pop()?.toLowerCase();
-  switch (ext) {
-    case 'png':
-      return 'image/png';
-    case 'webp':
-      return 'image/webp';
-    case 'pdf':
-      return 'application/pdf';
-    case 'jpg':
-    case 'jpeg':
-    default:
-      return 'image/jpeg';
+
+  // Fallback to local static asset
+  const baseUrl = import.meta.env.BASE_URL || '/';
+  const prefix = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
+  const cleanPath = pathOrUrl.startsWith('/') ? pathOrUrl.slice(1) : pathOrUrl;
+  
+  if (cleanPath.startsWith('certificates/')) {
+    return `${prefix}${cleanPath}`;
   }
+  
+  return `${prefix}certificates/${cleanPath}`;
 };
 
 export const subscribeToCertificates = (callback: (items: PortfolioCertificate[]) => void, admin = false) => {
@@ -33,11 +39,19 @@ export const subscribeToCertificates = (callback: (items: PortfolioCertificate[]
   });
 };
 
+/**
+ * Saves certificate metadata to Firestore. 
+ */
 export const saveCertificate = async (data: Omit<PortfolioCertificate, 'id'>, id?: string): Promise<string> => {
   if (!isUserAdmin(auth.currentUser)) {
-    throw new Error('Admin access required. Please sign in as nitesh933438@gmail.com.');
+    throw new Error('Admin access required. Please sign in as ' + ADMIN_EMAIL + '.');
   }
-  const payload = { ...data, updatedAt: new Date().toISOString() };
+  
+  const payload = { 
+    ...data, 
+    updatedAt: new Date().toISOString() 
+  };
+
   if (id) {
     await setDoc(doc(db, 'certifications', id), payload, { merge: true });
     return id;
@@ -47,133 +61,107 @@ export const saveCertificate = async (data: Omit<PortfolioCertificate, 'id'>, id
   }
 };
 
+/**
+ * Removes a certificate from Firestore and its associated file from Supabase if applicable.
+ */
 export const removeCertificate = async (item: PortfolioCertificate) => {
   if (!isUserAdmin(auth.currentUser)) {
-    throw new Error('Admin access required. Please sign in as nitesh933438@gmail.com.');
+    throw new Error('Admin access required. Please sign in as ' + ADMIN_EMAIL + '.');
   }
-  await deleteDoc(doc(db, 'certifications', item.id));
-  if (item.fileUrl && item.fileUrl.includes('firebasestorage.googleapis.com')) {
+
+  // Detect Supabase path: contains / but doesn't start with http or /
+  if (item.fileUrl && item.fileUrl.includes('/') && !item.fileUrl.startsWith('http') && !item.fileUrl.startsWith('/')) {
     try {
-      await deleteObject(ref(storage, item.fileUrl));
-    } catch {
-      /* file may already be absent or external */
+      const idToken = await auth.currentUser?.getIdToken();
+      if (idToken) await deleteFileProxy(item.fileUrl, idToken);
+    } catch (e) {
+      console.warn('Could not delete Supabase asset:', e);
     }
   }
+
+  await deleteDoc(doc(db, 'certifications', item.id));
 };
 
-/**
- * Uploads a local Blob directly using uploadBytes with strict timeout and error capture.
- * Perfect for bulk imports to prevent resumable upload connection hangs.
- */
-export const uploadCertificateBlob = async (
-  blob: Blob,
-  fileName: string,
-  timeoutMs = 35000
-): Promise<string> => {
-  if (!isUserAdmin(auth.currentUser)) {
-    throw new Error('Admin access required. Please sign in as nitesh933438@gmail.com.');
+export interface ImportDiagnostic {
+  success: boolean;
+  stage: 'auth' | 'asset_fetch' | 'supabase_upload' | 'firestore_save' | 'completed';
+  authEmail: string;
+  isAdmin: boolean;
+  details: string;
+  timestamp: string;
+  storagePath?: string;
+  storageUrl?: string;
+}
+
+export const testSingleCertificateDiagnostic = async (currentUser: User | null): Promise<ImportDiagnostic> => {
+  const diagnostic: ImportDiagnostic = {
+    success: false,
+    stage: 'auth',
+    authEmail: currentUser?.email || 'unauthenticated',
+    isAdmin: isUserAdmin(currentUser),
+    details: 'Initiating Supabase + Firestore diagnostic...',
+    timestamp: new Date().toISOString()
+  };
+
+  if (!currentUser || !isUserAdmin(currentUser)) {
+    diagnostic.details = `Authentication failed: User is not authorized as ${ADMIN_EMAIL}.`;
+    return diagnostic;
   }
-  const safeContentType = getSafeCertificateContentType(fileName, blob.type);
-  const safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, '-');
-  const storagePath = `certifications/${Date.now()}-${safeName}`;
-  const fileRef = ref(storage, storagePath);
 
-  let timer: any;
-  const timeoutPromise = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => {
-      reject(new Error(`Storage upload timed out for "${fileName}" after ${Math.round(timeoutMs / 1000)}s. Please check internet connection or Storage permissions.`));
-    }, timeoutMs);
-  });
+  const idToken = await currentUser.getIdToken();
 
+  diagnostic.stage = 'asset_fetch';
+  let blob: Blob;
   try {
-    const uploadTask = uploadBytes(fileRef, blob, {
-      contentType: safeContentType,
-      customMetadata: {
-        originalName: fileName,
-        uploadedBy: auth.currentUser?.email || '',
-        uploadedAt: new Date().toISOString()
-      }
-    });
-
-    const snapshot = await Promise.race([uploadTask, timeoutPromise]);
-    clearTimeout(timer);
-
-    const downloadUrl = await Promise.race([getDownloadURL(snapshot.ref), timeoutPromise]);
-    return downloadUrl;
-  } catch (err: any) {
-    clearTimeout(timer);
-    if (err?.code === 'storage/unauthorized') {
-      throw new Error(`Firebase Storage permission denied for ${fileName}. Ensure nitesh933438@gmail.com is authorized.`);
-    }
-    if (err?.code === 'storage/quota-exceeded') {
-      throw new Error(`Firebase Storage daily quota exceeded.`);
-    }
-    throw err instanceof Error ? err : new Error(String(err));
+    const response = await fetch('/certificates/certificate-01.jpg');
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    blob = await response.blob();
+  } catch (e: any) {
+    diagnostic.details = `Failed to fetch test asset: ${e.message}`;
+    return diagnostic;
   }
-};
 
-/**
- * Uploads a File using uploadBytesResumable with progress callback and timeout protection.
- * Fixes the unhandled promise rejection bug in task.on and adds settled guard.
- */
-export const uploadCertificateFile = (
-  file: File,
-  onProgress?: (value: number) => void,
-  timeoutMs = 45000
-): Promise<string> => {
-  return new Promise((resolve, reject) => {
-    if (!isUserAdmin(auth.currentUser)) {
-      return reject(new Error('Admin access required. Please sign in as nitesh933438@gmail.com.'));
-    }
-    const safeContentType = getSafeCertificateContentType(file.name, file.type);
-    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '-');
-    const storagePath = `certifications/${Date.now()}-${safeName}`;
-    const fileRef = ref(storage, storagePath);
+  diagnostic.stage = 'supabase_upload';
+  try {
+    const file = new File([blob], 'diagnostic-test.jpg', { type: 'image/jpeg' });
+    const { path, url } = await uploadFileProxy(file, 'certificates', idToken);
+    diagnostic.storagePath = path;
+    diagnostic.storageUrl = url;
+  } catch (e: any) {
+    diagnostic.details = `Supabase upload failed: ${e.message}`;
+    return diagnostic;
+  }
 
-    let hasSettled = false;
-    const timer = setTimeout(() => {
-      if (!hasSettled) {
-        hasSettled = true;
-        reject(new Error(`Upload timed out for "${file.name}" after ${Math.round(timeoutMs / 1000)}s.`));
-      }
-    }, timeoutMs);
+  diagnostic.stage = 'firestore_save';
+  try {
+    const testData = {
+      title: 'Diagnostic Test Certificate',
+      issuer: 'System',
+      category: 'Other' as any,
+      description: 'Automated diagnostic test of Supabase + Firestore bridge.',
+      issueDate: new Date().toISOString().split('T')[0],
+      credentialId: 'TEST-123',
+      credentialUrl: '',
+      imageUrl: diagnostic.storageUrl || '',
+      fileUrl: diagnostic.storagePath || '', 
+      fileType: 'image' as const,
+      skills: ['Testing'],
+      featured: false,
+      published: false,
+      displayOrder: 999
+    };
+    const docId = await saveCertificate(testData);
+    await deleteDoc(doc(db, 'certifications', docId));
+    if (diagnostic.storagePath) await deleteFileProxy(diagnostic.storagePath, idToken);
+    diagnostic.success = true;
+    diagnostic.details = 'End-to-end diagnostic passed!';
+  } catch (e: any) {
+    diagnostic.details = `Firestore operation failed: ${e.message}`;
+    return diagnostic;
+  }
 
-    const task = uploadBytesResumable(fileRef, file, { contentType: safeContentType });
-
-    task.on(
-      'state_changed',
-      snapshot => {
-        if (onProgress && snapshot.totalBytes > 0) {
-          const pct = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
-          onProgress(pct);
-        }
-      },
-      error => {
-        clearTimeout(timer);
-        if (!hasSettled) {
-          hasSettled = true;
-          if (error?.code === 'storage/unauthorized') {
-            reject(new Error(`Storage permission denied for ${file.name}.`));
-          } else {
-            reject(error);
-          }
-        }
-      },
-      async () => {
-        clearTimeout(timer);
-        if (!hasSettled) {
-          try {
-            const url = await getDownloadURL(task.snapshot.ref);
-            hasSettled = true;
-            resolve(url);
-          } catch (err) {
-            hasSettled = true;
-            reject(err);
-          }
-        }
-      }
-    );
-  });
+  diagnostic.stage = 'completed';
+  return diagnostic;
 };
 
 export const markBundledCertificatesImported = async () => {
@@ -189,6 +177,7 @@ export const subscribeToPublicCertificates = (callback: (items: PortfolioCertifi
   let items: PortfolioCertificate[] = [];
   let catalogImported = false;
   const emit = () => callback(items, catalogImported);
+  
   const stopItems = onSnapshot(query(certificatesRef, where('published', '==', true)), snap => {
     items = snap.docs.map(d => ({ id: d.id, ...d.data() } as PortfolioCertificate));
     emit();
@@ -197,6 +186,7 @@ export const subscribeToPublicCertificates = (callback: (items: PortfolioCertifi
     items = [];
     emit();
   });
+  
   const stopState = onSnapshot(doc(db, 'site_metadata', 'certificates'), snap => {
     catalogImported = snap.exists() && snap.data().bundledImported === true;
     emit();
@@ -205,9 +195,9 @@ export const subscribeToPublicCertificates = (callback: (items: PortfolioCertifi
     catalogImported = false;
     emit();
   });
+  
   return () => {
     stopItems();
     stopState();
   };
 };
-

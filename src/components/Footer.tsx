@@ -1,16 +1,18 @@
 import React from 'react';
 import { motion } from 'motion/react';
 import { ArrowUp, Github, Linkedin, MessageSquare } from 'lucide-react';
-import { SITE_CONFIG, SOCIAL_LINKS, NAV_LINKS } from '../data/portfolio';
+import { SOCIAL_LINKS, NAV_LINKS } from '../data/portfolio';
+import { usePortfolio } from '../context/PortfolioContext';
 import { NKLogo } from './NKLogo';
 
 export const Footer: React.FC = () => {
+  const { settings } = usePortfolio();
   const scrollToTop = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const whatsappLink = SOCIAL_LINKS.find(s => s.platform === 'WhatsApp');
-  const whatsappUrl = whatsappLink?.url || `https://wa.me/${SITE_CONFIG.whatsappNumberDigits}`;
+  const whatsappUrl = whatsappLink?.url || `https://wa.me/${settings.whatsapp.replace(/\+/g, '')}`;
 
   return (
     <footer className="bg-white dark:bg-slate-950 text-slate-600 dark:text-slate-300 border-t border-slate-200 dark:border-slate-800 transition-colors duration-300">
@@ -27,12 +29,12 @@ export const Footer: React.FC = () => {
             <div className="flex items-center gap-3">
               <NKLogo className="w-10 h-10" showGlow={true} />
               <div>
-                <span className="text-xl font-bold text-slate-900 dark:text-white tracking-tight block leading-none">{SITE_CONFIG.name}</span>
+                <span className="text-xl font-bold text-slate-900 dark:text-white tracking-tight block leading-none">{settings.name}</span>
                 <span className="text-[10px] text-indigo-600 dark:text-cyan-400 font-bold uppercase tracking-widest mt-1 block">Full-Stack Developer</span>
               </div>
             </div>
             <p className="text-sm text-slate-600 dark:text-slate-400 max-w-sm leading-relaxed">
-              {SITE_CONFIG.title}. Pursuing B.Tech CSE at Arka Jain University. Building robust, scalable, and intelligent digital solutions with a focus on impact.
+              {settings.title}. Pursuing B.Tech CSE at Arka Jain University. Building robust, scalable, and intelligent digital solutions with a focus on impact.
             </p>
           </div>
 
@@ -58,7 +60,7 @@ export const Footer: React.FC = () => {
             <div className="col-span-2 sm:col-span-1 space-y-4">
               <h4 className="text-xs font-bold uppercase tracking-widest text-slate-900 dark:text-white">Location</h4>
               <div className="text-sm text-slate-500 dark:text-slate-400 leading-relaxed">
-                {SITE_CONFIG.location}<br />
+                {settings.location}<br />
                 Bihar, India
               </div>
             </div>
@@ -74,7 +76,7 @@ export const Footer: React.FC = () => {
           className="pt-8 flex flex-col sm:flex-row items-center justify-between gap-6"
         >
           <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500 text-center sm:text-left">
-            © {new Date().getFullYear()} {SITE_CONFIG.name}. Built with React & Tailwind CSS.
+            © {new Date().getFullYear()} {settings.name}. Built with React & Tailwind CSS.
           </div>
 
           <div className="flex items-center gap-4">

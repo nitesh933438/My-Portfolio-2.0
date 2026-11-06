@@ -3,6 +3,7 @@ import { motion } from 'motion/react';
 import { ExternalLink, Github, ArrowRight, Sparkles, Rocket } from 'lucide-react';
 import { PROJECTS, Project } from '../data/portfolio';
 import { ScrollReveal } from './ScrollReveal';
+import { resolveProjectImageUrl } from '../services/projectFirebase';
 
 interface FeaturedProjectsProps {
   onSelectProject: (project: Project) => void;
@@ -44,7 +45,7 @@ export const FeaturedProjects: React.FC<FeaturedProjectsProps> = ({ onSelectProj
                   onClick={() => onSelectProject(project)}
                 >
                   <img
-                    src={project.mainScreenshot}
+                    src={resolveProjectImageUrl(project.mainScreenshot)}
                     alt={project.title}
                     className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-1000"
                     onError={(e) => {

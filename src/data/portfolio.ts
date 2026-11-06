@@ -180,7 +180,11 @@ export const SITE_CONFIG = {
   location: "Rohtas, Bihar, India",
   profilePhoto: getPath('/assets/aistudio/Any_Profile_Photo_0559445a.png'),
   resumeUrl: getPath('/nitesh_kumar_resume.pdf'),
+  github: "https://github.com/nitesh933438",
+  linkedin: "https://www.linkedin.com/in/nitesh933438/",
+  instagram: "https://www.instagram.com/nitesh.kumar.012/",
   bio: "Passionate Full-Stack MERN Developer and AI enthusiast pursuing B.Tech in Computer Science and Engineering at Arka Jain University. Building robust web applications, intelligent bots, and scalable enterprise platforms from Rohtas, Bihar.",
+
   aboutQuote: "Building intelligent, user-centric web systems from Rohtas, Bihar.",
   experienceSummary: "Designing, developing, and deploying 8+ end-to-end production web applications, automated bots, and AI assistants. Managing complete software development lifecycles from architecture design to deployment.",
 };
@@ -256,7 +260,9 @@ export const SKILLS_DATA: SkillCategory[] = [
 ];
 
 // Single source of truth: Re-export & derive legacy EDUCATION_DATA from ACADEMIC_DATA in education.ts
+export { ACADEMIC_DATA } from './education';
 import { ACADEMIC_DATA } from './education';
+
 
 export const EDUCATION_DATA: Education[] = [
   {

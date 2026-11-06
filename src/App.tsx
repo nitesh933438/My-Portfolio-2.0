@@ -2,8 +2,17 @@ import { useState, useEffect, FC, lazy, Suspense } from 'react';
 import { HashRouter, Routes, Route } from 'react-router-dom';
 import { LoadingScreen } from './components/LoadingScreen';
 import { PublicPortfolio } from './components/PublicPortfolio';
+import { PortfolioProvider } from './context/PortfolioContext';
+
 import { ACADEMIC_DATA, UniversityRecord } from './data/education';
-import { subscribeToUniversityRecord, initializeAcademicDataInFirestore } from './services/academicFirebase';
+import { 
+  subscribeToUniversityRecord, 
+  initializeAcademicDataInFirestore,
+  subscribeToSiteSettings,
+  initializeSiteSettingsInFirestore,
+  SiteSettings
+} from './services/academicFirebase';
+
 
 // Admin Components
 import { AdminAuthGuard } from './components/AdminAuthGuard';
@@ -14,6 +23,8 @@ const ProjectsManager = lazy(() => import('./components/admin/ProjectsManager').
 const EducationManager = lazy(() => import('./components/admin/EducationManager').then(m => ({ default: m.EducationManager })));
 const MessagesManager = lazy(() => import('./components/admin/MessagesManager').then(m => ({ default: m.MessagesManager })));
 const SettingsManager = lazy(() => import('./components/admin/SettingsManager').then(m => ({ default: m.SettingsManager })));
+import { SITE_CONFIG } from './data/portfolio';
+
 
 const App: FC = () => {
   type ThemeMode = 'light' | 'dark' | 'system';
@@ -22,13 +33,24 @@ const App: FC = () => {
   });
 
   const [liveUniversity, setLiveUniversity] = useState<UniversityRecord>(ACADEMIC_DATA.university);
+  const [liveSettings, setLiveSettings] = useState<SiteSettings>(SITE_CONFIG as SiteSettings);
 
   useEffect(() => {
     initializeAcademicDataInFirestore();
-    const unsub = subscribeToUniversityRecord((data) => {
+    initializeSiteSettingsInFirestore();
+    
+    const unsubUniversity = subscribeToUniversityRecord((data) => {
       setLiveUniversity(data);
     });
-    return () => unsub();
+    
+    const unsubSettings = subscribeToSiteSettings((data) => {
+      setLiveSettings(data);
+    });
+    
+    return () => {
+      unsubUniversity();
+      unsubSettings();
+    };
   }, []);
 
   useEffect(() => {
@@ -47,47 +69,49 @@ const App: FC = () => {
   }, [theme]);
 
   return (
-    <HashRouter>
-      <Routes>
-        <Route path="/*" element={<PublicPortfolio theme={theme} setTheme={setTheme} />} />
-        <Route path="/admin" element={
-          <AdminAuthGuard>
-            <AdminLayout theme={theme} setTheme={setTheme} />
-          </AdminAuthGuard>
-        }>
-          <Route index element={
-            <Suspense fallback={<LoadingScreen />}>
-              <AdminDashboardPage theme={theme} setTheme={setTheme} onNavigateHome={() => window.location.href = '#/'} currentUniversity={liveUniversity} />
-            </Suspense>
-          } />
-          <Route path="certificates" element={
-            <Suspense fallback={<LoadingScreen />}>
-              <CertificateAdminPage onBack={() => window.location.href = '#/admin'} />
-            </Suspense>
-          } />
-          <Route path="projects" element={
-            <Suspense fallback={<LoadingScreen />}>
-              <ProjectsManager />
-            </Suspense>
-          } />
-          <Route path="education" element={
-            <Suspense fallback={<LoadingScreen />}>
-              <EducationManager />
-            </Suspense>
-          } />
-          <Route path="messages" element={
-            <Suspense fallback={<LoadingScreen />}>
-              <MessagesManager />
-            </Suspense>
-          } />
-          <Route path="settings" element={
-            <Suspense fallback={<LoadingScreen />}>
-              <SettingsManager />
-            </Suspense>
-          } />
-        </Route>
-      </Routes>
-    </HashRouter>
+    <PortfolioProvider settings={liveSettings}>
+      <HashRouter>
+        <Routes>
+          <Route path="/*" element={<PublicPortfolio theme={theme} setTheme={setTheme} />} />
+          <Route path="/admin" element={
+            <AdminAuthGuard>
+              <AdminLayout theme={theme} setTheme={setTheme} />
+            </AdminAuthGuard>
+          }>
+            <Route index element={
+              <Suspense fallback={<LoadingScreen />}>
+                <AdminDashboardPage theme={theme} setTheme={setTheme} onNavigateHome={() => window.location.href = '#/'} currentUniversity={liveUniversity} />
+              </Suspense>
+            } />
+            <Route path="certificates" element={
+              <Suspense fallback={<LoadingScreen />}>
+                <CertificateAdminPage onBack={() => window.location.href = '#/admin'} />
+              </Suspense>
+            } />
+            <Route path="projects" element={
+              <Suspense fallback={<LoadingScreen />}>
+                <ProjectsManager />
+              </Suspense>
+            } />
+            <Route path="education" element={
+              <Suspense fallback={<LoadingScreen />}>
+                <EducationManager />
+              </Suspense>
+            } />
+            <Route path="messages" element={
+              <Suspense fallback={<LoadingScreen />}>
+                <MessagesManager />
+              </Suspense>
+            } />
+            <Route path="settings" element={
+              <Suspense fallback={<LoadingScreen />}>
+                <SettingsManager />
+              </Suspense>
+            } />
+          </Route>
+        </Routes>
+      </HashRouter>
+    </PortfolioProvider>
   );
 };
 

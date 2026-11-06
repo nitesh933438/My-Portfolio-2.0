@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { X, Github, ExternalLink, Calendar, CheckCircle, Tag, Clock, Rocket, Beaker, LayoutGrid, Archive, Maximize2, Layers, Grid } from 'lucide-react';
 import { Project, ProjectStatus } from '../data/portfolio';
 import { ImageViewer } from './ImageViewer';
+import { resolveProjectImageUrl } from '../services/projectFirebase';
 
 interface ProjectModalProps {
   project: Project | null;
@@ -259,7 +260,7 @@ export const ProjectModal: FC<ProjectModalProps> = ({ project, onClose }) => {
     setIsViewerOpen(false);
   }, [project]);
 
-  const screenshots = project ? [project.mainScreenshot, ...(project.additionalScreenshots || [])].filter(Boolean) : [];
+  const screenshots = project ? [project.mainScreenshot, ...(project.additionalScreenshots || [])].filter(Boolean).map(url => resolveProjectImageUrl(url)) : [];
   const bannerTheme = project ? getProjectBannerTheme(project.id) : null;
 
   useEffect(() => {
@@ -343,7 +344,7 @@ export const ProjectModal: FC<ProjectModalProps> = ({ project, onClose }) => {
             {/* 1. Premium Project Cover Banner (Always First) */}
             <section className="relative isolate min-h-[280px] overflow-hidden rounded-[1.75rem] border border-slate-800 bg-slate-950 sm:min-h-[340px] shadow-xl">
               <img
-                src={project.mainScreenshot}
+                src={resolveProjectImageUrl(project.mainScreenshot)}
                 alt={`${project.title} cover`}
                 className="absolute inset-0 -z-20 h-full w-full object-cover opacity-35 filter saturate-125"
                 onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}

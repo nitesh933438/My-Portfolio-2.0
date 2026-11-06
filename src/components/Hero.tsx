@@ -1,18 +1,21 @@
 import React from 'react';
 import { motion } from 'motion/react';
 import { Github, Linkedin, MessageSquare, ArrowRight, Download, Code, Sparkles, MapPin, GraduationCap } from 'lucide-react';
-import { SITE_CONFIG, SOCIAL_LINKS } from '../data/portfolio';
+import { SOCIAL_LINKS } from '../data/portfolio';
+import { usePortfolio } from '../context/PortfolioContext';
+import { resolveAssetUrl } from '../services/supabaseStorage';
 
 interface HeroProps {
   onOpenResume: () => void;
 }
 
 export const Hero: React.FC<HeroProps> = ({ onOpenResume }) => {
+  const { settings } = usePortfolio();
   const whatsappLink = SOCIAL_LINKS.find(s => s.platform === 'WhatsApp');
   const githubLink = SOCIAL_LINKS.find(s => s.platform === 'GitHub');
   const linkedinLink = SOCIAL_LINKS.find(s => s.platform === 'LinkedIn');
   
-  const whatsappUrl = whatsappLink?.url || `https://wa.me/${SITE_CONFIG.whatsappNumberDigits}`;
+  const whatsappUrl = whatsappLink?.url || `https://wa.me/${settings.whatsapp.replace(/\+/g, '')}`;
 
   return (
     <section className="relative pt-24 pb-14 sm:pt-32 sm:pb-20 md:pt-40 md:pb-28 overflow-hidden bg-gradient-to-b from-slate-50 via-slate-100/50 to-white dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
@@ -38,17 +41,17 @@ export const Hero: React.FC<HeroProps> = ({ onOpenResume }) => {
             </div>
 
             <h1 className="text-3xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight text-slate-900 dark:text-white leading-[1.15] sm:leading-[1.1]">
-              Hi, I'm <span className="bg-gradient-to-r from-indigo-600 to-purple-600 dark:from-indigo-400 dark:to-purple-400 bg-clip-text text-transparent">{SITE_CONFIG.name}</span>
+              Hi, I'm <span className="bg-gradient-to-r from-indigo-600 to-purple-600 dark:from-indigo-400 dark:to-purple-400 bg-clip-text text-transparent">{settings.name}</span>
             </h1>
 
             <p className="text-sm sm:text-lg lg:text-xl text-slate-600 dark:text-slate-300 max-w-2xl mx-auto lg:mx-0 font-normal leading-relaxed text-wrap-balance">
-              {SITE_CONFIG.title}. Pursuing B.Tech CSE at <span className="text-slate-900 dark:text-white font-semibold">Arka Jain University</span>. Crafting high-performance web applications, intelligent bots, and enterprise platforms.
+              {settings.title}. Pursuing B.Tech CSE at <span className="text-slate-900 dark:text-white font-semibold">Arka Jain University</span>. Crafting high-performance web applications, intelligent bots, and enterprise platforms.
             </p>
 
             <div className="flex flex-wrap items-center justify-center lg:justify-start gap-2 sm:gap-3 text-xs sm:text-sm text-slate-500 dark:text-slate-400">
               <div className="flex items-center gap-1.5">
                 <MapPin className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
-                <span>{SITE_CONFIG.location}</span>
+                <span>{settings.location}</span>
               </div>
               <span aria-hidden="true" className="text-slate-300 dark:text-slate-700">·</span>
               <div className="flex items-center gap-1.5">
@@ -122,8 +125,8 @@ export const Hero: React.FC<HeroProps> = ({ onOpenResume }) => {
               <div className="absolute inset-0 bg-gradient-to-tr from-indigo-600 to-purple-600 rounded-3xl rotate-3 opacity-20 blur-xl" />
               <div className="relative w-full h-full rounded-3xl overflow-hidden border-2 border-slate-200 dark:border-slate-800 shadow-2xl bg-slate-900">
                 <img
-                  src={SITE_CONFIG.profilePhoto}
-                  alt={SITE_CONFIG.name}
+                  src={resolveAssetUrl(settings.profilePhoto, 'profile')}
+                  alt={settings.name}
                   referrerPolicy="no-referrer"
                   className="w-full h-full object-cover object-center hover:scale-105 transition-transform duration-500"
                 />
