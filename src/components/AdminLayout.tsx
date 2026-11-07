@@ -103,7 +103,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ theme = 'dark', setThe
               <button onClick={() => signOut(auth)} className="px-4 py-2 rounded-xl bg-rose-500/10 text-rose-500 text-xs font-bold">Sign Out</button>
             </div>
           </header>
-          <main className="flex-1 overflow-y-auto p-8">
+          <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
             <Outlet />
           </main>
         </div>

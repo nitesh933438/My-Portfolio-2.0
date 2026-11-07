@@ -39,8 +39,9 @@ export const EducationManager: React.FC = () => {
   // AI Scanner state
   const [isAIScannerOpen, setIsAIScannerOpen] = useState(false);
 
-  const handleAIExtractedData = (data: any) => {
-    if (!data) return;
+  const handleAIExtractedData = (result: any) => {
+    if (!result || !result.data) return;
+    const data = result.data;
     
     if (editingSemester) {
       if (data.sgpa) setSgpaInput(String(data.sgpa));

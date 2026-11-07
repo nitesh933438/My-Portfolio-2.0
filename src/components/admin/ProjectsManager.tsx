@@ -8,6 +8,7 @@ import { Plus, Trash2, Edit2, Loader2, Save, X, Search, ExternalLink, Github, Ey
 import { useAdminToast } from './AdminToastContext';
 import { ProjectScreenshotManager } from './ProjectScreenshotManager';
 import { AIScanner } from './AIScanner';
+import { useAIScanner } from '../../context/AIScannerContext';
 
 const categories: ProjectCategory[] = [
   'Full-Stack Development',
@@ -62,6 +63,15 @@ export const ProjectsManager: React.FC = () => {
   const [isAIScannerOpen, setIsAIScannerOpen] = useState(false);
 
   const { showToast } = useAdminToast();
+  const { pendingResult, setPendingResult } = useAIScanner();
+  
+  useEffect(() => {
+    if (pendingResult && pendingResult.detectedModule === 'project') {
+      handleAIExtractedData(pendingResult);
+      setPendingResult(null); // Clear context
+      setIsModalOpen(true); // Open modal
+    }
+  }, [pendingResult]);
 
   useEffect(() => {
     const unsubscribe = subscribeToProjects((data) => {
@@ -143,9 +153,10 @@ export const ProjectsManager: React.FC = () => {
     }
   };
 
-  const handleAIExtractedData = (data: any) => {
-    if (!data) return;
+  const handleAIExtractedData = (result: any) => {
+    if (!result || !result.data) return;
     
+    const data = result.data;
     setForm(prev => ({
       ...prev,
       title: data.title || prev.title,

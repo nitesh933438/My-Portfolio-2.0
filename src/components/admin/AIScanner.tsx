@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { useNavigate } from 'react-router-dom';
 import { 
   Sparkles, 
   Upload, 
@@ -13,15 +14,14 @@ import {
   Search
 } from 'lucide-react';
 import { auth } from '../../services/academicFirebase';
+import { useAIScanner } from '../../context/AIScannerContext';
 
 interface AIScannerProps {
-  module: 'project' | 'certificate' | 'education' | 'settings';
-  onDataExtracted: (data: any) => void;
   isOpen: boolean;
   onClose: () => void;
 }
 
-export const AIScanner: React.FC<AIScannerProps> = ({ module, onDataExtracted, isOpen, onClose }) => {
+export const AIScanner: React.FC<AIScannerProps> = ({ isOpen, onClose }) => {
   const [activeTab, setActiveTab] = useState<'file' | 'text' | 'url'>('file');
   const [file, setFile] = useState<File | null>(null);
   const [text, setText] = useState('');
@@ -31,6 +31,8 @@ export const AIScanner: React.FC<AIScannerProps> = ({ module, onDataExtracted, i
   const [success, setSuccess] = useState(false);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const { setPendingResult } = useAIScanner();
+  const navigate = useNavigate();
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
@@ -50,7 +52,6 @@ export const AIScanner: React.FC<AIScannerProps> = ({ module, onDataExtracted, i
       if (!idToken) throw new Error('Unauthorized: Please sign in again.');
 
       const formData = new FormData();
-      formData.append('module', module);
       
       if (activeTab === 'file' && file) {
         formData.append('file', file);
@@ -62,7 +63,7 @@ export const AIScanner: React.FC<AIScannerProps> = ({ module, onDataExtracted, i
         throw new Error(`Please provide ${activeTab === 'file' ? 'a file' : activeTab === 'text' ? 'some text' : 'a URL'} to scan.`);
       }
 
-      const response = await fetch('/api/ai/extract', {
+      const response = await fetch('/api/ai/analyze-and-extract', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${idToken}`
@@ -70,32 +71,42 @@ export const AIScanner: React.FC<AIScannerProps> = ({ module, onDataExtracted, i
         body: formData
       });
 
-      // Handle non-JSON responses (like HTML 404/500 pages)
       const contentType = response.headers.get('content-type');
       if (!contentType || !contentType.includes('application/json')) {
         const text = await response.text();
         console.error('Unexpected server response:', text);
         
         if (response.status === 404) {
-          throw new Error('API endpoint not found (404). Please ensure the backend is running and the route is registered.');
+          throw new Error('API endpoint not found (404).');
         } else if (response.status === 500) {
-          throw new Error('Internal Server Error (500). Check server logs for details.');
+          throw new Error('Internal Server Error (500).');
         } else {
-          throw new Error(`Server returned an unexpected response (${response.status}). It might be an HTML error page instead of JSON.`);
+          throw new Error(`Server returned an unexpected response (${response.status}).`);
         }
       }
 
       const result = await response.json();
 
       if (!response.ok) {
-        throw new Error(result.error || 'Failed to extract data');
+        throw new Error(result.error || 'Failed to analyze content');
       }
 
       setSuccess(true);
+      const { detectedModule, data } = result.data;
+      setPendingResult({ detectedModule, data, confidence: result.data.confidence || 1 });
+      
+      const routeMap: Record<string, string> = {
+        project: '/admin/projects',
+        certificate: '/admin/certificates',
+        education: '/admin/education',
+        settings: '/admin/settings',
+      };
+      
       setTimeout(() => {
-        onDataExtracted(result.data);
+        if (routeMap[detectedModule]) {
+          navigate(routeMap[detectedModule]);
+        }
         onClose();
-        // Reset state
         setFile(null);
         setText('');
         setUrl('');
@@ -133,7 +144,6 @@ export const AIScanner: React.FC<AIScannerProps> = ({ module, onDataExtracted, i
             exit={{ opacity: 0, scale: 0.9, y: 20 }}
             className="relative bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl sm:rounded-[32px] w-full max-w-xl overflow-hidden shadow-2xl mx-auto"
           >
-            {/* Header */}
             <div className="p-5 sm:p-8 pb-0 flex justify-between items-start">
               <div className="space-y-1">
                 <div className="flex items-center gap-2 text-indigo-600 dark:text-indigo-400">
@@ -143,9 +153,6 @@ export const AIScanner: React.FC<AIScannerProps> = ({ module, onDataExtracted, i
                 <h3 className="text-lg sm:text-2xl font-black text-slate-900 dark:text-white">
                   Universal AI Auto-Fill
                 </h3>
-                <p className="text-[10px] sm:text-xs text-slate-500 dark:text-slate-400">
-                  Scan documents, URLs or text to instantly populate this form.
-                </p>
               </div>
               <button 
                 onClick={onClose}
@@ -155,7 +162,6 @@ export const AIScanner: React.FC<AIScannerProps> = ({ module, onDataExtracted, i
               </button>
             </div>
 
-            {/* Tabs */}
             <div className="px-5 sm:px-8 mt-4 sm:mt-8">
               <div className="flex p-1 bg-slate-100 dark:bg-slate-950 rounded-xl sm:rounded-2xl border border-slate-200 dark:border-slate-800">
                 {tabs.map((tab) => {
@@ -178,7 +184,6 @@ export const AIScanner: React.FC<AIScannerProps> = ({ module, onDataExtracted, i
               </div>
             </div>
 
-            {/* Content Area */}
             <div className="p-5 sm:p-8 space-y-4 sm:space-y-6">
               <div className="min-h-[120px] sm:min-h-[160px] flex flex-col">
                 {activeTab === 'file' && (
@@ -205,9 +210,6 @@ export const AIScanner: React.FC<AIScannerProps> = ({ module, onDataExtracted, i
                         <p className="text-xs font-black text-slate-900 dark:text-white truncate max-w-[200px]">
                           {file.name}
                         </p>
-                        <p className="text-[10px] text-slate-500 mt-1 uppercase font-bold">
-                          {(file.size / 1024 / 1024).toFixed(2)} MB • Ready to scan
-                        </p>
                       </div>
                     ) : (
                       <div className="text-center">
@@ -215,106 +217,46 @@ export const AIScanner: React.FC<AIScannerProps> = ({ module, onDataExtracted, i
                           <Upload size={32} />
                         </div>
                         <p className="text-xs font-bold text-slate-600 dark:text-slate-400">
-                          Drop certificate, resume or marksheet
-                        </p>
-                        <p className="text-[10px] text-slate-400 mt-1">
-                          PDF, JPG, or PNG (Max 25MB)
+                          Drop file to scan
                         </p>
                       </div>
                     )}
                   </div>
                 )}
-
                 {activeTab === 'text' && (
                   <textarea
                     value={text}
                     onChange={(e) => setText(e.target.value)}
-                    placeholder="Paste project description, experience highlights or any text to extract details from..."
+                    placeholder="Paste text to extract details from..."
                     className="flex-1 w-full p-6 rounded-3xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-medium resize-none focus:outline-none focus:border-indigo-500 transition-colors min-h-[160px]"
                   />
                 )}
-
                 {activeTab === 'url' && (
                   <div className="flex-1 flex flex-col justify-center gap-4">
-                    <div className="relative">
-                      <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400">
-                        <LinkIcon size={16} />
-                      </div>
-                      <input
-                        type="url"
-                        value={url}
-                        onChange={(e) => setUrl(e.target.value)}
-                        placeholder="https://github.com/user/project"
-                        className="w-full pl-12 pr-6 py-4 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-bold focus:outline-none focus:border-indigo-500 transition-colors"
-                      />
-                    </div>
-                    <p className="text-[10px] text-slate-500 leading-relaxed px-2">
-                      <span className="font-bold text-indigo-500 uppercase tracking-wider mr-1">Note:</span>
-                      AI will analyze the provided URL to extract titles, tech stacks, and descriptions for your portfolio.
-                    </p>
+                    <input
+                      type="url"
+                      value={url}
+                      onChange={(e) => setUrl(e.target.value)}
+                      placeholder="https://..."
+                      className="w-full p-4 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-bold focus:outline-none focus:border-indigo-500 transition-colors"
+                    />
                   </div>
                 )}
               </div>
 
-              {/* Action Area */}
-              <div className="flex flex-col gap-4">
-                {error && (
-                  <motion.div 
-                    initial={{ opacity: 0, y: -10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/20 flex items-center gap-3 text-rose-500"
-                  >
-                    <AlertCircle size={16} />
-                    <span className="text-[11px] font-bold">{error}</span>
-                  </motion.div>
-                )}
-
-                <button
-                  onClick={handleScan}
-                  disabled={loading || success || (activeTab === 'file' && !file) || (activeTab === 'text' && !text) || (activeTab === 'url' && !url)}
-                  className={`w-full py-3.5 sm:py-4 rounded-xl sm:rounded-2xl font-black text-xs sm:text-sm flex items-center justify-center gap-2 sm:gap-3 transition-all ${
-                    success
-                      ? 'bg-emerald-500 text-white'
-                      : loading
-                      ? 'bg-slate-100 dark:bg-slate-800 text-slate-400 cursor-not-allowed'
-                      : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-xl shadow-indigo-600/20'
-                  }`}
-                >
-                  {loading ? (
-                    <>
-                      <Loader2 size={16} className="sm:w-[18px] sm:h-[18px] animate-spin" />
-                      <span>Gemini is analyzing...</span>
-                    </>
-                  ) : success ? (
-                    <>
-                      <CheckCircle2 size={16} className="sm:w-[18px] sm:h-[18px]" />
-                      <span>Extracted Successfully</span>
-                    </>
-                  ) : (
-                    <>
-                      <Search size={16} className="sm:w-[18px] sm:h-[18px]" />
-                      <span>Start AI Extraction</span>
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
-
-            {/* Footer */}
-            <div className="px-5 sm:px-8 py-4 sm:py-6 bg-slate-50 dark:bg-slate-950/50 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="flex -space-x-1">
-                  {[1, 2, 3].map((i) => (
-                    <div key={i} className="w-5 h-5 rounded-full border-2 border-white dark:border-slate-900 bg-slate-200 dark:bg-slate-800" />
-                  ))}
-                </div>
-                <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">
-                  Trusted by 500+ Scans
-                </span>
-              </div>
-              <div className="flex items-center gap-1.5 text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase">
-                <span>Powered by Gemini 1.5 Flash</span>
-              </div>
+              <button
+                onClick={handleScan}
+                disabled={loading || success || (activeTab === 'file' && !file) || (activeTab === 'text' && !text) || (activeTab === 'url' && !url)}
+                className={`w-full py-3.5 sm:py-4 rounded-xl sm:rounded-2xl font-black text-xs sm:text-sm flex items-center justify-center gap-2 sm:gap-3 transition-all ${
+                  success
+                    ? 'bg-emerald-500 text-white'
+                    : loading
+                    ? 'bg-slate-100 dark:bg-slate-800 text-slate-400 cursor-not-allowed'
+                    : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-xl shadow-indigo-600/20'
+                }`}
+              >
+                {loading ? <><Loader2 className="animate-spin" size={16} /> <span>Gemini is analyzing...</span></> : 'Start AI Extraction'}
+              </button>
             </div>
           </motion.div>
         </div>

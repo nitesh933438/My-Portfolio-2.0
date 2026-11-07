@@ -3,6 +3,7 @@ import { HashRouter, Routes, Route } from 'react-router-dom';
 import { LoadingScreen } from './components/LoadingScreen';
 import { PublicPortfolio } from './components/PublicPortfolio';
 import { PortfolioProvider } from './context/PortfolioContext';
+import { AIScannerProvider } from './context/AIScannerContext';
 
 import { ACADEMIC_DATA, UniversityRecord } from './data/education';
 import { 
@@ -69,49 +70,51 @@ const App: FC = () => {
   }, [theme]);
 
   return (
-    <PortfolioProvider settings={liveSettings}>
-      <HashRouter>
-        <Routes>
-          <Route path="/*" element={<PublicPortfolio theme={theme} setTheme={setTheme} />} />
-          <Route path="/admin" element={
-            <AdminAuthGuard>
-              <AdminLayout theme={theme} setTheme={setTheme} />
-            </AdminAuthGuard>
-          }>
-            <Route index element={
-              <Suspense fallback={<LoadingScreen />}>
-                <AdminDashboardPage theme={theme} setTheme={setTheme} onNavigateHome={() => window.location.href = '#/'} currentUniversity={liveUniversity} />
-              </Suspense>
-            } />
-            <Route path="certificates" element={
-              <Suspense fallback={<LoadingScreen />}>
-                <CertificateAdminPage onBack={() => window.location.href = '#/admin'} />
-              </Suspense>
-            } />
-            <Route path="projects" element={
-              <Suspense fallback={<LoadingScreen />}>
-                <ProjectsManager />
-              </Suspense>
-            } />
-            <Route path="education" element={
-              <Suspense fallback={<LoadingScreen />}>
-                <EducationManager />
-              </Suspense>
-            } />
-            <Route path="messages" element={
-              <Suspense fallback={<LoadingScreen />}>
-                <MessagesManager />
-              </Suspense>
-            } />
-            <Route path="settings" element={
-              <Suspense fallback={<LoadingScreen />}>
-                <SettingsManager />
-              </Suspense>
-            } />
-          </Route>
-        </Routes>
-      </HashRouter>
-    </PortfolioProvider>
+    <AIScannerProvider>
+      <PortfolioProvider settings={liveSettings}>
+        <HashRouter>
+          <Routes>
+            <Route path="/*" element={<PublicPortfolio theme={theme} setTheme={setTheme} />} />
+            <Route path="/admin" element={
+              <AdminAuthGuard>
+                <AdminLayout theme={theme} setTheme={setTheme} />
+              </AdminAuthGuard>
+            }>
+              <Route index element={
+                <Suspense fallback={<LoadingScreen />}>
+                  <AdminDashboardPage theme={theme} setTheme={setTheme} onNavigateHome={() => window.location.href = '#/'} currentUniversity={liveUniversity} />
+                </Suspense>
+              } />
+              <Route path="certificates" element={
+                <Suspense fallback={<LoadingScreen />}>
+                  <CertificateAdminPage onBack={() => window.location.href = '#/admin'} />
+                </Suspense>
+              } />
+              <Route path="projects" element={
+                <Suspense fallback={<LoadingScreen />}>
+                  <ProjectsManager />
+                </Suspense>
+              } />
+              <Route path="education" element={
+                <Suspense fallback={<LoadingScreen />}>
+                  <EducationManager />
+                </Suspense>
+              } />
+              <Route path="messages" element={
+                <Suspense fallback={<LoadingScreen />}>
+                  <MessagesManager />
+                </Suspense>
+              } />
+              <Route path="settings" element={
+                <Suspense fallback={<LoadingScreen />}>
+                  <SettingsManager />
+                </Suspense>
+              } />
+            </Route>
+          </Routes>
+        </HashRouter>
+      </PortfolioProvider>
+    </AIScannerProvider>
   );
 };
 

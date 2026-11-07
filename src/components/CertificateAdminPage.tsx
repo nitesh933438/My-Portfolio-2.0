@@ -94,8 +94,9 @@ export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
   const [scanning, setScanning] = useState(false);
   const [isAIScannerOpen, setIsAIScannerOpen] = useState(false);
 
-  const handleAIExtractedData = (data: any) => {
-    if (!data) return;
+  const handleAIExtractedData = (result: any) => {
+    if (!result || !result.data) return;
+    const data = result.data;
     setForm(prev => ({
       ...prev,
       title: data.title || prev.title,
@@ -444,7 +445,7 @@ export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
         </div>
       )}
 
-      <div className="grid lg:grid-cols-[1fr_1.4fr] gap-8">
+      <div className="grid grid-cols-1 xl:grid-cols-[1fr_2fr] gap-8">
         {/* Form */}
         <form onSubmit={submit} className="rounded-3xl border border-slate-800 bg-slate-900 p-6 sm:p-8 space-y-6 h-fit sticky top-8">
           <div className="flex items-center justify-between">

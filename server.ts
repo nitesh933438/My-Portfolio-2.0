@@ -139,19 +139,29 @@ const extractionSchemas: Record<string, any> = {
   }
 };
 
-app.post('/api/ai/extract', verifyAdmin, upload.single('file'), async (req: any, res) => {
+app.post('/api/ai/analyze-and-extract', verifyAdmin, upload.single('file'), async (req: any, res) => {
   try {
     if (!ai) return res.status(503).json({ error: 'Gemini API is not configured' });
 
     const { module, text, url } = req.body;
     const file = req.file;
 
-    if (!module || !extractionSchemas[module]) {
-      return res.status(400).json({ error: `Invalid or missing module: ${module}` });
-    }
+    // Build prompt for detection and extraction
+    let promptText = `Analyze the provided content to:
+1. Identify the document type (e.g., certificate, resume, marksheet, project screenshot).
+2. Determine the most appropriate Admin Module for this content (${Object.keys(extractionSchemas).join(', ')}).
+3. Extract relevant data fields for that module.
 
-    const schema = extractionSchemas[module];
-    let promptText = `Extract ${module} information from the following content. If a field is not found, leave it empty or null. Do not invent information.`;
+Return a JSON object in the following format:
+{
+  "detectedType": "string",
+  "detectedModule": "string",
+  "data": { ...extractedFields... },
+  "confidence": number (0-1),
+  "suggestion": "string"
+}
+
+If a field is not found, leave it empty or null. Do not invent information.`;
     
     if (text) promptText += `\n\nTEXT CONTENT:\n${text}`;
     if (url) promptText += `\n\nURL TO ANALYZE: ${url}`;
@@ -167,21 +177,22 @@ app.post('/api/ai/extract', verifyAdmin, upload.single('file'), async (req: any,
     }
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.8-flash",
+      model: "gemini-1.5-flash", // Using a supported model
       contents: { parts },
       config: {
         responseMimeType: "application/json",
-        responseSchema: schema,
       },
     });
 
+    const result = JSON.parse(response.text || '{}');
+    
     res.json({
       success: true,
-      data: JSON.parse(response.text || '{}')
+      data: result
     });
   } catch (error: any) {
-    console.error('AI Extraction error:', error);
-    res.status(500).json({ error: error.message || 'AI extraction failed' });
+    console.error('Universal AI analysis error:', error);
+    res.status(500).json({ error: error.message || 'AI analysis failed' });
   }
 });
 
