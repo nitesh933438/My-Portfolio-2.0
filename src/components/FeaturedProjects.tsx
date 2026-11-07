@@ -13,7 +13,7 @@ export const FeaturedProjects: React.FC<FeaturedProjectsProps> = ({ onSelectProj
   const featuredList = PROJECTS.filter((p) => p.featured).slice(0, 6);
 
   return (
-    <section className="py-32 bg-slate-50 dark:bg-slate-900/50 border-t border-slate-200 dark:border-slate-800 overflow-hidden relative">
+    <section className="py-[var(--section-py)] bg-slate-50 dark:bg-slate-900/50 border-t border-slate-200 dark:border-slate-800 overflow-hidden relative">
       {/* Decorative Blur */}
       <div className="absolute top-0 right-0 w-96 h-96 bg-indigo-500/5 blur-[100px] rounded-full -translate-y-1/2 translate-x-1/2" />
       
@@ -25,7 +25,7 @@ export const FeaturedProjects: React.FC<FeaturedProjectsProps> = ({ onSelectProj
               <Sparkles className="w-4 h-4" />
               <span>Elite Selection</span>
             </div>
-            <h3 className="text-4xl sm:text-5xl font-black text-slate-900 dark:text-white tracking-tight mb-6">
+            <h3 className="font-black text-slate-900 dark:text-white tracking-tight mb-6" style={{ fontSize: 'var(--text-5xl)' }}>
               Featured <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-blue-500">Masterpieces</span>
             </h3>
             <p className="text-slate-600 dark:text-slate-400 text-lg leading-relaxed font-medium">

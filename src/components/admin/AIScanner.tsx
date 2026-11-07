@@ -131,47 +131,47 @@ export const AIScanner: React.FC<AIScannerProps> = ({ module, onDataExtracted, i
             initial={{ opacity: 0, scale: 0.9, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.9, y: 20 }}
-            className="relative bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-[32px] w-full max-w-xl overflow-hidden shadow-2xl"
+            className="relative bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl sm:rounded-[32px] w-full max-w-xl overflow-hidden shadow-2xl mx-auto"
           >
             {/* Header */}
-            <div className="p-8 pb-0 flex justify-between items-start">
+            <div className="p-5 sm:p-8 pb-0 flex justify-between items-start">
               <div className="space-y-1">
                 <div className="flex items-center gap-2 text-indigo-600 dark:text-indigo-400">
-                  <Sparkles size={20} className="animate-pulse" />
-                  <span className="text-[10px] font-black uppercase tracking-[0.2em]">AI Intelligence</span>
+                  <Sparkles size={16} className="sm:w-5 sm:h-5 animate-pulse" />
+                  <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-[0.2em]">AI Intelligence</span>
                 </div>
-                <h3 className="text-2xl font-black text-slate-900 dark:text-white">
+                <h3 className="text-lg sm:text-2xl font-black text-slate-900 dark:text-white">
                   Universal AI Auto-Fill
                 </h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400">
+                <p className="text-[10px] sm:text-xs text-slate-500 dark:text-slate-400">
                   Scan documents, URLs or text to instantly populate this form.
                 </p>
               </div>
               <button 
                 onClick={onClose}
-                className="p-2 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-slate-900 dark:hover:text-white transition-colors"
+                className="p-1.5 sm:p-2 rounded-xl sm:rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-slate-900 dark:hover:text-white transition-colors"
               >
-                <X size={20} />
+                <X size={18} className="sm:w-5 sm:h-5" />
               </button>
             </div>
 
             {/* Tabs */}
-            <div className="px-8 mt-8">
-              <div className="flex p-1.5 bg-slate-100 dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800">
+            <div className="px-5 sm:px-8 mt-4 sm:mt-8">
+              <div className="flex p-1 bg-slate-100 dark:bg-slate-950 rounded-xl sm:rounded-2xl border border-slate-200 dark:border-slate-800">
                 {tabs.map((tab) => {
                   const Icon = tab.icon;
                   return (
                     <button
                       key={tab.id}
                       onClick={() => setActiveTab(tab.id)}
-                      className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-[11px] font-bold transition-all ${
+                      className={`flex-1 flex items-center justify-center gap-1.5 sm:gap-2 py-2 sm:py-2.5 rounded-lg sm:rounded-xl text-[9px] sm:text-[11px] font-bold transition-all ${
                         activeTab === tab.id
                           ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-sm'
                           : 'text-slate-500 hover:text-slate-900 dark:hover:text-slate-300'
                       }`}
                     >
-                      <Icon size={14} />
-                      <span className="hidden sm:inline">{tab.label}</span>
+                      <Icon size={12} className="sm:w-[14px] sm:h-[14px]" />
+                      <span>{tab.label.split(' / ')[0]}</span>
                     </button>
                   );
                 })}
@@ -179,8 +179,8 @@ export const AIScanner: React.FC<AIScannerProps> = ({ module, onDataExtracted, i
             </div>
 
             {/* Content Area */}
-            <div className="p-8 space-y-6">
-              <div className="min-h-[160px] flex flex-col">
+            <div className="p-5 sm:p-8 space-y-4 sm:space-y-6">
+              <div className="min-h-[120px] sm:min-h-[160px] flex flex-col">
                 {activeTab === 'file' && (
                   <div 
                     onClick={() => fileInputRef.current?.click()}
@@ -272,7 +272,7 @@ export const AIScanner: React.FC<AIScannerProps> = ({ module, onDataExtracted, i
                 <button
                   onClick={handleScan}
                   disabled={loading || success || (activeTab === 'file' && !file) || (activeTab === 'text' && !text) || (activeTab === 'url' && !url)}
-                  className={`w-full py-4 rounded-2xl font-black text-sm flex items-center justify-center gap-3 transition-all ${
+                  className={`w-full py-3.5 sm:py-4 rounded-xl sm:rounded-2xl font-black text-xs sm:text-sm flex items-center justify-center gap-2 sm:gap-3 transition-all ${
                     success
                       ? 'bg-emerald-500 text-white'
                       : loading
@@ -282,17 +282,17 @@ export const AIScanner: React.FC<AIScannerProps> = ({ module, onDataExtracted, i
                 >
                   {loading ? (
                     <>
-                      <Loader2 size={18} className="animate-spin" />
+                      <Loader2 size={16} className="sm:w-[18px] sm:h-[18px] animate-spin" />
                       <span>Gemini is analyzing...</span>
                     </>
                   ) : success ? (
                     <>
-                      <CheckCircle2 size={18} />
-                      <span>Data Extracted Successfully</span>
+                      <CheckCircle2 size={16} className="sm:w-[18px] sm:h-[18px]" />
+                      <span>Extracted Successfully</span>
                     </>
                   ) : (
                     <>
-                      <Search size={18} />
+                      <Search size={16} className="sm:w-[18px] sm:h-[18px]" />
                       <span>Start AI Extraction</span>
                     </>
                   )}
@@ -301,7 +301,7 @@ export const AIScanner: React.FC<AIScannerProps> = ({ module, onDataExtracted, i
             </div>
 
             {/* Footer */}
-            <div className="px-8 py-6 bg-slate-50 dark:bg-slate-950/50 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between">
+            <div className="px-5 sm:px-8 py-4 sm:py-6 bg-slate-50 dark:bg-slate-950/50 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <div className="flex -space-x-1">
                   {[1, 2, 3].map((i) => (

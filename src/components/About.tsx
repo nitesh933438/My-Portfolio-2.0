@@ -9,14 +9,14 @@ export const About: React.FC = () => {
   const { settings } = usePortfolio();
 
   return (
-    <section id="about" className="py-20 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 overflow-hidden">
+    <section id="about" className="py-[var(--section-py)] bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 overflow-hidden">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         
         <ScrollReveal>
           <div className="text-center max-w-3xl mx-auto mb-16">
             <h2 className="text-xs font-bold uppercase tracking-widest text-indigo-600 dark:text-indigo-400 mb-2">Get to Know Me</h2>
-            <h3 className="text-3xl sm:text-4xl font-extrabold text-slate-900 dark:text-white">About {settings.name}</h3>
-            <p className="mt-4 text-base sm:text-lg text-slate-600 dark:text-slate-300">
+            <h3 className="font-extrabold text-slate-900 dark:text-white" style={{ fontSize: 'var(--text-4xl)' }}>About {settings.name}</h3>
+            <p className="mt-4 text-slate-600 dark:text-slate-300" style={{ fontSize: 'var(--text-lg)' }}>
               A dedicated software engineering student and full-stack developer committed to building impactful applications.
             </p>
           </div>

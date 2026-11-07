@@ -32,17 +32,17 @@ export const Certifications: React.FC = () => {
   , [items, category, search]);
 
   return (
-    <section id="certifications" className="py-24 sm:py-28 bg-white dark:bg-slate-950 border-t border-slate-200 dark:border-slate-800">
+    <section id="certifications" className="py-[var(--section-py)] bg-white dark:bg-slate-950 border-t border-slate-200 dark:border-slate-800">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <ScrollReveal>
           <div className="max-w-3xl mx-auto text-center mb-12">
             <span className="text-xs font-black uppercase tracking-[.25em] text-indigo-600 dark:text-cyan-400">
               Learning • Credentials • Growth
             </span>
-            <h2 className="mt-3 text-3xl sm:text-5xl font-black text-slate-900 dark:text-white">
+            <h2 className="mt-3 font-black text-slate-900 dark:text-white" style={{ fontSize: 'var(--text-4xl)' }}>
               Certifications <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-cyan-500">& Achievements</span>
             </h2>
-            <p className="mt-4 text-slate-600 dark:text-slate-400">
+            <p className="mt-4 text-slate-600 dark:text-slate-400" style={{ fontSize: 'var(--text-lg)' }}>
               Professional learning, certificates and documented milestones.
             </p>
           </div>

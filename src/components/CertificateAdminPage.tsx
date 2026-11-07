@@ -365,7 +365,19 @@ export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
         <div className="max-w-md w-full rounded-3xl border border-slate-800 bg-slate-900 p-8 space-y-4">
           <Award className="w-12 h-12 text-indigo-400 mx-auto" />
           <h1 className="text-2xl font-black">Admin Access Required</h1>
-          <button onClick={() => signInWithPopup(auth, googleProvider)} className="w-full rounded-xl bg-indigo-600 py-3 font-bold">Sign in with Google</button>
+          <button 
+              onClick={async () => {
+                try {
+                  await signInWithPopup(auth, googleProvider);
+                } catch (err: any) {
+                  console.error('Sign-in error:', err);
+                  showToast(`Sign-in failed: ${err.message}`, 'error');
+                }
+              }} 
+              className="w-full rounded-xl bg-indigo-600 py-3 font-bold"
+            >
+              Sign in with Google
+            </button>
           <button onClick={onBack} className="text-xs text-slate-400 underline">Back to portfolio</button>
         </div>
       ) : (

@@ -338,7 +338,7 @@ export const ProjectModal: FC<ProjectModalProps> = ({ project, onClose }) => {
           initial={{ opacity: 0, scale: 0.95, y: 20 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 20 }}
-          className="relative w-full max-w-6xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl sm:rounded-[2rem] shadow-2xl overflow-hidden max-h-[92vh] flex flex-col my-auto"
+          className="relative w-full max-w-6xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl sm:rounded-[2rem] shadow-2xl overflow-hidden max-h-[95dvh] flex flex-col my-auto"
           onClick={(e) => e.stopPropagation()}
         >
           

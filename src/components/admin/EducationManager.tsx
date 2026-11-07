@@ -181,7 +181,7 @@ export const EducationManager: React.FC = () => {
             </div>
 
             <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-4">Semester Results Management</h4>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
               {university.semesters.map((sem) => (
                 <div key={sem.semesterNumber} className="border border-slate-200 dark:border-slate-800 rounded-2xl p-5 bg-slate-50 dark:bg-slate-950/50 flex flex-col justify-between">
                   <div>

@@ -72,13 +72,13 @@ export const Contact: React.FC = () => {
   };
 
   return (
-    <section id="contact" className="py-20 sm:py-28 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 overflow-hidden transition-colors duration-300">
+    <section id="contact" className="py-[var(--section-py)] bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 overflow-hidden transition-colors duration-300">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         
         <ScrollReveal>
           <div className="text-center max-w-3xl mx-auto mb-16">
             <h2 className="text-xs font-bold uppercase tracking-widest text-indigo-600 dark:text-indigo-400 mb-2">Get in Touch</h2>
-            <h3 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-slate-900 dark:text-white tracking-tight">Let's Connect & Build Together</h3>
+            <h3 className="font-extrabold text-slate-900 dark:text-white tracking-tight" style={{ fontSize: 'var(--text-4xl)' }}>Let's Connect & Build Together</h3>
             <p className="mt-4 text-base sm:text-lg text-slate-600 dark:text-slate-300 text-wrap-balance">
               Have a project, collaboration opportunity, or inquiry? Send a message directly or connect via email and WhatsApp.
             </p>

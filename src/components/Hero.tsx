@@ -19,7 +19,7 @@ export const Hero: React.FC<HeroProps> = ({ onOpenResume }) => {
 
 
   return (
-    <section className="relative pt-24 pb-14 sm:pt-32 sm:pb-20 md:pt-40 md:pb-28 overflow-hidden bg-gradient-to-b from-slate-50 via-slate-100/50 to-white dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
+    <section className="relative pt-[var(--section-py)] pb-[calc(var(--section-py)/2)] overflow-hidden bg-gradient-to-b from-slate-50 via-slate-100/50 to-white dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
       
       {/* Background glow accents */}
       <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-indigo-500/10 dark:bg-indigo-600/10 rounded-full blur-3xl pointer-events-none" />
@@ -41,7 +41,7 @@ export const Hero: React.FC<HeroProps> = ({ onOpenResume }) => {
               <span>Full-Stack MERN & AI Developer</span>
             </div>
 
-            <h1 className="text-3xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight text-slate-900 dark:text-white leading-[1.15] sm:leading-[1.1]">
+            <h1 className="font-extrabold tracking-tight text-slate-900 dark:text-white leading-[1.1] sm:leading-[1.1]" style={{ fontSize: 'var(--text-5xl)' }}>
               Hi, I'm <span className="bg-gradient-to-r from-indigo-600 to-purple-600 dark:from-indigo-400 dark:to-purple-400 bg-clip-text text-transparent">{settings.name}</span>
             </h1>
 
@@ -120,9 +120,9 @@ export const Hero: React.FC<HeroProps> = ({ onOpenResume }) => {
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.6, delay: 0.2 }}
-            className="lg:col-span-5 flex justify-center"
+            className="lg:col-span-5 flex justify-center order-first lg:order-last"
           >
-            <div className="relative w-56 h-56 sm:w-72 sm:h-72 md:w-80 md:h-80 lg:w-96 lg:h-96 mx-auto">
+            <div className="relative w-44 h-44 sm:w-56 sm:h-56 md:w-64 md:h-64 lg:w-72 lg:h-72 xl:w-80 xl:h-80 2xl:w-96 2xl:h-96 mx-auto">
               <div className="absolute inset-0 bg-gradient-to-tr from-indigo-600 to-purple-600 rounded-3xl rotate-3 opacity-20 blur-xl" />
               <div className="relative w-full h-full rounded-3xl overflow-hidden border-2 border-slate-200 dark:border-slate-800 shadow-2xl bg-slate-900">
                 <img
@@ -132,13 +132,13 @@ export const Hero: React.FC<HeroProps> = ({ onOpenResume }) => {
                   className="w-full h-full object-cover object-center hover:scale-105 transition-transform duration-500"
                 />
               </div>
-              <div className="absolute -bottom-3 -right-3 sm:-bottom-4 sm:-right-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl sm:rounded-2xl p-2.5 sm:p-4 shadow-xl flex items-center gap-2 sm:gap-3">
-                <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
-                  <Code className="w-4 h-4 sm:w-5 sm:h-5" />
+              <div className="absolute -bottom-2 -right-2 sm:-bottom-3 sm:-right-3 md:-bottom-4 md:-right-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl sm:rounded-2xl p-2 sm:p-3 md:p-3.5 shadow-xl flex items-center gap-2 sm:gap-3">
+                <div className="w-7 h-7 sm:w-8 sm:h-8 md:w-9 md:h-9 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+                  <Code className="w-3.5 h-3.5 sm:w-4 sm:h-4 md:w-4.5 md:h-4.5" />
                 </div>
                 <div>
-                  <div className="text-[11px] sm:text-xs font-semibold text-slate-900 dark:text-white">8+ Projects</div>
-                  <div className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400">Full-Stack & AI</div>
+                  <div className="text-[10px] sm:text-[11px] md:text-xs font-semibold text-slate-900 dark:text-white">8+ Projects</div>
+                  <div className="text-[9px] sm:text-[10px] md:text-[11px] text-slate-500 dark:text-slate-400">Full-Stack & AI</div>
                 </div>
               </div>
             </div>

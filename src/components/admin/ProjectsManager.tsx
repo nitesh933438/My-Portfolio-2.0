@@ -233,7 +233,7 @@ export const ProjectsManager: React.FC = () => {
       </div>
 
       {loading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
           {[1, 2, 3].map(i => (
             <div key={i} className="h-80 rounded-3xl bg-slate-200 dark:bg-slate-900 animate-pulse" />
           ))}
@@ -244,7 +244,7 @@ export const ProjectsManager: React.FC = () => {
           <p className="text-xs text-slate-500 max-w-sm mx-auto">Create your first project metadata and upload screenshots to Supabase.</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
           {filteredProjects.map((project) => (
             <motion.div
               key={project.id}
