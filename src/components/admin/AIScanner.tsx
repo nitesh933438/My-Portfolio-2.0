@@ -70,6 +70,21 @@ export const AIScanner: React.FC<AIScannerProps> = ({ module, onDataExtracted, i
         body: formData
       });
 
+      // Handle non-JSON responses (like HTML 404/500 pages)
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        const text = await response.text();
+        console.error('Unexpected server response:', text);
+        
+        if (response.status === 404) {
+          throw new Error('API endpoint not found (404). Please ensure the backend is running and the route is registered.');
+        } else if (response.status === 500) {
+          throw new Error('Internal Server Error (500). Check server logs for details.');
+        } else {
+          throw new Error(`Server returned an unexpected response (${response.status}). It might be an HTML error page instead of JSON.`);
+        }
+      }
+
       const result = await response.json();
 
       if (!response.ok) {

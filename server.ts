@@ -5,9 +5,11 @@ import express from 'express';
 import { createServer as createViteServer } from 'vite';
 import path from 'path';
 import multer from 'multer';
+import cors from 'cors';
 import { createClient } from '@supabase/supabase-js';
-import { initializeApp, getApps, cert } from 'firebase-admin/app';
+import { initializeApp, getApps } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
+import { GoogleGenAI, Type } from '@google/genai';
 
 const app = express();
 const PORT = 3000;
@@ -24,11 +26,20 @@ const supabaseUrl = process.env.VITE_SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const STORAGE_BUCKET = process.env.SUPABASE_BUCKET || 'portfolio-assets';
 
-// Initialize Supabase Client (Bypasses RLS)
+// Initialize Supabase Client
 const supabase = (supabaseUrl && supabaseServiceKey) 
   ? createClient(supabaseUrl, supabaseServiceKey) 
   : null;
 
+// Initialize Gemini
+const ai = process.env.GEMINI_API_KEY ? new GoogleGenAI({
+  apiKey: process.env.GEMINI_API_KEY,
+  httpOptions: {
+    headers: {
+      'User-Agent': 'aistudio-build',
+    }
+  }
+}) : null;
 
 // Multer for file handling in memory
 const upload = multer({ 
@@ -36,6 +47,8 @@ const upload = multer({
   limits: { fileSize: 25 * 1024 * 1024 } // 25MB
 });
 
+// Middleware
+app.use(cors()); // CRITICAL: Handles OPTIONS preflight requests
 app.use(express.json({ limit: '25mb' }));
 app.use(express.urlencoded({ extended: true, limit: '25mb' }));
 
@@ -49,7 +62,6 @@ const verifyAdmin = async (req: any, res: any, next: any) => {
   const idToken = authHeader.split('Bearer ')[1];
   try {
     const decodedToken = await getAuth().verifyIdToken(idToken);
-
     const ADMIN_EMAIL = 'nitesh933438@gmail.com';
     
     if (decodedToken.email?.toLowerCase() !== ADMIN_EMAIL.toLowerCase()) {
@@ -65,118 +77,7 @@ const verifyAdmin = async (req: any, res: any, next: any) => {
 };
 
 // ---------------------------------------------------------------------------
-// 1. Storage Proxy Routes
-// ---------------------------------------------------------------------------
-
-/**
- * Securely uploads a file to Supabase Storage
- */
-app.post('/api/storage/upload', verifyAdmin, upload.single('file'), async (req: any, res) => {
-  try {
-    if (!supabase) return res.status(503).json({ error: 'Supabase storage is not configured' });
-    
-    const file = req.file;
-    const folder = req.body.folder || 'documents';
-    
-    if (!file) return res.status(400).json({ error: 'No file provided' });
-
-    const fileName = `${Date.now()}_${file.originalname.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
-    const filePath = `${folder}/${fileName}`;
-
-    const { data, error } = await supabase.storage
-      .from(STORAGE_BUCKET)
-      .upload(filePath, file.buffer, {
-        contentType: file.mimetype,
-        upsert: true
-      });
-
-    if (error) throw error;
-
-    const { data: { publicUrl } } = supabase.storage
-      .from(STORAGE_BUCKET)
-      .getPublicUrl(data.path);
-
-    res.json({
-      path: data.path,
-      url: publicUrl
-    });
-  } catch (error: any) {
-    console.error('Upload proxy error:', error);
-    res.status(500).json({ error: error.message || 'Upload failed' });
-  }
-});
-
-/**
- * Securely deletes a file from Supabase Storage
- */
-app.post('/api/storage/delete', verifyAdmin, async (req, res) => {
-  try {
-    if (!supabase) return res.status(503).json({ error: 'Supabase storage is not configured' });
-    
-    const { path } = req.body;
-    if (!path) return res.status(400).json({ error: 'No path provided' });
-
-    const { error } = await supabase.storage
-      .from(STORAGE_BUCKET)
-      .remove([path]);
-
-    if (error) throw error;
-
-    res.json({ success: true });
-  } catch (error: any) {
-    console.error('Delete proxy error:', error);
-    res.status(500).json({ error: error.message || 'Delete failed' });
-  }
-});
-
-/**
- * Generates a signed URL for private files
- */
-app.get('/api/storage/signed-url', verifyAdmin, async (req, res) => {
-  try {
-    if (!supabase) return res.status(503).json({ error: 'Supabase storage is not configured' });
-    
-    const filePath = req.query.path as string;
-    if (!filePath) return res.status(400).json({ error: 'No path provided' });
-
-    const { data, error } = await supabase.storage
-      .from(STORAGE_BUCKET)
-      .createSignedUrl(filePath, 3600); // 1 hour
-
-    if (error) throw error;
-
-    res.json({ url: data.signedUrl });
-  } catch (error: any) {
-    console.error('Signed URL proxy error:', error);
-    res.status(500).json({ error: error.message || 'Failed to generate signed URL' });
-  }
-});
-
-// ---------------------------------------------------------------------------
-// 2. Healthcheck & Legacy Routes
-// ---------------------------------------------------------------------------
-app.get('/api/health', (req, res) => {
-  res.json({
-    status: 'ok',
-    storageConfigured: !!(supabaseUrl && supabaseServiceKey),
-    timestamp: new Date().toISOString(),
-  });
-});
-
-import { GoogleGenAI, Type } from '@google/genai';
-
-// Initialize Gemini
-const ai = process.env.GEMINI_API_KEY ? new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY,
-  httpOptions: {
-    headers: {
-      'User-Agent': 'aistudio-build',
-    }
-  }
-}) : null;
-
-// ---------------------------------------------------------------------------
-// AI Extraction Logic
+// 1. AI Extraction Logic
 // ---------------------------------------------------------------------------
 
 const extractionSchemas: Record<string, any> = {
@@ -252,16 +153,10 @@ app.post('/api/ai/extract', verifyAdmin, upload.single('file'), async (req: any,
     const schema = extractionSchemas[module];
     let promptText = `Extract ${module} information from the following content. If a field is not found, leave it empty or null. Do not invent information.`;
     
-    if (text) {
-      promptText += `\n\nTEXT CONTENT:\n${text}`;
-    }
-    
-    if (url) {
-      promptText += `\n\nURL TO ANALYZE: ${url}`;
-    }
+    if (text) promptText += `\n\nTEXT CONTENT:\n${text}`;
+    if (url) promptText += `\n\nURL TO ANALYZE: ${url}`;
 
     const parts: any[] = [{ text: promptText }];
-
     if (file) {
       parts.push({
         inlineData: {
@@ -280,16 +175,85 @@ app.post('/api/ai/extract', verifyAdmin, upload.single('file'), async (req: any,
       },
     });
 
-    const extractedData = JSON.parse(response.text || '{}');
-
     res.json({
       success: true,
-      data: extractedData
+      data: JSON.parse(response.text || '{}')
     });
   } catch (error: any) {
     console.error('AI Extraction error:', error);
     res.status(500).json({ error: error.message || 'AI extraction failed' });
   }
+});
+
+// ---------------------------------------------------------------------------
+// 2. Storage Proxy Routes
+// ---------------------------------------------------------------------------
+
+app.post('/api/storage/upload', verifyAdmin, upload.single('file'), async (req: any, res) => {
+  try {
+    if (!supabase) return res.status(503).json({ error: 'Supabase storage is not configured' });
+    const file = req.file;
+    const folder = req.body.folder || 'documents';
+    if (!file) return res.status(400).json({ error: 'No file provided' });
+
+    const fileName = `${Date.now()}_${file.originalname.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
+    const filePath = `${folder}/${fileName}`;
+
+    const { data, error } = await supabase.storage
+      .from(STORAGE_BUCKET)
+      .upload(filePath, file.buffer, { contentType: file.mimetype, upsert: true });
+
+    if (error) throw error;
+    const { data: { publicUrl } } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(data.path);
+
+    res.json({ path: data.path, url: publicUrl });
+  } catch (error: any) {
+    console.error('Upload proxy error:', error);
+    res.status(500).json({ error: error.message || 'Upload failed' });
+  }
+});
+
+app.post('/api/storage/delete', verifyAdmin, async (req, res) => {
+  try {
+    if (!supabase) return res.status(503).json({ error: 'Supabase storage is not configured' });
+    const { path } = req.body;
+    if (!path) return res.status(400).json({ error: 'No path provided' });
+
+    const { error } = await supabase.storage.from(STORAGE_BUCKET).remove([path]);
+    if (error) throw error;
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error('Delete proxy error:', error);
+    res.status(500).json({ error: error.message || 'Delete failed' });
+  }
+});
+
+app.get('/api/storage/signed-url', verifyAdmin, async (req, res) => {
+  try {
+    if (!supabase) return res.status(503).json({ error: 'Supabase storage is not configured' });
+    const filePath = req.query.path as string;
+    if (!filePath) return res.status(400).json({ error: 'No path provided' });
+
+    const { data, error } = await supabase.storage.from(STORAGE_BUCKET).createSignedUrl(filePath, 3600);
+    if (error) throw error;
+    res.json({ url: data.signedUrl });
+  } catch (error: any) {
+    console.error('Signed URL proxy error:', error);
+    res.status(500).json({ error: error.message || 'Failed to generate signed URL' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// 3. Health & Misc
+// ---------------------------------------------------------------------------
+
+app.get('/api/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    storageConfigured: !!supabase,
+    geminiConfigured: !!ai,
+    timestamp: new Date().toISOString(),
+  });
 });
 
 app.post('/api/academic/extract-marksheet', verifyAdmin, (_req, res) => {
@@ -300,8 +264,27 @@ app.post('/api/academic/extract-marksheet', verifyAdmin, (_req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// 3. Mount Vite middlewares in development
+// 4. Global Error Handler (Ensures JSON responses)
 // ---------------------------------------------------------------------------
+
+app.use((err: any, req: any, res: any, next: any) => {
+  console.error('SERVER ERROR:', err);
+  res.status(err.status || 500).json({
+    success: false,
+    error: err.name || 'Server Error',
+    message: err.message || 'An unexpected internal error occurred'
+  });
+});
+
+// Handle 404s for API routes specifically
+app.use('/api/*', (req, res) => {
+  res.status(404).json({ success: false, error: 'API route not found' });
+});
+
+// ---------------------------------------------------------------------------
+// 5. Start Server & Vite
+// ---------------------------------------------------------------------------
+
 async function startServer() {
   const isProd = process.env.NODE_ENV === 'production';
 
@@ -312,14 +295,17 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    app.use(express.static(path.resolve(process.cwd(), 'dist')));
+    const distPath = path.resolve(process.cwd(), 'dist');
+    app.use(express.static(distPath));
     app.get('*', (req, res) => {
-      res.sendFile(path.resolve(process.cwd(), 'dist', 'index.html'));
+      res.sendFile(path.join(distPath, 'index.html'));
     });
   }
 
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Portfolio CMS Backend running on http://0.0.0.0:${PORT}`);
+    console.log(`\n🚀 Portfolio CMS Backend running on http://0.0.0.0:${PORT}`);
+    console.log(`🤖 Gemini AI: ${ai ? 'ENABLED' : 'DISABLED (Missing API Key)'}`);
+    console.log(`📦 Supabase: ${supabase ? 'ENABLED' : 'DISABLED (Missing Config)'}\n`);
   });
 }
 
