@@ -26,7 +26,12 @@ export const Contact: React.FC = () => {
   const linkedinLink = SOCIAL_LINKS.find(s => s.platform === 'LinkedIn');
   const instagramLink = SOCIAL_LINKS.find(s => s.platform === 'Instagram');
 
-  const whatsappUrl = whatsappLink?.url || `https://wa.me/${settings.whatsapp.replace(/\+/g, '')}`;
+  // Use encoded prefilled message for WhatsApp
+  const whatsappUrl = `https://wa.me/${settings.whatsapp.replace(/\+/g, '')}?text=${encodeURIComponent(settings.whatsappPrefilledMessage || "Hello Nitesh! I visited your portfolio and I'm interested in discussing a project with you.")}`;
+
+  // Use encoded prefilled subject and body for Email
+  const emailUrl = `mailto:${settings.email}?subject=${encodeURIComponent(settings.emailPrefilledSubject || "Project Inquiry – Portfolio Contact")}&body=${encodeURIComponent(settings.emailPrefilledBody || "Hello Nitesh,\n\nI visited your portfolio and I'm interested in discussing a project with you.\n\nBest regards,")}`;
+
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -95,7 +100,7 @@ export const Contact: React.FC = () => {
                     </div>
                     <div className="min-w-0">
                       <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Email Me</div>
-                      <a href={`mailto:${settings.email}`} className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white hover:underline truncate block">
+                      <a href={emailUrl} className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white hover:underline truncate block">
                         {settings.email}
                       </a>
                     </div>

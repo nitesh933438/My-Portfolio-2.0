@@ -177,6 +177,9 @@ export const SITE_CONFIG = {
   email: "nitesh933438@gmail.com",
   whatsapp: "+91 9334387983",
   whatsappNumberDigits: "919334387983",
+  whatsappPrefilledMessage: "Hello Nitesh! I visited your portfolio and I'm interested in discussing a project with you.",
+  emailPrefilledSubject: "Project Inquiry – Portfolio Contact",
+  emailPrefilledBody: "Hello Nitesh,\n\nI visited your portfolio and I'm interested in discussing a project with you.\n\nBest regards,",
   location: "Rohtas, Bihar, India",
   profilePhoto: getPath('/assets/aistudio/Any_Profile_Photo_0559445a.png'),
   resumeUrl: getPath('/nitesh_kumar_resume.pdf'),
@@ -219,7 +222,7 @@ export const SOCIAL_LINKS: SocialLink[] = [
   },
   { 
     platform: "WhatsApp", 
-    url: `https://wa.me/${SITE_CONFIG.whatsappNumberDigits}`, 
+    url: `https://wa.me/${SITE_CONFIG.whatsappNumberDigits}?text=${encodeURIComponent("Hello Nitesh! I visited your portfolio and I'm interested in discussing a project with you.")}`, 
     iconName: "MessageSquare", 
     colorClass: "hover:text-emerald-600 dark:hover:text-emerald-400" 
   },

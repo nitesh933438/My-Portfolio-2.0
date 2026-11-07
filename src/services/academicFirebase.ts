@@ -271,6 +271,9 @@ export interface SiteSettings {
   github: string;
   linkedin: string;
   instagram: string;
+  whatsappPrefilledMessage: string;
+  emailPrefilledSubject: string;
+  emailPrefilledBody: string;
   updatedAt?: string;
 }
 

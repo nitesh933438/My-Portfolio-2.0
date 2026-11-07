@@ -15,7 +15,8 @@ export const Hero: React.FC<HeroProps> = ({ onOpenResume }) => {
   const githubLink = SOCIAL_LINKS.find(s => s.platform === 'GitHub');
   const linkedinLink = SOCIAL_LINKS.find(s => s.platform === 'LinkedIn');
   
-  const whatsappUrl = whatsappLink?.url || `https://wa.me/${settings.whatsapp.replace(/\+/g, '')}`;
+  const whatsappUrl = `https://wa.me/${settings.whatsapp.replace(/\+/g, '')}?text=${encodeURIComponent(settings.whatsappPrefilledMessage || "Hello Nitesh! I visited your portfolio and I'm interested in discussing a project with you.")}`;
+
 
   return (
     <section className="relative pt-24 pb-14 sm:pt-32 sm:pb-20 md:pt-40 md:pb-28 overflow-hidden bg-gradient-to-b from-slate-50 via-slate-100/50 to-white dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
