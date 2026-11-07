@@ -24,8 +24,10 @@ import {
   ShieldCheck,
   Zap,
   Check,
-  XCircle
+  XCircle,
+  Sparkles
 } from 'lucide-react';
+import { AIScanner } from './admin/AIScanner';
 import { auth, googleProvider, isUserAdmin, ADMIN_EMAIL } from '../services/academicFirebase';
 import { bulkScanCertificates } from '../services/verificationDetection';
 import {
@@ -90,6 +92,23 @@ export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [deletingCert, setDeletingCert] = useState<PortfolioCertificate | null>(null);
   const [scanning, setScanning] = useState(false);
+  const [isAIScannerOpen, setIsAIScannerOpen] = useState(false);
+
+  const handleAIExtractedData = (data: any) => {
+    if (!data) return;
+    setForm(prev => ({
+      ...prev,
+      title: data.title || prev.title,
+      issuer: data.issuer || prev.issuer,
+      category: data.category || prev.category,
+      issueDate: data.issueDate || prev.issueDate,
+      credentialId: data.credentialId || prev.credentialId,
+      credentialUrl: data.credentialUrl || prev.credentialUrl,
+      skills: data.skills || prev.skills,
+      description: data.description || prev.description,
+    }));
+    showToast('AI extracted certificate data successfully.', 'success');
+  };
 
   const runBulkScan = async () => {
     setScanning(true);
@@ -423,6 +442,26 @@ export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
             </div>
           </div>
 
+          {/* AI Auto-Fill Trigger */}
+          <div className="bg-indigo-600/10 border border-indigo-500/20 rounded-2xl p-4 flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-lg shadow-indigo-600/20">
+                <Sparkles size={20} />
+              </div>
+              <div>
+                <h4 className="text-[11px] font-black uppercase tracking-wider text-white">AI Assistant</h4>
+                <p className="text-[10px] text-slate-400">Scan certificate image/PDF to auto-fill.</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsAIScannerOpen(true)}
+              className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-black uppercase tracking-wider transition-all"
+            >
+              Scan
+            </button>
+          </div>
+
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
@@ -668,6 +707,13 @@ export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
           </div>
         )}
       </AnimatePresence>
+
+      <AIScanner 
+        module="certificate"
+        isOpen={isAIScannerOpen}
+        onClose={() => setIsAIScannerOpen(false)}
+        onDataExtracted={handleAIExtractedData}
+      />
     </div>
   );
 };

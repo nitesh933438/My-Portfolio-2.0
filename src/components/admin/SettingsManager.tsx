@@ -25,6 +25,8 @@ import {
   resolveAssetUrl, 
   validateFile 
 } from '../../services/supabaseStorage';
+import { AIScanner } from './AIScanner';
+import { Sparkles } from 'lucide-react';
 
 export const SettingsManager: React.FC = () => {
   const [form, setForm] = useState({
@@ -43,7 +45,24 @@ export const SettingsManager: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [uploadingResume, setUploadingResume] = useState(false);
+  const [isAIScannerOpen, setIsAIScannerOpen] = useState(false);
   const { showToast } = useAdminToast();
+  
+  const handleAIExtractedData = (data: any) => {
+    if (!data) return;
+    setForm(prev => ({
+      ...prev,
+      name: data.name || prev.name,
+      title: data.title || prev.title,
+      email: data.email || prev.email,
+      whatsapp: data.whatsapp || prev.whatsapp,
+      location: data.location || prev.location,
+      bio: data.bio || prev.bio,
+      github: data.github || prev.github,
+      linkedin: data.linkedin || prev.linkedin,
+    }));
+    showToast('AI successfully extracted profile details. Please review.', 'success');
+  };
   
   const photoInputRef = useRef<HTMLInputElement>(null);
   const resumeInputRef = useRef<HTMLInputElement>(null);
@@ -135,6 +154,26 @@ export const SettingsManager: React.FC = () => {
       <div>
         <h1 className="text-2xl font-black">Portfolio Settings & Profile</h1>
         <p className="text-sm text-slate-500">Update global portfolio profile information, assets, and contact details.</p>
+      </div>
+
+      {/* AI Trigger */}
+      <div className="bg-indigo-600/5 dark:bg-indigo-500/5 border border-indigo-100 dark:border-indigo-900/30 rounded-3xl p-6 flex flex-col sm:flex-row items-center justify-between gap-6">
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-xl shadow-indigo-600/20">
+            <Sparkles size={24} />
+          </div>
+          <div>
+            <h3 className="font-black text-slate-900 dark:text-white uppercase tracking-wider text-xs">Magic AI Profile Sync</h3>
+            <p className="text-[11px] text-slate-500 max-w-xs">Upload your resume or paste your bio to instantly update your portfolio profile.</p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() => setIsAIScannerOpen(true)}
+          className="w-full sm:w-auto px-8 py-3.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black uppercase tracking-widest shadow-lg shadow-indigo-600/20 transition-all active:scale-95"
+        >
+          Scan Resume
+        </button>
       </div>
 
       <form onSubmit={handleSave} className="space-y-6">
@@ -345,6 +384,13 @@ export const SettingsManager: React.FC = () => {
           </div>
         </div>
       </form>
+
+      <AIScanner 
+        module="settings"
+        isOpen={isAIScannerOpen}
+        onClose={() => setIsAIScannerOpen(false)}
+        onDataExtracted={handleAIExtractedData}
+      />
     </div>
   );
 };

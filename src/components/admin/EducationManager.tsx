@@ -4,8 +4,22 @@ import { ACADEMIC_DATA, UniversityRecord, SchoolRecord, SemesterResult } from '.
 import { subscribeToUniversityRecord, publishSemesterResult, rollbackSemesterResult } from '../../services/academicFirebase';
 import { db, auth } from '../../services/academicFirebase';
 import { doc, setDoc, collection, getDocs } from 'firebase/firestore';
-import { GraduationCap, School, BookOpen, Plus, Edit2, Trash2, CheckCircle2, AlertCircle, Loader2, Save, X } from 'lucide-react';
 import { useAdminToast } from './AdminToastContext';
+import { AIScanner } from './AIScanner';
+import { 
+  GraduationCap, 
+  School, 
+  BookOpen, 
+  Plus, 
+  Edit2, 
+  Trash2, 
+  CheckCircle2, 
+  AlertCircle, 
+  Loader2, 
+  Save, 
+  X,
+  Sparkles 
+} from 'lucide-react';
 
 export const EducationManager: React.FC = () => {
   const [university, setUniversity] = useState<UniversityRecord>(ACADEMIC_DATA.university);
@@ -21,6 +35,29 @@ export const EducationManager: React.FC = () => {
 
   // Modal states for editing school record
   const [editingSchool, setEditingSchool] = useState<SchoolRecord | null>(null);
+
+  // AI Scanner state
+  const [isAIScannerOpen, setIsAIScannerOpen] = useState(false);
+
+  const handleAIExtractedData = (data: any) => {
+    if (!data) return;
+    
+    if (editingSemester) {
+      if (data.sgpa) setSgpaInput(String(data.sgpa));
+      if (data.resultDeclarationDate || data.passingYear) setDeclDateInput(data.resultDeclarationDate || data.passingYear);
+      setStatusInput('PASS');
+      showToast('AI successfully extracted semester details.', 'success');
+    } else if (editingSchool) {
+      setEditingSchool(prev => prev ? ({
+        ...prev,
+        percentage: data.percentage || prev.percentage,
+        totalMarks: data.totalMarks || prev.totalMarks,
+        passingYear: data.passingYear || prev.passingYear,
+        highlights: data.highlights || prev.highlights,
+      }) : null);
+      showToast('AI successfully extracted school record details.', 'success');
+    }
+  };
 
   const { showToast } = useAdminToast();
 
@@ -233,6 +270,26 @@ export const EducationManager: React.FC = () => {
                 <h3 className="text-lg font-black">Edit {editingSemester.semesterLabel}</h3>
                 <button onClick={() => setEditingSemester(null)} className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400"><X size={18} /></button>
               </div>
+
+              {/* AI Trigger */}
+              <button
+                type="button"
+                onClick={() => setIsAIScannerOpen(true)}
+                className="w-full p-4 rounded-2xl bg-indigo-600/5 hover:bg-indigo-600/10 border border-indigo-100 dark:border-indigo-900/30 flex items-center justify-between transition-all group"
+              >
+                <div className="flex items-center gap-3 text-left">
+                  <div className="p-2 rounded-xl bg-indigo-600 text-white shadow-lg shadow-indigo-600/20 group-hover:scale-110 transition-transform">
+                    <Sparkles size={16} />
+                  </div>
+                  <div>
+                    <h4 className="text-[10px] font-black uppercase text-slate-900 dark:text-white">AI Marksheet Scan</h4>
+                    <p className="text-[9px] text-slate-500">Scan result to auto-fill SGPA & Date.</p>
+                  </div>
+                </div>
+                <div className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 bg-white dark:bg-slate-800 px-2 py-1 rounded-lg border border-indigo-100 dark:border-indigo-800">
+                  Scan
+                </div>
+              </button>
               <div>
                 <label className="block text-xs font-bold uppercase text-slate-400 mb-1.5">Status</label>
                 <select value={statusInput} onChange={(e) => setStatusInput(e.target.value as any)} className="w-full p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-bold">
@@ -271,6 +328,26 @@ export const EducationManager: React.FC = () => {
                 <h3 className="text-lg font-black">Edit {editingSchool.qualificationTitle}</h3>
                 <button type="button" onClick={() => setEditingSchool(null)} className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400"><X size={18} /></button>
               </div>
+
+              {/* AI Trigger */}
+              <button
+                type="button"
+                onClick={() => setIsAIScannerOpen(true)}
+                className="w-full p-4 rounded-2xl bg-indigo-600/5 hover:bg-indigo-600/10 border border-indigo-100 dark:border-indigo-900/30 flex items-center justify-between transition-all group"
+              >
+                <div className="flex items-center gap-3 text-left">
+                  <div className="p-2 rounded-xl bg-indigo-600 text-white shadow-lg shadow-indigo-600/20 group-hover:scale-110 transition-transform">
+                    <Sparkles size={16} />
+                  </div>
+                  <div>
+                    <h4 className="text-[10px] font-black uppercase text-slate-900 dark:text-white">AI Document Scan</h4>
+                    <p className="text-[9px] text-slate-500">Scan marksheet/certificate to auto-fill.</p>
+                  </div>
+                </div>
+                <div className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 bg-white dark:bg-slate-800 px-2 py-1 rounded-lg border border-indigo-100 dark:border-indigo-800">
+                  Scan
+                </div>
+              </button>
               <div>
                 <label className="block text-xs font-bold uppercase text-slate-400 mb-1.5">Percentage (%)</label>
                 <input type="number" step="0.1" value={editingSchool.percentage} onChange={(e) => setEditingSchool({ ...editingSchool, percentage: parseFloat(e.target.value) })} className="w-full p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-bold" required />
@@ -291,6 +368,13 @@ export const EducationManager: React.FC = () => {
           </div>
         )}
       </AnimatePresence>
+
+      <AIScanner 
+        module="education"
+        isOpen={isAIScannerOpen}
+        onClose={() => setIsAIScannerOpen(false)}
+        onDataExtracted={handleAIExtractedData}
+      />
     </div>
   );
 };

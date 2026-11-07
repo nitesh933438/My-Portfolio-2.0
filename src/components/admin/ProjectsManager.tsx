@@ -4,9 +4,10 @@ import { Project, ProjectCategory } from '../../data/portfolio';
 import { subscribeToProjects, saveProject, deleteProject, resolveProjectImageUrl } from '../../services/projectFirebase';
 import { auth, isUserAdmin } from '../../services/academicFirebase';
 import { uploadFileProxy, validateFile } from '../../services/supabaseStorage';
-import { Plus, Trash2, Edit2, Loader2, Save, X, Search, ExternalLink, Github, Eye, EyeOff, Info, Database, FileText, AlertCircle, Grid } from 'lucide-react';
+import { Plus, Trash2, Edit2, Loader2, Save, X, Search, ExternalLink, Github, Eye, EyeOff, Info, Database, FileText, AlertCircle, Grid, Sparkles } from 'lucide-react';
 import { useAdminToast } from './AdminToastContext';
 import { ProjectScreenshotManager } from './ProjectScreenshotManager';
+import { AIScanner } from './AIScanner';
 
 const categories: ProjectCategory[] = [
   'Full-Stack Development',
@@ -56,6 +57,9 @@ export const ProjectsManager: React.FC = () => {
 
   // Dedicated Screenshot Manager state
   const [managingScreenshotsProject, setManagingScreenshotsProject] = useState<Project | null>(null);
+
+  // AI Scanner state
+  const [isAIScannerOpen, setIsAIScannerOpen] = useState(false);
 
   const { showToast } = useAdminToast();
 
@@ -137,6 +141,25 @@ export const ProjectsManager: React.FC = () => {
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleAIExtractedData = (data: any) => {
+    if (!data) return;
+    
+    setForm(prev => ({
+      ...prev,
+      title: data.title || prev.title,
+      shortDescription: data.shortDescription || prev.shortDescription,
+      detailedDescription: data.detailedDescription || prev.detailedDescription,
+      category: (data.category as ProjectCategory) || prev.category,
+      techStack: data.techStack || prev.techStack,
+      keyFeatures: data.keyFeatures || prev.keyFeatures,
+      githubUrl: data.githubUrl || prev.githubUrl,
+      liveDemoUrl: data.liveDemoUrl || prev.liveDemoUrl,
+      status: data.status || prev.status,
+    }));
+    
+    showToast('AI successfully populated the fields. Please review before saving.', 'success');
   };
 
   const confirmDelete = async () => {
@@ -323,6 +346,26 @@ export const ProjectsManager: React.FC = () => {
                 </button>
               </div>
 
+              {/* AI Auto-Fill Trigger */}
+              <div className="bg-indigo-600/5 dark:bg-indigo-500/5 border border-indigo-100 dark:border-indigo-900/30 rounded-2xl p-4 flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-lg shadow-indigo-600/20">
+                    <Sparkles size={20} />
+                  </div>
+                  <div>
+                    <h4 className="text-[11px] font-black uppercase tracking-wider text-slate-900 dark:text-white">Magic AI Auto-Fill</h4>
+                    <p className="text-[10px] text-slate-500">Scan GitHub, PDF or Text to populate fields instantly.</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsAIScannerOpen(true)}
+                  className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-black uppercase tracking-wider shadow-md transition-all active:scale-95"
+                >
+                  Scan Now
+                </button>
+              </div>
+
               <form onSubmit={handleSave} className="space-y-4">
                 <div className="grid sm:grid-cols-2 gap-4">
                   <div>
@@ -463,6 +506,14 @@ export const ProjectsManager: React.FC = () => {
           }}
         />
       )}
+
+      {/* AI SCANNER */}
+      <AIScanner 
+        module="project"
+        isOpen={isAIScannerOpen}
+        onClose={() => setIsAIScannerOpen(false)}
+        onDataExtracted={handleAIExtractedData}
+      />
     </div>
   );
 };

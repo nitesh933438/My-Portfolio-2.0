@@ -163,10 +163,139 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+import { GoogleGenAI, Type } from '@google/genai';
+
+// Initialize Gemini
+const ai = process.env.GEMINI_API_KEY ? new GoogleGenAI({
+  apiKey: process.env.GEMINI_API_KEY,
+  httpOptions: {
+    headers: {
+      'User-Agent': 'aistudio-build',
+    }
+  }
+}) : null;
+
+// ---------------------------------------------------------------------------
+// AI Extraction Logic
+// ---------------------------------------------------------------------------
+
+const extractionSchemas: Record<string, any> = {
+  project: {
+    type: Type.OBJECT,
+    properties: {
+      title: { type: Type.STRING },
+      shortDescription: { type: Type.STRING },
+      detailedDescription: { type: Type.STRING },
+      category: { type: Type.STRING },
+      techStack: { type: Type.ARRAY, items: { type: Type.STRING } },
+      keyFeatures: { type: Type.ARRAY, items: { type: Type.STRING } },
+      githubUrl: { type: Type.STRING },
+      liveDemoUrl: { type: Type.STRING },
+      status: { type: Type.STRING }
+    },
+    required: ["title", "shortDescription", "detailedDescription"]
+  },
+  certificate: {
+    type: Type.OBJECT,
+    properties: {
+      title: { type: Type.STRING },
+      issuer: { type: Type.STRING },
+      issueDate: { type: Type.STRING },
+      credentialId: { type: Type.STRING },
+      credentialUrl: { type: Type.STRING },
+      category: { type: Type.STRING },
+      skills: { type: Type.ARRAY, items: { type: Type.STRING } },
+      description: { type: Type.STRING }
+    },
+    required: ["title", "issuer"]
+  },
+  education: {
+    type: Type.OBJECT,
+    properties: {
+      institution: { type: Type.STRING },
+      degree: { type: Type.STRING },
+      branch: { type: Type.STRING },
+      passingYear: { type: Type.STRING },
+      percentage: { type: Type.NUMBER },
+      sgpa: { type: Type.NUMBER },
+      location: { type: Type.STRING },
+      highlights: { type: Type.ARRAY, items: { type: Type.STRING } }
+    },
+    required: ["institution", "degree"]
+  },
+  settings: {
+    type: Type.OBJECT,
+    properties: {
+      name: { type: Type.STRING },
+      title: { type: Type.STRING },
+      bio: { type: Type.STRING },
+      location: { type: Type.STRING },
+      email: { type: Type.STRING },
+      whatsapp: { type: Type.STRING },
+      aboutQuote: { type: Type.STRING },
+      experienceSummary: { type: Type.STRING }
+    }
+  }
+};
+
+app.post('/api/ai/extract', verifyAdmin, upload.single('file'), async (req: any, res) => {
+  try {
+    if (!ai) return res.status(503).json({ error: 'Gemini API is not configured' });
+
+    const { module, text, url } = req.body;
+    const file = req.file;
+
+    if (!module || !extractionSchemas[module]) {
+      return res.status(400).json({ error: `Invalid or missing module: ${module}` });
+    }
+
+    const schema = extractionSchemas[module];
+    let promptText = `Extract ${module} information from the following content. If a field is not found, leave it empty or null. Do not invent information.`;
+    
+    if (text) {
+      promptText += `\n\nTEXT CONTENT:\n${text}`;
+    }
+    
+    if (url) {
+      promptText += `\n\nURL TO ANALYZE: ${url}`;
+    }
+
+    const parts: any[] = [{ text: promptText }];
+
+    if (file) {
+      parts.push({
+        inlineData: {
+          data: file.buffer.toString('base64'),
+          mimeType: file.mimetype
+        }
+      });
+    }
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3.8-flash",
+      contents: { parts },
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: schema,
+      },
+    });
+
+    const extractedData = JSON.parse(response.text || '{}');
+
+    res.json({
+      success: true,
+      data: extractedData
+    });
+  } catch (error: any) {
+    console.error('AI Extraction error:', error);
+    res.status(500).json({ error: error.message || 'AI extraction failed' });
+  }
+});
+
 app.post('/api/academic/extract-marksheet', verifyAdmin, (_req, res) => {
-  return res.status(503).json({
-    success: false,
-    error: 'Academic extraction is not yet configured with Gemini on the backend.'
+  res.status(308).json({ 
+    success: false, 
+    error: 'Please use the universal /api/ai/extract endpoint with module="education".' 
   });
 });
 
