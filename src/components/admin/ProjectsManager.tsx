@@ -351,7 +351,7 @@ export const ProjectsManager: React.FC = () => {
               className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-2xl w-full p-6 sm:p-8 space-y-6 shadow-2xl max-h-[90vh] overflow-y-auto"
             >
               <div className="flex justify-between items-center pb-4 border-b border-slate-200 dark:border-slate-800">
-                <h3 className="text-xl font-black">{editingId ? 'Edit Project' : 'Add New Project'}</h3>
+                <h3 className="text-xl font-black text-slate-900 dark:text-white">{editingId ? 'Edit Project' : 'Add New Project'}</h3>
                 <button onClick={() => setIsModalOpen(false)} className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-900 dark:hover:text-white">
                   <X size={20} />
                 </button>
@@ -520,10 +520,8 @@ export const ProjectsManager: React.FC = () => {
 
       {/* AI SCANNER */}
       <AIScanner 
-        module="project"
         isOpen={isAIScannerOpen}
         onClose={() => setIsAIScannerOpen(false)}
-        onDataExtracted={handleAIExtractedData}
       />
     </div>
   );

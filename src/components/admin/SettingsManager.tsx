@@ -26,6 +26,7 @@ import {
   validateFile 
 } from '../../services/supabaseStorage';
 import { AIScanner } from './AIScanner';
+import { useAIScanner } from '../../context/AIScannerContext';
 import { Sparkles } from 'lucide-react';
 
 export const SettingsManager: React.FC = () => {
@@ -47,9 +48,18 @@ export const SettingsManager: React.FC = () => {
   const [uploadingResume, setUploadingResume] = useState(false);
   const [isAIScannerOpen, setIsAIScannerOpen] = useState(false);
   const { showToast } = useAdminToast();
-  
-  const handleAIExtractedData = (data: any) => {
-    if (!data) return;
+  const { pendingResult, setPendingResult } = useAIScanner();
+
+  useEffect(() => {
+    if (pendingResult && (pendingResult.detectedModule === 'settings' || pendingResult.detectedModule === 'profile')) {
+      handleAIExtractedData(pendingResult);
+      setPendingResult(null);
+    }
+  }, [pendingResult]);
+
+  const handleAIExtractedData = (result: any) => {
+    if (!result || !result.data) return;
+    const data = result.data;
     setForm(prev => ({
       ...prev,
       name: data.name || prev.name,
@@ -152,8 +162,8 @@ export const SettingsManager: React.FC = () => {
   return (
     <div className="space-y-6 max-w-4xl">
       <div>
-        <h1 className="text-2xl font-black">Portfolio Settings & Profile</h1>
-        <p className="text-sm text-slate-500">Update global portfolio profile information, assets, and contact details.</p>
+        <h1 className="text-2xl font-black text-slate-900 dark:text-white">Portfolio Settings & Profile</h1>
+        <p className="text-sm text-slate-500 dark:text-slate-400">Update global portfolio profile information, assets, and contact details.</p>
       </div>
 
       {/* AI Trigger */}
@@ -386,10 +396,8 @@ export const SettingsManager: React.FC = () => {
       </form>
 
       <AIScanner 
-        module="settings"
         isOpen={isAIScannerOpen}
         onClose={() => setIsAIScannerOpen(false)}
-        onDataExtracted={handleAIExtractedData}
       />
     </div>
   );

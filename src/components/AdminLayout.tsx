@@ -56,11 +56,19 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ theme = 'dark', setThe
 
   return (
     <AdminToastProvider>
-      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex">
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex relative">
+        {/* Mobile Backdrop Overlay */}
+        {mobileMenuOpen && (
+          <div 
+            onClick={() => setMobileMenuOpen(false)} 
+            className="fixed inset-0 z-30 bg-slate-950/60 backdrop-blur-xs lg:hidden"
+          />
+        )}
+
         {/* Sidebar */}
-        <aside className={`fixed lg:sticky inset-y-0 left-0 z-40 ${sidebarOpen ? 'w-72' : 'w-20'} ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'} flex flex-col bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 transition-all duration-300 h-screen top-0`}>
+        <aside className={`fixed lg:sticky inset-y-0 left-0 z-40 ${sidebarOpen ? 'w-72' : 'w-20'} ${mobileMenuOpen ? 'w-72 translate-x-0' : '-translate-x-full lg:translate-x-0'} flex flex-col bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 transition-all duration-300 h-screen top-0`}>
           <div className="p-6 flex items-center justify-between">
-            {sidebarOpen && (
+            {(sidebarOpen || mobileMenuOpen) && (
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-2xl bg-indigo-600 flex items-center justify-center text-white"><ShieldCheck size={20} /></div>
                 <span className="font-black text-slate-900 dark:text-white">Admin CMS</span>
@@ -69,23 +77,27 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ theme = 'dark', setThe
             <button onClick={() => setSidebarOpen(!sidebarOpen)} className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 hidden lg:block">
               {sidebarOpen ? <ChevronLeft size={18} /> : <ChevronRight size={18} />}
             </button>
-            <button onClick={() => setMobileMenuOpen(false)} className="lg:hidden p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800">
+            <button onClick={() => setMobileMenuOpen(false)} className="lg:hidden p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 hover:text-slate-900 dark:hover:text-white">
               <X size={18} />
             </button>
           </div>
           
           <nav className="flex-1 overflow-y-auto px-4 space-y-6">
-            {/* ... navigation remains same ... */}
             {navSections.map(section => (
               <div key={section.title}>
-                {sidebarOpen && <h4 className="px-4 text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2">{section.title}</h4>}
+                {(sidebarOpen || mobileMenuOpen) && <h4 className="px-4 text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2">{section.title}</h4>}
                 <div className="space-y-1">
                   {section.items.map(item => {
                     const active = location.pathname === item.path;
                     return (
-                      <Link key={item.path} to={item.path} className={`flex items-center gap-4 px-4 py-3 rounded-xl text-sm font-bold transition-all ${active ? 'bg-indigo-600 text-white' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'}`}>
+                      <Link 
+                        key={item.path} 
+                        to={item.path} 
+                        onClick={() => setMobileMenuOpen(false)}
+                        className={`flex items-center gap-4 px-4 py-3 rounded-xl text-sm font-bold transition-all ${active ? 'bg-indigo-600 text-white' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
+                      >
                         <item.icon size={20} />
-                        {sidebarOpen && <span>{item.label}</span>}
+                        {(sidebarOpen || mobileMenuOpen) && <span>{item.label}</span>}
                       </Link>
                     );
                   })}

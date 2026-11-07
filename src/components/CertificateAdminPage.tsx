@@ -28,6 +28,7 @@ import {
   Sparkles
 } from 'lucide-react';
 import { AIScanner } from './admin/AIScanner';
+import { useAIScanner } from '../context/AIScannerContext';
 import { auth, googleProvider, isUserAdmin, ADMIN_EMAIL } from '../services/academicFirebase';
 import { bulkScanCertificates } from '../services/verificationDetection';
 import {
@@ -93,6 +94,14 @@ export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
   const [deletingCert, setDeletingCert] = useState<PortfolioCertificate | null>(null);
   const [scanning, setScanning] = useState(false);
   const [isAIScannerOpen, setIsAIScannerOpen] = useState(false);
+  const { pendingResult, setPendingResult } = useAIScanner();
+
+  useEffect(() => {
+    if (pendingResult && (pendingResult.detectedModule === 'certificate' || pendingResult.detectedModule === 'certificates')) {
+      handleAIExtractedData(pendingResult);
+      setPendingResult(null);
+    }
+  }, [pendingResult]);
 
   const handleAIExtractedData = (result: any) => {
     if (!result || !result.data) return;
@@ -361,9 +370,9 @@ export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
   });
 
   if (!user || !isUserAdmin(user)) return (
-    <main className="min-h-screen bg-slate-950 text-white grid place-items-center p-6 text-center">
+    <main className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white grid place-items-center p-6 text-center">
       {!user ? (
-        <div className="max-w-md w-full rounded-3xl border border-slate-800 bg-slate-900 p-8 space-y-4">
+        <div className="max-w-md w-full rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-8 space-y-4 shadow-xl">
           <Award className="w-12 h-12 text-indigo-400 mx-auto" />
           <h1 className="text-2xl font-black">Admin Access Required</h1>
           <button 
@@ -404,21 +413,21 @@ export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="space-y-1">
-          <button onClick={onBack} className="text-xs text-indigo-400 flex items-center gap-1.5 font-bold hover:underline mb-2">
+          <button onClick={onBack} className="text-xs text-indigo-600 dark:text-indigo-400 flex items-center gap-1.5 font-bold hover:underline mb-2">
             <ArrowLeft size={14} /> Back to Dashboard
           </button>
-          <h1 className="text-3xl font-black">Certificate CMS</h1>
-          <div className="flex items-center gap-2 text-xs text-blue-400 font-bold">
+          <h1 className="text-3xl font-black text-slate-900 dark:text-white">Certificate CMS</h1>
+          <div className="flex items-center gap-2 text-xs text-blue-600 dark:text-blue-400 font-bold">
             <Database size={14} />
             <span>Supabase Storage + Firestore Bridge</span>
           </div>
         </div>
         <div className="flex flex-wrap gap-2.5">
-          <button onClick={runBulkScan} disabled={scanning || importing} className="rounded-2xl border border-cyan-500/40 bg-cyan-500/5 hover:bg-cyan-500/10 text-cyan-400 px-4 py-3 text-xs font-bold flex items-center gap-2">
+          <button onClick={runBulkScan} disabled={scanning || importing} className="rounded-2xl border border-cyan-500/40 bg-cyan-500/5 hover:bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 px-4 py-3 text-xs font-bold flex items-center gap-2">
             {scanning ? <Loader2 className="animate-spin" size={14} /> : <Zap size={14} />}
             Bulk Scan Links
           </button>
-          <button onClick={runSingleCertificateTest} disabled={diagnosticRunning || importing} className="rounded-2xl border border-indigo-500/40 bg-indigo-500/5 hover:bg-indigo-500/10 text-indigo-400 px-4 py-3 text-xs font-bold flex items-center gap-2">
+          <button onClick={runSingleCertificateTest} disabled={diagnosticRunning || importing} className="rounded-2xl border border-indigo-500/40 bg-indigo-500/5 hover:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 px-4 py-3 text-xs font-bold flex items-center gap-2">
             {diagnosticRunning ? <Loader2 className="animate-spin" size={14} /> : <Terminal size={14} />}
             Test Supabase Bridge
           </button>
@@ -434,12 +443,12 @@ export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
         <div className="rounded-3xl border border-cyan-500/30 bg-cyan-500/5 p-6 space-y-4">
           <div className="flex justify-between items-end">
             <div className="space-y-1">
-              <span className="text-[10px] font-black uppercase text-cyan-400 tracking-widest">Supabase Migration</span>
-              <p className="text-xs text-white font-bold">{importStage}</p>
+              <span className="text-[10px] font-black uppercase text-cyan-600 dark:text-cyan-400 tracking-widest">Supabase Migration</span>
+              <p className="text-xs text-slate-900 dark:text-white font-bold">{importStage}</p>
             </div>
-            <span className="text-2xl font-black text-cyan-400">{importProgress}%</span>
+            <span className="text-2xl font-black text-cyan-600 dark:text-cyan-400">{importProgress}%</span>
           </div>
-          <div className="h-2 w-full rounded-full bg-slate-800 overflow-hidden">
+          <div className="h-2 w-full rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden">
             <div className="h-full bg-cyan-500 transition-all duration-300" style={{ width: `${importProgress}%` }} />
           </div>
         </div>
@@ -447,23 +456,23 @@ export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
 
       <div className="grid grid-cols-1 xl:grid-cols-[1fr_2fr] gap-8">
         {/* Form */}
-        <form onSubmit={submit} className="rounded-3xl border border-slate-800 bg-slate-900 p-6 sm:p-8 space-y-6 h-fit sticky top-8">
+        <form onSubmit={submit} className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 sm:p-8 space-y-6 h-fit sticky top-8 shadow-sm">
           <div className="flex items-center justify-between">
-            <h2 className="text-xl font-black text-white">{editing ? 'Edit Certificate' : 'Add Certificate'}</h2>
-            <div className="p-2 rounded-xl bg-indigo-500/10 text-indigo-400">
+            <h2 className="text-xl font-black text-slate-900 dark:text-white">{editing ? 'Edit Certificate' : 'Add Certificate'}</h2>
+            <div className="p-2 rounded-xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">
               {editing ? <Edit2 size={18} /> : <Plus size={18} />}
             </div>
           </div>
 
           {/* AI Auto-Fill Trigger */}
-          <div className="bg-indigo-600/10 border border-indigo-500/20 rounded-2xl p-4 flex items-center justify-between gap-4">
+          <div className="bg-indigo-600/5 dark:bg-indigo-500/10 border border-indigo-200 dark:border-indigo-500/20 rounded-2xl p-4 flex items-center justify-between gap-4">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-lg shadow-indigo-600/20">
                 <Sparkles size={20} />
               </div>
               <div>
-                <h4 className="text-[11px] font-black uppercase tracking-wider text-white">AI Assistant</h4>
-                <p className="text-[10px] text-slate-400">Scan certificate image/PDF to auto-fill.</p>
+                <h4 className="text-[11px] font-black uppercase tracking-wider text-slate-900 dark:text-white">AI Assistant</h4>
+                <p className="text-[10px] text-slate-500 dark:text-slate-400">Scan certificate image/PDF to auto-fill.</p>
               </div>
             </div>
             <button
@@ -479,35 +488,35 @@ export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <label className="text-[11px] font-black uppercase text-slate-500 tracking-wider">Title *</label>
-                <input required value={form.title} onChange={e => change('title', e.target.value)} className="w-full rounded-xl bg-slate-950 border border-slate-800 p-3 text-sm text-white" placeholder="Certificate Name" />
+                <input required value={form.title} onChange={e => change('title', e.target.value)} className="w-full rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-3 text-sm text-slate-900 dark:text-white" placeholder="Certificate Name" />
               </div>
               <div className="space-y-1.5">
                 <label className="text-[11px] font-black uppercase text-slate-500 tracking-wider">Issuer *</label>
-                <input required value={form.issuer} onChange={e => change('issuer', e.target.value)} className="w-full rounded-xl bg-slate-950 border border-slate-800 p-3 text-sm text-white" placeholder="Provider" />
+                <input required value={form.issuer} onChange={e => change('issuer', e.target.value)} className="w-full rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-3 text-sm text-slate-900 dark:text-white" placeholder="Provider" />
               </div>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <label className="text-[11px] font-black uppercase text-slate-500 tracking-wider">Category *</label>
-                <select value={form.category} onChange={e => change('category', e.target.value)} className="w-full rounded-xl bg-slate-950 border border-slate-800 p-3 text-sm text-white">
+                <select value={form.category} onChange={e => change('category', e.target.value)} className="w-full rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-3 text-sm text-slate-900 dark:text-white">
                   {CERTIFICATE_CATEGORIES.map(c => <option key={c}>{c}</option>)}
                 </select>
               </div>
               <div className="space-y-1.5">
                 <label className="text-[11px] font-black uppercase text-slate-500 tracking-wider">Issue Date</label>
-                <input type="date" value={form.issueDate} onChange={e => change('issueDate', e.target.value)} className="w-full rounded-xl bg-slate-950 border border-slate-800 p-3 text-sm text-white" />
+                <input type="date" value={form.issueDate} onChange={e => change('issueDate', e.target.value)} className="w-full rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-3 text-sm text-slate-900 dark:text-white" />
               </div>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <label className="text-[11px] font-black uppercase text-slate-500 tracking-wider">Credential Verification URL</label>
-                <input type="url" value={form.credentialUrl} onChange={e => change('credentialUrl', e.target.value)} className="w-full rounded-xl bg-slate-950 border border-slate-800 p-3 text-sm text-white" placeholder="https://..." />
+                <input type="url" value={form.credentialUrl} onChange={e => change('credentialUrl', e.target.value)} className="w-full rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-3 text-sm text-slate-900 dark:text-white" placeholder="https://..." />
               </div>
               <div className="space-y-1.5">
                 <label className="text-[11px] font-black uppercase text-slate-500 tracking-wider">Verification Status</label>
-                <select value={form.verificationStatus || ''} onChange={e => change('verificationStatus', e.target.value || undefined)} className="w-full rounded-xl bg-slate-950 border border-slate-800 p-3 text-sm text-white">
+                <select value={form.verificationStatus || ''} onChange={e => change('verificationStatus', e.target.value || undefined)} className="w-full rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-3 text-sm text-slate-900 dark:text-white">
                   <option value="">Legacy / Unknown</option>
                   <option value="approved">Approved / Verified</option>
                   <option value="pending">Pending Review</option>
@@ -518,10 +527,10 @@ export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
 
             {form.suggestedCredentialUrl && (
               <div className="space-y-1.5 p-3 rounded-xl bg-cyan-500/5 border border-cyan-500/20">
-                <label className="text-[11px] font-black uppercase text-cyan-400 tracking-widest flex items-center gap-1">
+                <label className="text-[11px] font-black uppercase text-cyan-600 dark:text-cyan-400 tracking-widest flex items-center gap-1">
                   <Zap size={12} /> Detected Suggestion (Pending)
                 </label>
-                <input type="url" value={form.suggestedCredentialUrl} onChange={e => change('suggestedCredentialUrl', e.target.value)} className="w-full rounded-xl bg-slate-950 border border-slate-800 p-3 text-sm text-white" placeholder="https://..." />
+                <input type="url" value={form.suggestedCredentialUrl} onChange={e => change('suggestedCredentialUrl', e.target.value)} className="w-full rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-3 text-sm text-slate-900 dark:text-white" placeholder="https://..." />
                 <p className="text-[10px] text-slate-500">Edit this URL and save, or approve it from the list to publish.</p>
               </div>
             )}
@@ -541,33 +550,33 @@ export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
 
             <div className="space-y-1.5">
               <label className="text-[11px] font-black uppercase text-slate-500 tracking-wider">Skills (Comma Separated)</label>
-              <input value={form.skills.join(', ')} onChange={e => change('skills', e.target.value.split(',').map(s => s.trim()).filter(Boolean))} className="w-full rounded-xl bg-slate-950 border border-slate-800 p-3 text-sm text-white" placeholder="React, Node.js, AWS" />
+              <input value={form.skills.join(', ')} onChange={e => change('skills', e.target.value.split(',').map(s => s.trim()).filter(Boolean))} className="w-full rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-3 text-sm text-slate-900 dark:text-white" placeholder="React, Node.js, AWS" />
             </div>
 
             <div className="space-y-1.5">
               <label className="text-[11px] font-black uppercase text-slate-500 tracking-wider">Description</label>
-              <textarea rows={3} value={form.description} onChange={e => change('description', e.target.value)} className="w-full rounded-xl bg-slate-950 border border-slate-800 p-3 text-sm text-white" placeholder="achievement summary..." />
+              <textarea rows={3} value={form.description} onChange={e => change('description', e.target.value)} className="w-full rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-3 text-sm text-slate-900 dark:text-white" placeholder="achievement summary..." />
             </div>
 
             <div className="flex gap-4 pt-2">
               <label className="flex items-center gap-2 cursor-pointer group">
-                <input type="checkbox" checked={form.featured} onChange={e => change('featured', e.target.checked)} className="rounded border-slate-700 bg-slate-950 text-indigo-600" />
-                <span className="text-xs font-bold text-slate-400 group-hover:text-white transition-colors">Featured</span>
+                <input type="checkbox" checked={form.featured} onChange={e => change('featured', e.target.checked)} className="rounded border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-indigo-600" />
+                <span className="text-xs font-bold text-slate-600 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white transition-colors">Featured</span>
               </label>
               <label className="flex items-center gap-2 cursor-pointer group">
-                <input type="checkbox" checked={form.published} onChange={e => change('published', e.target.checked)} className="rounded border-slate-700 bg-slate-950 text-indigo-600" />
-                <span className="text-xs font-bold text-slate-400 group-hover:text-white transition-colors">Published</span>
+                <input type="checkbox" checked={form.published} onChange={e => change('published', e.target.checked)} className="rounded border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-indigo-600" />
+                <span className="text-xs font-bold text-slate-600 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white transition-colors">Published</span>
               </label>
             </div>
           </div>
 
-          <div className="flex gap-3 pt-6 border-t border-slate-800">
+          <div className="flex gap-3 pt-6 border-t border-slate-200 dark:border-slate-800">
             <button disabled={busy} className="flex-1 rounded-xl bg-indigo-600 hover:bg-indigo-700 py-3 text-sm font-black text-white shadow-lg shadow-indigo-600/20 flex justify-center items-center gap-2">
               {busy ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
               <span>{editing ? 'Update Certificate' : 'Save Certificate'}</span>
             </button>
             {editing && (
-              <button type="button" onClick={() => { setForm(blank()); setEditing(undefined); setFile(null); }} className="px-6 rounded-xl border border-slate-800 text-sm font-bold text-slate-400 hover:text-white">Cancel</button>
+              <button type="button" onClick={() => { setForm(blank()); setEditing(undefined); setFile(null); }} className="px-6 rounded-xl border border-slate-200 dark:border-slate-800 text-sm font-bold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white">Cancel</button>
             )}
           </div>
         </form>
@@ -575,10 +584,10 @@ export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
         {/* List Section */}
         <section className="space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <h2 className="text-xl font-black text-white">Certificates ({items.length})</h2>
+            <h2 className="text-xl font-black text-slate-900 dark:text-white">Certificates ({items.length})</h2>
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-              <input value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="Search certificates..." className="pl-10 pr-4 py-2 rounded-xl bg-slate-900 border border-slate-800 text-sm text-white w-full sm:w-64" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <input value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="Search certificates..." className="pl-10 pr-4 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-sm text-slate-900 dark:text-white w-full sm:w-64" />
             </div>
           </div>
 
@@ -586,9 +595,9 @@ export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
             {filteredItems.map(item => {
               const displayUrl = resolveCertificateUrl(item.fileUrl || item.sourceAsset || '');
               return (
-                <article key={item.id} className="group rounded-2xl border border-slate-800 bg-slate-900 p-4 flex items-center justify-between gap-4 hover:border-slate-700 transition-colors">
+                <article key={item.id} className="group rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 flex items-center justify-between gap-4 hover:border-indigo-500/50 transition-colors shadow-sm">
                   <div className="flex items-center gap-4 min-w-0">
-                    <div className="w-14 h-14 rounded-xl bg-slate-950 border border-slate-800 overflow-hidden flex-shrink-0 flex items-center justify-center">
+                    <div className="w-14 h-14 rounded-xl bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 overflow-hidden flex-shrink-0 flex items-center justify-center">
                       {item.fileType === 'pdf' ? (
                         <FileText className="text-blue-400" size={24} />
                       ) : (
@@ -596,7 +605,7 @@ export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
                       )}
                     </div>
                     <div className="min-w-0">
-                      <h3 className="font-bold text-sm text-white truncate">{item.title}</h3>
+                      <h3 className="font-bold text-sm text-slate-900 dark:text-white truncate">{item.title}</h3>
                       <div className="flex items-center gap-2 text-[10px] font-bold text-slate-500">
                         <span className="truncate">{item.issuer}</span>
                         <span className="w-1 h-1 rounded-full bg-slate-700" />
@@ -634,7 +643,7 @@ export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
                               </button>
                             </div>
                           </div>
-                          <a href={item.suggestedCredentialUrl} target="_blank" rel="noreferrer" className="text-[9px] text-slate-400 hover:text-white truncate block">
+                          <a href={item.suggestedCredentialUrl} target="_blank" rel="noreferrer" className="text-[9px] text-slate-400 hover:text-slate-900 dark:hover:text-white truncate block">
                             {item.suggestedCredentialUrl}
                           </a>
                         </div>
@@ -722,10 +731,8 @@ export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
       </AnimatePresence>
 
       <AIScanner 
-        module="certificate"
         isOpen={isAIScannerOpen}
         onClose={() => setIsAIScannerOpen(false)}
-        onDataExtracted={handleAIExtractedData}
       />
     </div>
   );

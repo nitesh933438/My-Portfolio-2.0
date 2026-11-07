@@ -65,8 +65,8 @@ export const MessagesManager: React.FC = () => {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-black">Contact Messages</h1>
-        <p className="text-sm text-slate-500">Inbox of inquiries received from visitors through your portfolio.</p>
+        <h1 className="text-2xl font-black text-slate-900 dark:text-white">Contact Messages</h1>
+        <p className="text-sm text-slate-500 dark:text-slate-400">Inbox of inquiries received from visitors through your portfolio.</p>
       </div>
 
       {messages.length === 0 ? (

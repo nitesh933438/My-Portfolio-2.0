@@ -6,6 +6,7 @@ import { db, auth } from '../../services/academicFirebase';
 import { doc, setDoc, collection, getDocs } from 'firebase/firestore';
 import { useAdminToast } from './AdminToastContext';
 import { AIScanner } from './AIScanner';
+import { useAIScanner } from '../../context/AIScannerContext';
 import { 
   GraduationCap, 
   School, 
@@ -61,6 +62,21 @@ export const EducationManager: React.FC = () => {
   };
 
   const { showToast } = useAdminToast();
+  const { pendingResult, setPendingResult } = useAIScanner();
+
+  useEffect(() => {
+    if (pendingResult && (pendingResult.detectedModule === 'education' || pendingResult.detectedModule === 'academic')) {
+      showToast(`AI extracted academic data. Selected University/Education view.`, 'info');
+      if (pendingResult.data) {
+        if (pendingResult.data.degree || pendingResult.data.sgpa) {
+          setActiveTab('university');
+        } else if (pendingResult.data.percentage || pendingResult.data.totalMarks) {
+          setActiveTab('schooling');
+        }
+      }
+      setPendingResult(null);
+    }
+  }, [pendingResult]);
 
   useEffect(() => {
     const unsub = subscribeToUniversityRecord((data) => {
@@ -147,8 +163,8 @@ export const EducationManager: React.FC = () => {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-black">Education & Academic CMS</h1>
-          <p className="text-sm text-slate-500">Manage university B.Tech semesters and school credentials securely.</p>
+          <h1 className="text-2xl font-black text-slate-900 dark:text-white">Education & Academic CMS</h1>
+          <p className="text-sm text-slate-500 dark:text-slate-400">Manage university B.Tech semesters and school credentials securely.</p>
         </div>
         <div className="flex gap-2 bg-white dark:bg-slate-900 p-1.5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
           <button
@@ -173,8 +189,8 @@ export const EducationManager: React.FC = () => {
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
               <div>
                 <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-500">B.Tech Degree Program</span>
-                <h3 className="text-xl font-black mt-0.5">{university.degree} — {university.branch}</h3>
-                <p className="text-xs text-slate-500 mt-0.5">{university.institution} ({university.session})</p>
+                <h3 className="text-xl font-black mt-0.5 text-slate-900 dark:text-white">{university.degree} — {university.branch}</h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{university.institution} ({university.session})</p>
               </div>
               <span className="px-3.5 py-1.5 rounded-full text-xs font-black bg-emerald-500/10 text-emerald-500 w-fit">
                 {university.status}
@@ -187,7 +203,7 @@ export const EducationManager: React.FC = () => {
                 <div key={sem.semesterNumber} className="border border-slate-200 dark:border-slate-800 rounded-2xl p-5 bg-slate-50 dark:bg-slate-950/50 flex flex-col justify-between">
                   <div>
                     <div className="flex justify-between items-center mb-3">
-                      <span className="font-black text-sm">{sem.semesterLabel}</span>
+                      <span className="font-black text-sm text-slate-900 dark:text-white">{sem.semesterLabel}</span>
                       <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${sem.isDeclared ? 'bg-emerald-500/15 text-emerald-500' : 'bg-slate-200 dark:bg-slate-800 text-slate-400'}`}>
                         {sem.statusLabel}
                       </span>
@@ -371,10 +387,8 @@ export const EducationManager: React.FC = () => {
       </AnimatePresence>
 
       <AIScanner 
-        module="education"
         isOpen={isAIScannerOpen}
         onClose={() => setIsAIScannerOpen(false)}
-        onDataExtracted={handleAIExtractedData}
       />
     </div>
   );

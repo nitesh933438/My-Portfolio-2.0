@@ -24,6 +24,7 @@ const ProjectsManager = lazy(() => import('./components/admin/ProjectsManager').
 const EducationManager = lazy(() => import('./components/admin/EducationManager').then(m => ({ default: m.EducationManager })));
 const MessagesManager = lazy(() => import('./components/admin/MessagesManager').then(m => ({ default: m.MessagesManager })));
 const SettingsManager = lazy(() => import('./components/admin/SettingsManager').then(m => ({ default: m.SettingsManager })));
+const AIAssistantPage = lazy(() => import('./components/admin/AIAssistantPage').then(m => ({ default: m.AIAssistantPage })));
 import { SITE_CONFIG } from './data/portfolio';
 
 
@@ -108,6 +109,11 @@ const App: FC = () => {
               <Route path="settings" element={
                 <Suspense fallback={<LoadingScreen />}>
                   <SettingsManager />
+                </Suspense>
+              } />
+              <Route path="ai" element={
+                <Suspense fallback={<LoadingScreen />}>
+                  <AIAssistantPage />
                 </Suspense>
               } />
             </Route>

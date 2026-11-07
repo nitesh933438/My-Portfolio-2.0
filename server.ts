@@ -196,6 +196,38 @@ If a field is not found, leave it empty or null. Do not invent information.`;
   }
 });
 
+// Alias for backwards compatibility
+app.post('/api/ai/extract', verifyAdmin, upload.single('file'), async (req: any, res) => {
+  req.url = '/api/ai/analyze-and-extract';
+  return app._router.handle(req, res);
+});
+
+// AI Assistant Chat Route
+app.post('/api/ai/chat', verifyAdmin, async (req: any, res) => {
+  try {
+    if (!ai) return res.status(503).json({ error: 'Gemini API is not configured' });
+    const { message } = req.body;
+    if (!message) return res.status(400).json({ error: 'Message is required' });
+
+    const systemInstruction = `You are the intelligent AI Assistant for Nitesh Kumar's Portfolio Admin CMS.
+You assist the administrator with managing portfolio projects, certificates, academic education records, profile settings, and contact messages.
+Be concise, helpful, professional, and knowledgeable about full-stack development, MERN, AI, and portfolio content management.`;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-1.5-flash',
+      contents: [{ role: 'user', parts: [{ text: `${systemInstruction}\n\nUser Question: ${message}` }] }],
+    });
+
+    res.json({
+      success: true,
+      reply: response.text || 'I processed your request.'
+    });
+  } catch (error: any) {
+    console.error('AI Chat error:', error);
+    res.status(500).json({ error: error.message || 'AI Chat failed' });
+  }
+});
+
 // ---------------------------------------------------------------------------
 // 2. Storage Proxy Routes
 // ---------------------------------------------------------------------------

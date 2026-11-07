@@ -780,7 +780,7 @@ export const ProjectScreenshotManager: React.FC<ProjectScreenshotManagerProps> =
                 onClick={(e) => e.stopPropagation()}
               >
                 <div className="flex justify-between items-center pb-3 border-b border-slate-200 dark:border-slate-800">
-                  <h4 className="text-lg font-bold">Edit Screenshot Details</h4>
+                  <h4 className="text-lg font-bold text-slate-900 dark:text-white">Edit Screenshot Details</h4>
                   <button onClick={() => setEditingItem(null)} className="p-1 rounded-lg text-slate-400 hover:text-slate-900 dark:hover:text-white">
                     <X size={18} />
                   </button>
