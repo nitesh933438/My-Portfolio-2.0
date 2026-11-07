@@ -49,6 +49,7 @@ const upload = multer({
 
 // Middleware
 app.use(cors()); // CRITICAL: Handles OPTIONS preflight requests
+app.options('*', cors()); // Explicitly handle OPTIONS preflight for all routes
 app.use(express.json({ limit: '25mb' }));
 app.use(express.urlencoded({ extended: true, limit: '25mb' }));
 
@@ -319,8 +320,8 @@ app.use((err: any, req: any, res: any, next: any) => {
   });
 });
 
-// Handle 404s for API routes specifically
-app.use('/api/*', (req, res) => {
+// Handle 404s for API routes specifically (must run BEFORE Vite middleware)
+app.all('/api/*', (req, res) => {
   res.status(404).json({ success: false, error: 'API route not found' });
 });
 
