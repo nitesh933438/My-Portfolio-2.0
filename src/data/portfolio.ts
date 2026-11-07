@@ -100,6 +100,20 @@ export type ProjectStatus =
   | 'Coming Soon' 
   | 'Archived';
 
+export interface ProjectScreenshot {
+  id: string;
+  url: string;
+  title: string;
+  caption?: string;
+  altText?: string;
+  category?: string;
+  displayOrder: number;
+  published: boolean;
+  isCover?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface Project {
   id: string;
   slug: string;
@@ -111,6 +125,7 @@ export interface Project {
   techStack: string[];
   mainScreenshot: string;
   additionalScreenshots: string[];
+  screenshotMetadata?: ProjectScreenshot[];
   githubUrl: string;
   liveDemoUrl: string;
   status: ProjectStatus;

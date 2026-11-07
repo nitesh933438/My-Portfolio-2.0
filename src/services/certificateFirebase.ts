@@ -12,22 +12,35 @@ export const certificatesRef = collection(db, 'certifications');
  */
 export const resolveCertificateUrl = (pathOrUrl: string): string => {
   if (!pathOrUrl) return '';
-  if (pathOrUrl.startsWith('http')) return pathOrUrl;
+  if (pathOrUrl.startsWith('http://') || pathOrUrl.startsWith('https://') || pathOrUrl.startsWith('data:')) return pathOrUrl;
   
-  // If it's a Supabase path (contains a folder structure or starts with common folders)
-  if (pathOrUrl.includes('/') && !pathOrUrl.startsWith('./') && !pathOrUrl.startsWith('/')) {
-    return getStorageUrl(pathOrUrl);
+  let cleanPath = pathOrUrl;
+  while (cleanPath.startsWith('./') || cleanPath.startsWith('/')) {
+    if (cleanPath.startsWith('./')) cleanPath = cleanPath.slice(2);
+    if (cleanPath.startsWith('/')) cleanPath = cleanPath.slice(1);
   }
 
-  // Fallback to local static asset
   const baseUrl = import.meta.env.BASE_URL || '/';
   const prefix = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
-  const cleanPath = pathOrUrl.startsWith('/') ? pathOrUrl.slice(1) : pathOrUrl;
-  
-  if (cleanPath.startsWith('certificates/')) {
+
+  // Local static certificates
+  if (
+    cleanPath.startsWith('certificates/certificate-') ||
+    cleanPath.startsWith('certificate-') ||
+    cleanPath.startsWith('assets/') ||
+    cleanPath.startsWith('images/')
+  ) {
+    if (cleanPath.startsWith('certificate-')) {
+      return `${prefix}certificates/${cleanPath}`;
+    }
     return `${prefix}${cleanPath}`;
   }
-  
+
+  // Supabase paths: certificates/1730000_filename.jpg
+  if (cleanPath.startsWith('certificates/') || (cleanPath.includes('/') && !cleanPath.includes('certificate-'))) {
+    return getStorageUrl(cleanPath);
+  }
+
   return `${prefix}certificates/${cleanPath}`;
 };
 

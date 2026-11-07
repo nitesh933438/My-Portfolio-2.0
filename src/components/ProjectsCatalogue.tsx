@@ -76,7 +76,7 @@ export const ProjectsCatalogue: FC<ProjectsCatalogueProps> = ({ onSelectProject 
           loading="lazy"
           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
           onError={(e) => {
-            (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1555066931-4365d14bab8c?q=80&w=2070&auto=format&fit=crop';
+            (e.target as HTMLImageElement).style.opacity = '0.3';
           }}
         />
         <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end p-6">

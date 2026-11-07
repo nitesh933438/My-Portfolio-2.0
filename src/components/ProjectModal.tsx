@@ -260,7 +260,6 @@ export const ProjectModal: FC<ProjectModalProps> = ({ project, onClose }) => {
     setIsViewerOpen(false);
   }, [project]);
 
-  const screenshots = project ? [project.mainScreenshot, ...(project.additionalScreenshots || [])].filter(Boolean).map(url => resolveProjectImageUrl(url)) : [];
   const bannerTheme = project ? getProjectBannerTheme(project.id) : null;
 
   useEffect(() => {
@@ -287,11 +286,47 @@ export const ProjectModal: FC<ProjectModalProps> = ({ project, onClose }) => {
     }
   };
 
-  const screenshotItems = screenshots.map((img, idx) => ({
-    url: img,
-    index: idx,
-    ...getWorkflowMetadata(project.id, idx, screenshots.length, img)
-  }));
+  // Build public gallery items from screenshotMetadata if populated, filtered by published !== false
+  let screenshotItems: Array<{
+    url: string;
+    index: number;
+    title: string;
+    category: string;
+    caption?: string;
+    altText?: string;
+    isCover?: boolean;
+  }> = [];
+
+  if (project.screenshotMetadata && project.screenshotMetadata.length > 0) {
+    const published = project.screenshotMetadata
+      .filter(s => s.published !== false)
+      .sort((a, b) => a.displayOrder - b.displayOrder);
+
+    screenshotItems = published.map((item, idx) => {
+      const fallback = getWorkflowMetadata(project.id, idx, published.length, item.url);
+      return {
+        url: resolveProjectImageUrl(item.url),
+        index: idx,
+        title: item.title || fallback.title,
+        category: item.category || fallback.category,
+        caption: item.caption,
+        altText: item.altText,
+        isCover: item.isCover
+      };
+    });
+  }
+
+  // Fallback to legacy mainScreenshot + additionalScreenshots if screenshotMetadata is empty
+  if (screenshotItems.length === 0) {
+    const rawUrls = [project.mainScreenshot, ...(project.additionalScreenshots || [])].filter(Boolean);
+    screenshotItems = rawUrls.map((img, idx) => ({
+      url: resolveProjectImageUrl(img),
+      index: idx,
+      ...getWorkflowMetadata(project.id, idx, rawUrls.length, img)
+    }));
+  }
+
+  const screenshots = screenshotItems.map(i => i.url);
 
   return (
     <AnimatePresence>
@@ -508,7 +543,7 @@ export const ProjectModal: FC<ProjectModalProps> = ({ project, onClose }) => {
                         decoding="async"
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                         onError={(e) => { 
-                          (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1555066931-4365d14bab8c?q=80&w=2070&auto=format&fit=crop'; 
+                          (e.target as HTMLImageElement).style.opacity = '0.3'; 
                         }} 
                       />
                       {/* Hover Overlay with Icon */}

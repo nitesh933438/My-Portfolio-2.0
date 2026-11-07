@@ -124,21 +124,42 @@ export const getSignedUrlProxy = async (path: string, idToken: string): Promise<
  */
 export const resolveAssetUrl = (pathOrUrl: string, type: AssetFolder): string => {
   if (!pathOrUrl) return '';
-  if (pathOrUrl.startsWith('http')) return pathOrUrl;
+  if (pathOrUrl.startsWith('http://') || pathOrUrl.startsWith('https://') || pathOrUrl.startsWith('data:')) return pathOrUrl;
   
-  // Supabase paths usually contain a folder slash and don't start with / or ./
-  const isSupabase = pathOrUrl.includes('/') && !pathOrUrl.startsWith('/') && !pathOrUrl.startsWith('.');
-  
-  if (isSupabase) {
-    return getStorageUrl(pathOrUrl);
+  let cleanPath = pathOrUrl;
+  while (cleanPath.startsWith('./') || cleanPath.startsWith('/')) {
+    if (cleanPath.startsWith('./')) cleanPath = cleanPath.slice(2);
+    if (cleanPath.startsWith('/')) cleanPath = cleanPath.slice(1);
+  }
+
+  const baseUrl = import.meta.env.BASE_URL || '/';
+  const prefix = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
+
+  // Known local static asset paths in /public directory
+  if (
+    cleanPath.startsWith('assets/') ||
+    cleanPath.startsWith('images/') ||
+    cleanPath === 'nitesh_kumar_resume.pdf' ||
+    cleanPath.startsWith('resume/') ||
+    cleanPath.startsWith('certificates/certificate-') ||
+    cleanPath.startsWith('certificate-')
+  ) {
+    if (cleanPath.startsWith('certificate-')) {
+      return `${prefix}certificates/${cleanPath}`;
+    }
+    return `${prefix}${cleanPath}`;
+  }
+
+  // Known Supabase storage folder prefix check
+  const isSupabaseFolder = ['certificates', 'projects', 'profile', 'resume', 'documents'].some(folder => 
+    cleanPath.startsWith(`${folder}/`)
+  );
+
+  if (isSupabaseFolder) {
+    return getStorageUrl(cleanPath);
   }
 
   // Fallback to local static asset in the respective public folder
-  const baseUrl = import.meta.env.BASE_URL || '/';
-  const prefix = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
-  const cleanPath = pathOrUrl.startsWith('/') ? pathOrUrl.slice(1) : pathOrUrl;
-  
-  // If the path already contains the folder, don't duplicate it
   if (cleanPath.startsWith(`${type}/`)) {
     return `${prefix}${cleanPath}`;
   }

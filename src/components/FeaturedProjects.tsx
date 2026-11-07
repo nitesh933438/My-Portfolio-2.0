@@ -49,7 +49,7 @@ export const FeaturedProjects: React.FC<FeaturedProjectsProps> = ({ onSelectProj
                     alt={project.title}
                     className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-1000"
                     onError={(e) => {
-                      (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1555066931-4365d14bab8c?q=80&w=2070&auto=format&fit=crop';
+                      (e.target as HTMLImageElement).style.opacity = '0.3';
                     }}
                   />
                   

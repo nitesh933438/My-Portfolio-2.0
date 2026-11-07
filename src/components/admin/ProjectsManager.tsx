@@ -4,8 +4,9 @@ import { Project, ProjectCategory } from '../../data/portfolio';
 import { subscribeToProjects, saveProject, deleteProject, resolveProjectImageUrl } from '../../services/projectFirebase';
 import { auth, isUserAdmin } from '../../services/academicFirebase';
 import { uploadFileProxy, validateFile } from '../../services/supabaseStorage';
-import { Plus, Trash2, Edit2, Loader2, Save, X, Search, ExternalLink, Github, Eye, EyeOff, Info, Database, FileText, AlertCircle } from 'lucide-react';
+import { Plus, Trash2, Edit2, Loader2, Save, X, Search, ExternalLink, Github, Eye, EyeOff, Info, Database, FileText, AlertCircle, Grid } from 'lucide-react';
 import { useAdminToast } from './AdminToastContext';
+import { ProjectScreenshotManager } from './ProjectScreenshotManager';
 
 const categories: ProjectCategory[] = [
   'Full-Stack Development',
@@ -52,6 +53,9 @@ export const ProjectsManager: React.FC = () => {
   // Delete confirmation state
   const [deletingProject, setDeletingProject] = useState<Project | null>(null);
   const [deleting, setDeleting] = useState(false);
+
+  // Dedicated Screenshot Manager state
+  const [managingScreenshotsProject, setManagingScreenshotsProject] = useState<Project | null>(null);
 
   const { showToast } = useAdminToast();
 
@@ -274,14 +278,24 @@ export const ProjectsManager: React.FC = () => {
 
                 <div className="flex gap-2">
                   <button
+                    onClick={() => setManagingScreenshotsProject(project)}
+                    className="px-3 py-2 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 text-xs font-bold border border-indigo-200 dark:border-indigo-800 flex items-center gap-1.5 transition-colors"
+                    title="Manage Screenshots & Gallery Order"
+                  >
+                    <Grid size={14} />
+                    <span>Screenshots ({project.screenshotMetadata?.length || (project.mainScreenshot ? (project.additionalScreenshots?.length || 0) + 1 : 0)})</span>
+                  </button>
+                  <button
                     onClick={() => openEditModal(project)}
                     className="p-2 rounded-xl border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 text-indigo-600"
+                    title="Edit Metadata"
                   >
                     <Edit2 size={14} />
                   </button>
                   <button
                     onClick={() => setDeletingProject(project)}
                     className="p-2 rounded-xl border border-rose-200 dark:border-rose-900/50 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-500"
+                    title="Delete Project"
                   >
                     <Trash2 size={14} />
                   </button>
@@ -436,6 +450,19 @@ export const ProjectsManager: React.FC = () => {
           </div>
         )}
       </AnimatePresence>
+
+      {/* DEDICATED SCREENSHOT MANAGER MODAL */}
+      {managingScreenshotsProject && (
+        <ProjectScreenshotManager
+          project={projects.find(p => p.id === managingScreenshotsProject.id) || managingScreenshotsProject}
+          allProjects={projects}
+          isOpen={!!managingScreenshotsProject}
+          onClose={() => setManagingScreenshotsProject(null)}
+          onProjectUpdated={() => {
+            // Keep snapshot updated
+          }}
+        />
+      )}
     </div>
   );
 };
