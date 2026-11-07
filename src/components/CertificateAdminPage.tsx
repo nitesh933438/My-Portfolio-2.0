@@ -20,9 +20,14 @@ import {
   Info,
   Database,
   CloudUpload,
-  Plus
+  Plus,
+  ShieldCheck,
+  Zap,
+  Check,
+  XCircle
 } from 'lucide-react';
 import { auth, googleProvider, isUserAdmin, ADMIN_EMAIL } from '../services/academicFirebase';
+import { bulkScanCertificates } from '../services/verificationDetection';
 import {
   markBundledCertificatesImported,
   removeCertificate,
@@ -48,6 +53,8 @@ const blank = (): Omit<PortfolioCertificate, 'id' | 'createdAt' | 'updatedAt'> =
   issueDate: '',
   credentialId: '',
   credentialUrl: '',
+  suggestedCredentialUrl: '',
+  verificationStatus: undefined,
   imageUrl: '',
   fileUrl: '',
   fileType: 'image',
@@ -82,6 +89,57 @@ export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [deletingCert, setDeletingCert] = useState<PortfolioCertificate | null>(null);
+  const [scanning, setScanning] = useState(false);
+
+  const runBulkScan = async () => {
+    setScanning(true);
+    try {
+      const suggestions = bulkScanCertificates(items);
+      if (suggestions.length === 0) {
+        showToast('No new verification links detected.', 'info');
+        return;
+      }
+
+      let count = 0;
+      for (const update of suggestions) {
+        await saveCertificate(update as any, update.id);
+        count++;
+      }
+      showToast(`Scan complete. ${count} verification links suggested for review.`, 'success');
+    } catch (err: any) {
+      showToast(`Scan failed: ${err.message}`, 'error');
+    } finally {
+      setScanning(false);
+    }
+  };
+
+  const handleApproveLink = async (item: PortfolioCertificate) => {
+    if (!item.suggestedCredentialUrl) return;
+    try {
+      await saveCertificate({
+        ...item,
+        credentialUrl: item.suggestedCredentialUrl,
+        suggestedCredentialUrl: '',
+        verificationStatus: 'approved'
+      } as any, item.id);
+      showToast('Link approved and published.', 'success');
+    } catch (err: any) {
+      showToast(`Action failed: ${err.message}`, 'error');
+    }
+  };
+
+  const handleRejectLink = async (item: PortfolioCertificate) => {
+    try {
+      await saveCertificate({
+        ...item,
+        suggestedCredentialUrl: '',
+        verificationStatus: 'rejected'
+      } as any, item.id);
+      showToast('Suggestion rejected.', 'info');
+    } catch (err: any) {
+      showToast(`Action failed: ${err.message}`, 'error');
+    }
+  };
 
   useEffect(() => {
     const unsubAuth = onAuthStateChanged(auth, setUser);
@@ -227,6 +285,11 @@ export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
     const idToken = await user?.getIdToken();
     if (!idToken) return showToast('Session expired.', 'error');
 
+    // URL Validation
+    if (form.credentialUrl && !form.credentialUrl.startsWith('http://') && !form.credentialUrl.startsWith('https://')) {
+      return showToast('Credential URL must start with http:// or https://', 'error');
+    }
+
     setBusy(true);
     try {
       let imageUrl = form.imageUrl;
@@ -319,6 +382,10 @@ export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
           </div>
         </div>
         <div className="flex flex-wrap gap-2.5">
+          <button onClick={runBulkScan} disabled={scanning || importing} className="rounded-2xl border border-cyan-500/40 bg-cyan-500/5 hover:bg-cyan-500/10 text-cyan-400 px-4 py-3 text-xs font-bold flex items-center gap-2">
+            {scanning ? <Loader2 className="animate-spin" size={14} /> : <Zap size={14} />}
+            Bulk Scan Links
+          </button>
           <button onClick={runSingleCertificateTest} disabled={diagnosticRunning || importing} className="rounded-2xl border border-indigo-500/40 bg-indigo-500/5 hover:bg-indigo-500/10 text-indigo-400 px-4 py-3 text-xs font-bold flex items-center gap-2">
             {diagnosticRunning ? <Loader2 className="animate-spin" size={14} /> : <Terminal size={14} />}
             Test Supabase Bridge
@@ -380,6 +447,32 @@ export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
                 <input type="date" value={form.issueDate} onChange={e => change('issueDate', e.target.value)} className="w-full rounded-xl bg-slate-950 border border-slate-800 p-3 text-sm text-white" />
               </div>
             </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-black uppercase text-slate-500 tracking-wider">Credential Verification URL</label>
+                <input type="url" value={form.credentialUrl} onChange={e => change('credentialUrl', e.target.value)} className="w-full rounded-xl bg-slate-950 border border-slate-800 p-3 text-sm text-white" placeholder="https://..." />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-black uppercase text-slate-500 tracking-wider">Verification Status</label>
+                <select value={form.verificationStatus || ''} onChange={e => change('verificationStatus', e.target.value || undefined)} className="w-full rounded-xl bg-slate-950 border border-slate-800 p-3 text-sm text-white">
+                  <option value="">Legacy / Unknown</option>
+                  <option value="approved">Approved / Verified</option>
+                  <option value="pending">Pending Review</option>
+                  <option value="rejected">Rejected / Unverified</option>
+                </select>
+              </div>
+            </div>
+
+            {form.suggestedCredentialUrl && (
+              <div className="space-y-1.5 p-3 rounded-xl bg-cyan-500/5 border border-cyan-500/20">
+                <label className="text-[11px] font-black uppercase text-cyan-400 tracking-widest flex items-center gap-1">
+                  <Zap size={12} /> Detected Suggestion (Pending)
+                </label>
+                <input type="url" value={form.suggestedCredentialUrl} onChange={e => change('suggestedCredentialUrl', e.target.value)} className="w-full rounded-xl bg-slate-950 border border-slate-800 p-3 text-sm text-white" placeholder="https://..." />
+                <p className="text-[10px] text-slate-500">Edit this URL and save, or approve it from the list to publish.</p>
+              </div>
+            )}
 
             <div className="space-y-1.5">
               <label className="text-[11px] font-black uppercase text-slate-500 tracking-wider">Certificate File (Supabase Storage) *</label>
@@ -465,6 +558,35 @@ export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
                         )}
                         <code className="text-[9px] text-slate-600 truncate max-w-[150px]">{item.fileUrl || item.sourceAsset}</code>
                       </div>
+                      {item.credentialUrl && (
+                        <div className="flex items-center gap-1.5 mt-1">
+                          <ShieldCheck size={10} className={item.verificationStatus === 'approved' ? 'text-emerald-500' : 'text-cyan-500'} />
+                          <a href={item.credentialUrl} target="_blank" rel="noreferrer" className={`text-[9px] hover:underline truncate max-w-[200px] ${item.verificationStatus === 'approved' ? 'text-emerald-500' : 'text-cyan-500'}`}>
+                            {item.credentialUrl}
+                          </a>
+                          {item.verificationStatus === 'approved' && <span className="text-[8px] font-black uppercase text-emerald-500 bg-emerald-500/10 px-1 rounded">Approved</span>}
+                        </div>
+                      )}
+                      {item.suggestedCredentialUrl && (
+                        <div className="mt-2 p-2 rounded-lg bg-cyan-500/5 border border-cyan-500/20 space-y-1.5">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[8px] font-black uppercase text-cyan-400 tracking-widest flex items-center gap-1">
+                              <Zap size={8} /> Suggested Link
+                            </span>
+                            <div className="flex gap-1">
+                              <button onClick={() => handleApproveLink(item)} className="p-1 rounded bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 transition-colors" title="Approve & Publish">
+                                <Check size={10} />
+                              </button>
+                              <button onClick={() => handleRejectLink(item)} className="p-1 rounded bg-rose-500/20 text-rose-400 hover:bg-rose-500/30 transition-colors" title="Reject Suggestion">
+                                <XCircle size={10} />
+                              </button>
+                            </div>
+                          </div>
+                          <a href={item.suggestedCredentialUrl} target="_blank" rel="noreferrer" className="text-[9px] text-slate-400 hover:text-white truncate block">
+                            {item.suggestedCredentialUrl}
+                          </a>
+                        </div>
+                      )}
                     </div>
                   </div>
                   <div className="flex items-center gap-2 opacity-50 group-hover:opacity-100 transition-opacity">
