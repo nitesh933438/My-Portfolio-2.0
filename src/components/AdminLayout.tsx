@@ -58,7 +58,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ theme = 'dark', setThe
     <AdminToastProvider>
       <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex">
         {/* Sidebar */}
-        <aside className={`${sidebarOpen ? 'w-72' : 'w-20'} hidden lg:flex flex-col bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 transition-all duration-300 h-screen sticky top-0`}>
+        <aside className={`fixed lg:sticky inset-y-0 left-0 z-40 ${sidebarOpen ? 'w-72' : 'w-20'} ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'} flex flex-col bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 transition-all duration-300 h-screen top-0`}>
           <div className="p-6 flex items-center justify-between">
             {sidebarOpen && (
               <div className="flex items-center gap-3">
@@ -66,12 +66,16 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ theme = 'dark', setThe
                 <span className="font-black text-slate-900 dark:text-white">Admin CMS</span>
               </div>
             )}
-            <button onClick={() => setSidebarOpen(!sidebarOpen)} className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800">
+            <button onClick={() => setSidebarOpen(!sidebarOpen)} className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 hidden lg:block">
               {sidebarOpen ? <ChevronLeft size={18} /> : <ChevronRight size={18} />}
+            </button>
+            <button onClick={() => setMobileMenuOpen(false)} className="lg:hidden p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800">
+              <X size={18} />
             </button>
           </div>
           
           <nav className="flex-1 overflow-y-auto px-4 space-y-6">
+            {/* ... navigation remains same ... */}
             {navSections.map(section => (
               <div key={section.title}>
                 {sidebarOpen && <h4 className="px-4 text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2">{section.title}</h4>}
@@ -94,9 +98,12 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ theme = 'dark', setThe
         {/* Main Content */}
         <div className="flex-1 flex flex-col min-w-0 h-screen">
           <header className="sticky top-0 z-30 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 px-6 py-4 flex items-center justify-between">
-            <h2 className="text-lg font-black text-slate-900 dark:text-white truncate">
-              {location.pathname === '/admin' ? 'Dashboard' : location.pathname.split('/').pop()?.toUpperCase()}
-            </h2>
+            <div className="flex items-center gap-4">
+              <button onClick={() => setMobileMenuOpen(true)} className="lg:hidden p-2 rounded-xl text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"><Menu size={18} /></button>
+              <h2 className="text-lg font-black text-slate-900 dark:text-white truncate">
+                {location.pathname === '/admin' ? 'Dashboard' : location.pathname.split('/').pop()?.toUpperCase()}
+              </h2>
+            </div>
             <div className="flex items-center gap-3">
               <button onClick={handleRefresh} className="p-2 rounded-xl text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"><RefreshCw size={18} /></button>
               <button onClick={toggleTheme} className="p-2 rounded-xl text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800">{theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}</button>

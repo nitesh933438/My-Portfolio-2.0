@@ -60,7 +60,7 @@ export const AIScanner: React.FC<AIScannerProps> = ({ isOpen, onClose }) => {
       } else if (activeTab === 'url' && url) {
         formData.append('url', url);
       } else {
-        throw new Error(`Please provide ${activeTab === 'file' ? 'a file' : activeTab === 'text' ? 'some text' : 'a URL'} to scan.`);
+        throw new Error(`Please provide a source to scan.`);
       }
 
       const response = await fetch('/api/ai/analyze-and-extract', {
@@ -70,20 +70,6 @@ export const AIScanner: React.FC<AIScannerProps> = ({ isOpen, onClose }) => {
         },
         body: formData
       });
-
-      const contentType = response.headers.get('content-type');
-      if (!contentType || !contentType.includes('application/json')) {
-        const text = await response.text();
-        console.error('Unexpected server response:', text);
-        
-        if (response.status === 404) {
-          throw new Error('API endpoint not found (404).');
-        } else if (response.status === 500) {
-          throw new Error('Internal Server Error (500).');
-        } else {
-          throw new Error(`Server returned an unexpected response (${response.status}).`);
-        }
-      }
 
       const result = await response.json();
 
