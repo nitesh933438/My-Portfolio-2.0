@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="none">
+  <defs>
+    <linearGradient id="nk-bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0B1120" />
+      <stop offset="50%" stop-color="#0F172A" />
+      <stop offset="100%" stop-color="#090D1A" />
+    </linearGradient>
+    <linearGradient id="nk-border" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38BDF8" stop-opacity="0.9" />
+      <stop offset="50%" stop-color="#6366F1" stop-opacity="0.8" />
+      <stop offset="100%" stop-color="#A855F7" stop-opacity="0.9" />
+    </linearGradient>
+    <linearGradient id="nk-brand" x1="10%" y1="10%" x2="95%" y2="90%">
+      <stop offset="0%" stop-color="#06B6D4" />
+      <stop offset="50%" stop-color="#3B82F6" />
+      <stop offset="100%" stop-color="#8B5CF6" />
+    </linearGradient>
+    <linearGradient id="nk-cyan" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#3B82F6" />
+      <stop offset="100%" stop-color="#22D3EE" />
+    </linearGradient>
+    <filter id="nk-shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="1" dy="2" stdDeviation="2" flood-color="#000000" flood-opacity="0.6" />
+    </filter>
+  </defs>
+
+  <rect x="3" y="3" width="94" height="94" rx="24" fill="url(#nk-bg)" stroke="url(#nk-border)" stroke-width="2.5" />
+
+  <g filter="url(#nk-shadow)">
+    <!-- N Left Vertical Pillar -->
+    <rect x="22" y="23" width="11" height="54" rx="5.5" fill="url(#nk-brand)" />
+
+    <!-- N Diagonal Stroke bridging to center -->
+    <path d="M 27.5 24 L 52 74 C 54.5 78 60 76.5 60 72 L 60 48" stroke="url(#nk-brand)" stroke-width="11" stroke-linecap="round" stroke-linejoin="round" />
+
+    <!-- Shared Central Stem: N Right Pillar & K Backbone -->
+    <rect x="51" y="23" width="11" height="54" rx="5.5" fill="url(#nk-brand)" />
+
+    <!-- K Top Diagonal Branch -->
+    <path d="M 57 48.5 L 77.5 26" stroke="url(#nk-cyan)" stroke-width="10.5" stroke-linecap="round" />
+
+    <!-- K Bottom Diagonal Branch -->
+    <path d="M 56.5 49 L 78.5 74" stroke="url(#nk-brand)" stroke-width="10.5" stroke-linecap="round" />
+
+    <!-- Cyan focal dot -->
+    <circle cx="56.5" cy="48.5" r="3" fill="#22D3EE" />
+  </g>
+</svg>

@@ -1,0 +1,119 @@
+{
+  "entities": {
+    "AcademicRecord": {
+      "title": "AcademicRecord",
+      "description": "Verified educational records including University B.Tech degrees and BSEB Secondary / Higher Secondary education",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique record key" },
+        "type": { "type": "string", "enum": ["university", "school"] },
+        "institution": { "type": "string" },
+        "degree": { "type": "string" },
+        "branch": { "type": "string" },
+        "session": { "type": "string" },
+        "status": { "type": "string" },
+        "location": { "type": "string" },
+        "description": { "type": "string" },
+        "semesters": { "type": "array" },
+        "cgpa": { "type": "number" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "type", "institution"]
+    },
+    "MarksheetAudit": {
+      "title": "MarksheetAudit",
+      "description": "Audit history and document extraction record for uploaded marksheets",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "fileName": { "type": "string" },
+        "fileHash": { "type": "string" },
+        "semesterNumber": { "type": "number" },
+        "sgpa": { "type": "number" },
+        "declarationDate": { "type": "string" },
+        "extractedData": { "type": "object" },
+        "approvedBy": { "type": "string" },
+        "approvedAt": { "type": "string" },
+        "status": { "type": "string", "enum": ["PENDING", "APPROVED", "REJECTED"] }
+      },
+      "required": ["id", "fileName", "status"]
+    },
+    "PortfolioProject": {
+      "title": "PortfolioProject",
+      "description": "Showcased portfolio projects including full-stack and AI applications",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "shortDescription": { "type": "string" },
+        "detailedDescription": { "type": "string" },
+        "category": { "type": "string" },
+        "techStack": { "type": "array" },
+        "mainScreenshot": { "type": "string" },
+        "githubUrl": { "type": "string" },
+        "liveDemoUrl": { "type": "string" },
+        "status": { "type": "string" },
+        "featured": { "type": "boolean" },
+        "displayOrder": { "type": "number" }
+      },
+      "required": ["title", "shortDescription", "category"]
+    },
+    "PortfolioCertificate": {
+      "title": "PortfolioCertificate",
+      "description": "Verified professional credentials and certificates",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "issuer": { "type": "string" },
+        "category": { "type": "string" },
+        "issueDate": { "type": "string" },
+        "fileUrl": { "type": "string" },
+        "published": { "type": "boolean" },
+        "featured": { "type": "boolean" }
+      },
+      "required": ["title", "issuer", "category"]
+    },
+    "ContactMessage": {
+      "title": "ContactMessage",
+      "description": "Visitor contact inquiries sent through portfolio",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "subject": { "type": "string" },
+        "message": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "read": { "type": "boolean" }
+      },
+      "required": ["name", "email", "message"]
+    }
+  },
+  "firestore": {
+    "/academic_records/{recordId}": {
+      "schema": "AcademicRecord",
+      "description": "Public verified academic records published to the portfolio"
+    },
+    "/academic_audit/{auditId}": {
+      "schema": "MarksheetAudit",
+      "description": "Private audit trails and marksheet extraction history"
+    },
+    "/projects/{projectId}": {
+      "schema": "PortfolioProject",
+      "description": "Portfolio projects managed via Admin CMS"
+    },
+    "/certifications/{certificateId}": {
+      "schema": "PortfolioCertificate",
+      "description": "Verified professional certifications"
+    },
+    "/contact_messages/{messageId}": {
+      "schema": "ContactMessage",
+      "description": "Inquiries submitted via contact section"
+    },
+    "/site_metadata/{documentId}": {
+      "schema": { "$ref": "#/entities/AcademicRecord" },
+      "description": "Global portfolio configuration metadata"
+    }
+  }
+}
