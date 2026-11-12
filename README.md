@@ -71,24 +71,6 @@
   </table>
 </div>
 
-### 📜 Top `#01` Verified Credential & Official Resume Preview
-<div align="center">
-  <table>
-    <tr>
-      <td align="center" width="55%">
-        <img src="public/certificates/nptel-programming-in-java-original.jpg" alt="NPTEL Programming in Java Elite Certificate" width="100%" />
-        <br />
-        <strong>Serial #01 • NPTEL IIT Kharagpur — Programming in Java (Elite • 73%)</strong>
-      </td>
-      <td align="center" width="45%">
-        <img src="public/assets/nitesh_resume_page.png" alt="Official Resume Preview" width="82%" />
-        <br />
-        <strong>In-App Interactive Resume & One-Click A4 Print / PDF Export</strong>
-      </td>
-    </tr>
-  </table>
-</div>
-
 ---
 
 ## 📑 Table of Contents
