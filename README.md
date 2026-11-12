@@ -20,7 +20,7 @@
   Engineered for <strong>60fps performance</strong>, <strong>all-device fluid responsiveness (320px–4K)</strong>, <strong>3-mode appearance (Light • Dark • System)</strong>, <strong>interactive project walkthroughs</strong>, <strong>43+ verified certifications</strong>, and <strong>in-app ATS resume export</strong>.
 </p>
 
-[✨ Live Portfolio](https://ais-pre-oe6qbjz4s6oqsk3b5ppqce-378684240832.asia-southeast1.run.app) • [💻 GitHub Profile](https://github.com/nitesh933438) • [🔗 LinkedIn](https://www.linkedin.com/in/nitesh-kumar-8a65693a2) • [📬 Contact via Email](mailto:nitesh933438@gmail.com)
+[✨ Live Portfolio](https://nitesh933438.github.io/My-Portfolio-2.0/) • [💻 GitHub Profile](https://github.com/nitesh933438) • [🔗 LinkedIn](https://www.linkedin.com/in/nitesh933438/) • [📬 Contact via Email](mailto:nitesh933438@gmail.com)
 
 </div>
 
@@ -273,9 +273,9 @@ my-portfolio-2.0/
 *Full-Stack MERN & AI Developer • B.Tech CSE at Arka Jain University*  
 📍 Rohtas, Bihar, India  
 
-- **Portfolio**: [Live Web Application](https://ais-pre-oe6qbjz4s6oqsk3b5ppqce-378684240832.asia-southeast1.run.app)
+- **Portfolio**: [Live Web Application](https://nitesh933438.github.io/My-Portfolio-2.0/)
 - **GitHub**: [github.com/nitesh933438](https://github.com/nitesh933438)
-- **LinkedIn**: [linkedin.com/in/nitesh-kumar-8a65693a2](https://www.linkedin.com/in/nitesh-kumar-8a65693a2)
+- **LinkedIn**: [linkedin.com/in/nitesh-kumar-8a65693a2](https://www.linkedin.com/in/nitesh933438/)
 - **Email**: [nitesh933438@gmail.com](mailto:nitesh933438@gmail.com)
 
 ---
