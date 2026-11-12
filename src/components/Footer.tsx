@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { motion } from 'motion/react';
 import { ArrowUp, Github, Linkedin, MessageSquare, FileText } from 'lucide-react';
 import { SOCIAL_LINKS, NAV_LINKS } from '../data/portfolio';
@@ -14,6 +14,18 @@ export const Footer: React.FC<FooterProps> = ({ onOpenResume }) => {
   const scrollToTop = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Secret Admin Hotkey: Ctrl+Shift+A or Cmd+Shift+A
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'a' || e.key === 'A')) {
+        e.preventDefault();
+        window.location.href = '#/admin';
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   const whatsappLink = SOCIAL_LINKS.find(s => s.platform === 'WhatsApp');
   const whatsappUrl = `https://wa.me/${settings.whatsapp.replace(/\+/g, '')}?text=${encodeURIComponent(settings.whatsappPrefilledMessage || "Hello Nitesh! I visited your portfolio and I'm interested in discussing a project with you.")}`;
@@ -48,7 +60,17 @@ export const Footer: React.FC<FooterProps> = ({ onOpenResume }) => {
               <h4 className="text-xs font-bold uppercase tracking-widest text-slate-900 dark:text-white">Navigation</h4>
               <nav className="flex flex-col space-y-2.5 text-sm text-slate-500 dark:text-slate-400">
                 {NAV_LINKS.map(link => (
-                  <a key={link.name} href={link.href} className="hover:text-indigo-600 dark:hover:text-white transition-colors">{link.name}</a>
+                  <button
+                    key={link.name}
+                    type="button"
+                    onClick={() => {
+                      const id = link.href.replace(/^#/, '');
+                      document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }}
+                    className="text-left hover:text-indigo-600 dark:hover:text-white transition-colors cursor-pointer"
+                  >
+                    {link.name}
+                  </button>
                 ))}
                 {onOpenResume && (
                   <button 
@@ -88,23 +110,24 @@ export const Footer: React.FC<FooterProps> = ({ onOpenResume }) => {
           transition={{ duration: 0.6, delay: 0.2 }}
           className="pt-8 flex flex-col sm:flex-row items-center justify-between gap-6"
         >
-          <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500 text-center sm:text-left">
-            © {new Date().getFullYear()} {settings.name}. Built with React & Tailwind CSS.
+          <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500 text-center sm:text-left flex items-center gap-1.5 flex-wrap justify-center sm:justify-start">
+            <span>© {new Date().getFullYear()} {settings.name}. Built with React & Tailwind CSS.</span>
+            <a
+              href="#/admin"
+              tabIndex={-1}
+              className="text-slate-300 dark:text-slate-800 hover:text-indigo-500 dark:hover:text-cyan-400 transition-colors p-1"
+              title="Admin Portal (Access restricted to authorized administrator)"
+              aria-label="Admin Portal"
+            >
+              •
+            </a>
           </div>
 
           <div className="flex items-center gap-4">
-            <a
-              href="#/admin"
-              className="text-[10px] font-bold uppercase tracking-widest text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors flex items-center gap-1.5 px-3 py-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-900"
-              title="Administrator CMS Console"
-            >
-              <span>Admin CMS</span>
-            </a>
-
             <button
               onClick={scrollToTop}
               aria-label="Back to top"
-              className="group flex items-center gap-2.5 px-4 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:border-indigo-500 dark:hover:border-indigo-500 transition-all active:scale-95 shadow-sm"
+              className="group flex items-center gap-2.5 px-4 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:border-indigo-500 dark:hover:border-indigo-500 transition-all active:scale-95 shadow-sm cursor-pointer"
             >
               <span className="text-[10px] font-bold uppercase tracking-widest">Back to Top</span>
               <div className="p-1 rounded-md bg-slate-100 dark:bg-slate-800 group-hover:bg-indigo-600 group-hover:text-white transition-colors">

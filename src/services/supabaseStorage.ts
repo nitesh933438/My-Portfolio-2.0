@@ -144,27 +144,25 @@ export const resolveAssetUrl = (pathOrUrl: string, type: AssetFolder): string =>
   const prefix = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
 
   // Known local static asset paths in /public directory
+  const isTimestampedSupabasePath = /^(certificates|projects|profile|resume|documents)\/\d{10,}_/.test(cleanPath);
+
+  if (isTimestampedSupabasePath) {
+    return getStorageUrl(cleanPath);
+  }
+
   if (
     cleanPath.startsWith('assets/') ||
     cleanPath.startsWith('images/') ||
     cleanPath === 'nitesh_kumar_resume.pdf' ||
     cleanPath.startsWith('resume/') ||
-    cleanPath.startsWith('certificates/certificate-') ||
-    cleanPath.startsWith('certificate-')
+    cleanPath.startsWith('certificates/') ||
+    cleanPath.startsWith('certificate-') ||
+    cleanPath.startsWith('nptel-')
   ) {
-    if (cleanPath.startsWith('certificate-')) {
+    if (cleanPath.startsWith('certificate-') || cleanPath.startsWith('nptel-')) {
       return `${prefix}certificates/${cleanPath}`;
     }
     return `${prefix}${cleanPath}`;
-  }
-
-  // Known Supabase storage folder prefix check
-  const isSupabaseFolder = ['certificates', 'projects', 'profile', 'resume', 'documents'].some(folder => 
-    cleanPath.startsWith(`${folder}/`)
-  );
-
-  if (isSupabaseFolder) {
-    return getStorageUrl(cleanPath);
   }
 
   // Fallback to local static asset in the respective public folder

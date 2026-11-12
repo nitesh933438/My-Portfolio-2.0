@@ -62,21 +62,31 @@ export const Hero: React.FC<HeroProps> = ({ onOpenResume }) => {
             </div>
 
             {/* CTA Buttons */}
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-center lg:justify-start gap-3 sm:gap-4 pt-2 sm:pt-4 w-full sm:w-auto max-w-md mx-auto lg:mx-0">
-              <a
-                href="#projects"
-                className="inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-600 dark:hover:bg-indigo-500 text-white font-semibold text-xs sm:text-sm transition-all shadow-lg shadow-indigo-600/30 active:scale-95 whitespace-nowrap min-h-[44px]"
+            <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center justify-center lg:justify-start gap-3 pt-2 sm:pt-4 w-full sm:w-auto max-w-xl mx-auto lg:mx-0">
+              <button
+                type="button"
+                onClick={() => document.getElementById('projects')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                className="inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-600 dark:hover:bg-indigo-500 text-white font-semibold text-xs sm:text-sm transition-all shadow-lg shadow-indigo-600/30 active:scale-95 whitespace-nowrap min-h-[44px] cursor-pointer"
               >
                 <span>Explore Projects</span>
                 <ArrowRight className="w-4 h-4" />
-              </a>
+              </button>
 
               <button
+                type="button"
+                onClick={() => document.getElementById('certifications')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                className="inline-flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50/70 dark:bg-indigo-950/40 text-indigo-700 dark:text-cyan-300 font-semibold text-xs sm:text-sm hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-all active:scale-95 whitespace-nowrap shadow-xs min-h-[44px] cursor-pointer"
+              >
+                <span>43+ Certifications</span>
+              </button>
+
+              <button
+                type="button"
                 onClick={onOpenResume}
-                className="inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-semibold text-xs sm:text-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition-all active:scale-95 whitespace-nowrap shadow-sm min-h-[44px]"
+                className="inline-flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-semibold text-xs sm:text-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition-all active:scale-95 whitespace-nowrap shadow-sm min-h-[44px] cursor-pointer"
               >
                 <Download className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-                <span>View / Download Resume</span>
+                <span>Resume</span>
               </button>
             </div>
 

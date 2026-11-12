@@ -325,11 +325,52 @@ export const PROJECTS: Project[] = [
     slug: "money-details",
     title: "Money Details",
     shortDescription: "A comprehensive financial tracker web app to monitor expenses, budgets, and savings goals.",
-    detailedDescription: "Money Details is an intuitive financial management web application designed to help users track their day-to-day spending, categorize transactions, set monthly budget limits, and visualize financial growth through interactive charts.",
+    detailedDescription: "Money Details is an intuitive financial management web application designed to help users track their day-to-day spending, categorize transactions, set monthly budget limits, manage Udhaar (lending/borrowing), track college fees, and export multi-format PDF financial statements.",
     category: "Full-Stack Development",
-    techStack: ["React", "JavaScript", "Tailwind CSS", "Chart.js"],
+    techStack: ["React", "JavaScript", "Tailwind CSS", "Firebase", "Chart.js"],
     mainScreenshot: getPath('/images/banners/money_details_banner_1793870364321.jpg'),
-    additionalScreenshots: [getPath('/images/projects/money-details/02-screenshot-2026-11-01-122319.png'), getPath('/images/projects/money-details/03-screenshot-2026-11-01-122344.png'), getPath('/images/projects/money-details/04-screenshot-2026-11-01-122512.png'), getPath('/images/projects/money-details/05-screenshot-2026-11-01-160007.png'), getPath('/images/projects/money-details/06-screenshot-2026-11-01-160257.png'), getPath('/images/projects/money-details/07-screenshot-2026-11-01-160313.png'), getPath('/images/projects/money-details/08-screenshot-2026-11-01-160326.png'), getPath('/images/projects/money-details/09-screenshot-2026-11-01-160337.png'), getPath('/images/projects/money-details/10-screenshot-2026-11-01-160347.png'), getPath('/images/projects/money-details/11-screenshot-2026-11-01-160406.png'), getPath('/images/projects/money-details/12-screenshot-2026-11-01-160418.png'), getPath('/images/projects/money-details/13-screenshot-2026-11-01-160433.png'), getPath('/images/projects/money-details/14-screenshot-2026-11-01-160639.png'), getPath('/images/projects/money-details/01-screenshot-2026-11-01-16-09-26-91-40deb401b9ffe8e1df2f1cc5ba480b12.jpg'), getPath('/images/projects/money-details/02-screenshot-2026-11-01-16-09-31-48-40deb401b9ffe8e1df2f1cc5ba480b12.jpg'), getPath('/images/projects/money-details/03-screenshot-2026-11-01-16-10-21-43-40deb401b9ffe8e1df2f1cc5ba480b12.jpg'), getPath('/images/projects/money-details/04-screenshot-2026-11-01-16-10-26-58-40deb401b9ffe8e1df2f1cc5ba480b12.jpg'), getPath('/images/projects/money-details/05-screenshot-2026-11-01-16-10-32-70-40deb401b9ffe8e1df2f1cc5ba480b12.jpg'), getPath('/images/projects/money-details/06-screenshot-2026-11-01-16-10-37-44-40deb401b9ffe8e1df2f1cc5ba480b12.jpg'), getPath('/images/projects/money-details/07-screenshot-2026-11-01-16-10-45-64-40deb401b9ffe8e1df2f1cc5ba480b12.jpg'), getPath('/images/projects/money-details/08-screenshot-2026-11-01-16-10-50-73-40deb401b9ffe8e1df2f1cc5ba480b12.jpg'), getPath('/images/projects/money-details/09-screenshot-2026-11-01-16-11-02-41-40deb401b9ffe8e1df2f1cc5ba480b12.jpg'), getPath('/images/projects/money-details/10-screenshot-2026-11-01-16-11-17-70-40deb401b9ffe8e1df2f1cc5ba480b12.jpg'), getPath('/images/projects/money-details/11-screenshot-2026-11-01-16-11-27-66-40deb401b9ffe8e1df2f1cc5ba480b12.jpg'), getPath('/images/projects/money-details/12-screenshot-2026-11-01-16-11-34-05-40deb401b9ffe8e1df2f1cc5ba480b12.jpg'), getPath('/images/projects/money-details/13-screenshot-2026-11-01-16-11-51-44-40deb401b9ffe8e1df2f1cc5ba480b12.jpg'), getPath('/images/projects/money-details/14-screenshot-2026-11-01-16-12-37-30-40deb401b9ffe8e1df2f1cc5ba480b12.jpg'), getPath('/images/projects/money-details/01-screenshot-2026-11-01-162131.png'), getPath('/images/projects/money-details/02-screenshot-2026-11-01-162222.png'), getPath('/images/projects/money-details/03-screenshot-2026-11-01-162241.png'), getPath('/images/projects/money-details/04-screenshot-2026-11-01-162302.png'), getPath('/images/projects/money-details/05-screenshot-2026-11-01-162321.png'), getPath('/images/projects/money-details/06-screenshot-2026-11-01-162341.png'), getPath('/images/projects/money-details/07-screenshot-2026-11-01-162403.png'), getPath('/images/projects/money-details/08-screenshot-2026-11-01-162419.png'), getPath('/images/projects/money-details/09-screenshot-2026-11-01-162439.png')],
+    additionalScreenshots: [
+      // Desktop Web Views (14) - Ordered by Logical User Flow
+      getPath('/images/projects/money-details/05-screenshot-2026-11-01-160007.png'),
+      getPath('/images/projects/money-details/14-screenshot-2026-11-01-160639.png'),
+      getPath('/images/projects/money-details/06-screenshot-2026-11-01-160257.png'),
+      getPath('/images/projects/money-details/07-screenshot-2026-11-01-160313.png'),
+      getPath('/images/projects/money-details/08-screenshot-2026-11-01-160326.png'),
+      getPath('/images/projects/money-details/09-screenshot-2026-11-01-160337.png'),
+      getPath('/images/projects/money-details/10-screenshot-2026-11-01-160347.png'),
+      getPath('/images/projects/money-details/11-screenshot-2026-11-01-160406.png'),
+      getPath('/images/projects/money-details/12-screenshot-2026-11-01-160418.png'),
+      getPath('/images/projects/money-details/13-screenshot-2026-11-01-160433.png'),
+      getPath('/images/projects/money-details/01-screenshot-2026-11-01-115228.png'),
+      getPath('/images/projects/money-details/02-screenshot-2026-11-01-122319.png'),
+      getPath('/images/projects/money-details/03-screenshot-2026-11-01-122344.png'),
+      getPath('/images/projects/money-details/04-screenshot-2026-11-01-122512.png'),
+      // Mobile Responsive Views (14)
+      getPath('/images/projects/money-details/01-screenshot-2026-11-01-16-09-26-91-40deb401b9ffe8e1df2f1cc5ba480b12.jpg'),
+      getPath('/images/projects/money-details/02-screenshot-2026-11-01-16-09-31-48-40deb401b9ffe8e1df2f1cc5ba480b12.jpg'),
+      getPath('/images/projects/money-details/03-screenshot-2026-11-01-16-10-21-43-40deb401b9ffe8e1df2f1cc5ba480b12.jpg'),
+      getPath('/images/projects/money-details/04-screenshot-2026-11-01-16-10-26-58-40deb401b9ffe8e1df2f1cc5ba480b12.jpg'),
+      getPath('/images/projects/money-details/05-screenshot-2026-11-01-16-10-32-70-40deb401b9ffe8e1df2f1cc5ba480b12.jpg'),
+      getPath('/images/projects/money-details/06-screenshot-2026-11-01-16-10-37-44-40deb401b9ffe8e1df2f1cc5ba480b12.jpg'),
+      getPath('/images/projects/money-details/07-screenshot-2026-11-01-16-10-45-64-40deb401b9ffe8e1df2f1cc5ba480b12.jpg'),
+      getPath('/images/projects/money-details/08-screenshot-2026-11-01-16-10-50-73-40deb401b9ffe8e1df2f1cc5ba480b12.jpg'),
+      getPath('/images/projects/money-details/09-screenshot-2026-11-01-16-11-02-41-40deb401b9ffe8e1df2f1cc5ba480b12.jpg'),
+      getPath('/images/projects/money-details/10-screenshot-2026-11-01-16-11-17-70-40deb401b9ffe8e1df2f1cc5ba480b12.jpg'),
+      getPath('/images/projects/money-details/11-screenshot-2026-11-01-16-11-27-66-40deb401b9ffe8e1df2f1cc5ba480b12.jpg'),
+      getPath('/images/projects/money-details/12-screenshot-2026-11-01-16-11-34-05-40deb401b9ffe8e1df2f1cc5ba480b12.jpg'),
+      getPath('/images/projects/money-details/13-screenshot-2026-11-01-16-11-51-44-40deb401b9ffe8e1df2f1cc5ba480b12.jpg'),
+      getPath('/images/projects/money-details/14-screenshot-2026-11-01-16-12-37-30-40deb401b9ffe8e1df2f1cc5ba480b12.jpg'),
+      // PDF Financial Reports (9)
+      getPath('/images/projects/money-details/01-screenshot-2026-11-01-162131.png'),
+      getPath('/images/projects/money-details/02-screenshot-2026-11-01-162222.png'),
+      getPath('/images/projects/money-details/03-screenshot-2026-11-01-162241.png'),
+      getPath('/images/projects/money-details/04-screenshot-2026-11-01-162302.png'),
+      getPath('/images/projects/money-details/05-screenshot-2026-11-01-162321.png'),
+      getPath('/images/projects/money-details/06-screenshot-2026-11-01-162341.png'),
+      getPath('/images/projects/money-details/07-screenshot-2026-11-01-162403.png'),
+      getPath('/images/projects/money-details/08-screenshot-2026-11-01-162419.png'),
+      getPath('/images/projects/money-details/09-screenshot-2026-11-01-162439.png')
+    ],
     githubUrl: "https://github.com/nitesh933438/Money-Details-Demo",
     liveDemoUrl: "https://nitesh933438.github.io/Money-Details/",
     status: "Completed",
@@ -337,10 +378,10 @@ export const PROJECTS: Project[] = [
     displayOrder: 1,
     creationDate: "2025",
     keyFeatures: [
-      "Expense and income tracking with categories",
-      "Interactive charts and spending analytics",
-      "Monthly budget alert system",
-      "Responsive, clean UI with dark mode support"
+      "Expense, income, Udhaar lending/borrowing, and college fee tracking",
+      "Interactive charts and multi-month consolidated analytics",
+      "One-click PDF financial ledger and report exports",
+      "Recycle bin recovery, audit history log, and responsive mobile PWA"
     ]
   },
   {
@@ -348,11 +389,24 @@ export const PROJECTS: Project[] = [
     slug: "whatsapp-personal-ai-bot",
     title: "WhatsApp Personal AI Bot",
     shortDescription: "An intelligent automated WhatsApp companion powered by AI for smart conversational replies and task assistance.",
-    detailedDescription: "WhatsApp Personal AI Bot integrates messaging APIs with advanced language models to provide instant conversational responses, answer queries, automate notifications, and assist users directly via WhatsApp.",
+    detailedDescription: "WhatsApp Personal AI Bot integrates messaging APIs with advanced language models to provide instant conversational responses, answer queries, automate notifications, and assist users directly via WhatsApp across desktop and mobile control centers.",
     category: "AI & Automation",
     techStack: ["Node.js", "Express", "WhatsApp API", "Gemini API"],
     mainScreenshot: getPath('/images/banners/whatsapp_ai_banner_1793870364243.jpg'),
-    additionalScreenshots: [getPath('/images/projects/whatsapp-personal-ai-bot/02-desktop-02.png'), getPath('/images/projects/whatsapp-personal-ai-bot/03-desktop-03.png'), getPath('/images/projects/whatsapp-personal-ai-bot/04-desktop-04.png'), getPath('/images/projects/whatsapp-personal-ai-bot/05-desktop-05.png'), getPath('/images/projects/whatsapp-personal-ai-bot/06-desktop-06.png'), getPath('/images/projects/whatsapp-personal-ai-bot/07-mobile-01.jpg'), getPath('/images/projects/whatsapp-personal-ai-bot/08-mobile-02.jpg'), getPath('/images/projects/whatsapp-personal-ai-bot/09-mobile-03.jpg'), getPath('/images/projects/whatsapp-personal-ai-bot/10-mobile-04.jpg'), getPath('/images/projects/whatsapp-personal-ai-bot/11-mobile-05.jpg'), getPath('/images/projects/whatsapp-personal-ai-bot/12-mobile-06.jpg')],
+    additionalScreenshots: [
+      getPath('/images/projects/whatsapp-personal-ai-bot/01-desktop-01.png'),
+      getPath('/images/projects/whatsapp-personal-ai-bot/02-desktop-02.png'),
+      getPath('/images/projects/whatsapp-personal-ai-bot/03-desktop-03.png'),
+      getPath('/images/projects/whatsapp-personal-ai-bot/04-desktop-04.png'),
+      getPath('/images/projects/whatsapp-personal-ai-bot/05-desktop-05.png'),
+      getPath('/images/projects/whatsapp-personal-ai-bot/06-desktop-06.png'),
+      getPath('/images/projects/whatsapp-personal-ai-bot/07-mobile-01.jpg'),
+      getPath('/images/projects/whatsapp-personal-ai-bot/08-mobile-02.jpg'),
+      getPath('/images/projects/whatsapp-personal-ai-bot/09-mobile-03.jpg'),
+      getPath('/images/projects/whatsapp-personal-ai-bot/10-mobile-04.jpg'),
+      getPath('/images/projects/whatsapp-personal-ai-bot/11-mobile-05.jpg'),
+      getPath('/images/projects/whatsapp-personal-ai-bot/12-mobile-06.jpg')
+    ],
     githubUrl: "https://github.com/nitesh933438/WhatsApp-Personal-AI-Bot-Demo",
     liveDemoUrl: "https://nitesh-personal-bot.onrender.com/",
     status: "Completed",
@@ -360,10 +414,10 @@ export const PROJECTS: Project[] = [
     displayOrder: 2,
     creationDate: "2025",
     keyFeatures: [
-      "Automated webhook handling for WhatsApp messages",
-      "Context-aware AI responses",
-      "Deployed and hosted live on Render",
-      "Customizable system prompts and command triggers"
+      "QR code WhatsApp pairing and real-time session management",
+      "Context-aware AI auto-replies and configurable away mode",
+      "Live chat inbox, synced contacts directory, and activity logs",
+      "Full desktop and mobile responsive admin control center"
     ]
   },
   {
@@ -371,11 +425,21 @@ export const PROJECTS: Project[] = [
     slug: "worksphere-hrms",
     title: "WorkSphere HRMS",
     shortDescription: "An enterprise-grade Human Resource Management System for attendance, employee records, and payroll.",
-    detailedDescription: "WorkSphere HRMS streamlines organizational workflows including employee onboarding, attendance tracking, department organization charts, leave management, and performance analytics.",
+    detailedDescription: "WorkSphere HRMS streamlines organizational workflows including role-based portals (Admin, Employee, HR, Manager), employee directory management, live attendance check-in, leave approval workflows, and automated payroll processing.",
     category: "SaaS & Management",
     techStack: ["React", "TypeScript", "Tailwind CSS", "Node.js"],
     mainScreenshot: getPath('/images/banners/worksphere_hrms_banner_1793870364647.jpg'),
-    additionalScreenshots: [getPath('/images/projects/worksphere-hrms/02-employee.png'), getPath('/images/projects/worksphere-hrms/03-hr.png'), getPath('/images/projects/worksphere-hrms/04-manager.png'), getPath('/images/projects/worksphere-hrms/05-screenshot-2026-09-23-163001.png'), getPath('/images/projects/worksphere-hrms/06-screenshot-2026-09-23-171212.png'), getPath('/images/projects/worksphere-hrms/07-screenshot-2026-09-23-171232.png'), getPath('/images/projects/worksphere-hrms/08-screenshot-2026-09-23-171255.png'), getPath('/images/projects/worksphere-hrms/09-screenshot-2026-09-23-171308.png'), getPath('/images/projects/worksphere-hrms/10-screenshot-2026-09-23-171353.png')],
+    additionalScreenshots: [
+      getPath('/images/projects/worksphere-hrms/01-admin.png'),
+      getPath('/images/projects/worksphere-hrms/02-employee.png'),
+      getPath('/images/projects/worksphere-hrms/03-hr.png'),
+      getPath('/images/projects/worksphere-hrms/04-manager.png'),
+      getPath('/images/projects/worksphere-hrms/06-screenshot-2026-09-23-171212.png'),
+      getPath('/images/projects/worksphere-hrms/07-screenshot-2026-09-23-171232.png'),
+      getPath('/images/projects/worksphere-hrms/08-screenshot-2026-09-23-171255.png'),
+      getPath('/images/projects/worksphere-hrms/09-screenshot-2026-09-23-171308.png'),
+      getPath('/images/projects/worksphere-hrms/10-screenshot-2026-09-23-171353.png')
+    ],
     githubUrl: "https://github.com/nitesh933438/WorkSphere-HRMS-Demo",
     liveDemoUrl: "https://nitesh933438.github.io/WorkSphere-HRMS/",
     status: "Completed",
@@ -383,10 +447,10 @@ export const PROJECTS: Project[] = [
     displayOrder: 3,
     creationDate: "2025",
     keyFeatures: [
-      "Comprehensive employee directory and organization chart",
-      "Real-time attendance and absence tracking",
-      "Performance analytics and metric graphs",
-      "Role-based navigation and clean dashboards"
+      "Role-based workspaces for Admin, Employee, HR, and Manager",
+      "Comprehensive employee directory and department organization",
+      "Real-time attendance check-in and leave approval workflows",
+      "Payroll engine with salary breakdown and disbursement records"
     ]
   },
   {
@@ -398,7 +462,9 @@ export const PROJECTS: Project[] = [
     category: "AI & Automation",
     techStack: ["React", "Node.js", "Express", "Tailwind CSS", "Gemini API"],
     mainScreenshot: getPath('/images/projects/nova-ai/main.jpg'),
-    additionalScreenshots: [],
+    additionalScreenshots: [
+      getPath('/images/projects/nova-ai/main.jpg')
+    ],
     githubUrl: "",
     liveDemoUrl: "https://nova-ai-assistant-oue3.onrender.com/",
     status: "Completed",
@@ -417,11 +483,30 @@ export const PROJECTS: Project[] = [
     slug: "digital-vault",
     title: "Digital Vault",
     shortDescription: "A secure digital locker application to store sensitive credentials, documents, and notes safely.",
-    detailedDescription: "Digital Vault offers encrypted client-side and server-side storage capabilities for safeguarding private notes, passwords, and sensitive files with master password protection.",
+    detailedDescription: "Digital Vault offers encrypted client-side and server-side storage capabilities for safeguarding private documents, credentials, and sensitive files with role-based user and administrator portals.",
     category: "Security & Storage",
     techStack: ["React", "Node.js", "Express", "Crypto", "Tailwind CSS"],
     mainScreenshot: getPath('/images/banners/digital_vault_banner_1793870364923.jpg'),
-    additionalScreenshots: [getPath('/images/projects/digital-vault/02-admin-dashboard.png'), getPath('/images/projects/digital-vault/03-admin-document-management.png'), getPath('/images/projects/digital-vault/04-admin-newsletter-subscribers.png'), getPath('/images/projects/digital-vault/05-admin-send-notification.png'), getPath('/images/projects/digital-vault/06-admin-user-management.png'), getPath('/images/projects/digital-vault/07-dashboard.png'), getPath('/images/projects/digital-vault/08-documents.png'), getPath('/images/projects/digital-vault/09-favorites.png'), getPath('/images/projects/digital-vault/10-landing-page.png'), getPath('/images/projects/digital-vault/11-login.png'), getPath('/images/projects/digital-vault/12-notifications.png'), getPath('/images/projects/digital-vault/13-profile.png'), getPath('/images/projects/digital-vault/14-register.png'), getPath('/images/projects/digital-vault/15-settings.png'), getPath('/images/projects/digital-vault/16-storage-details.png')],
+    additionalScreenshots: [
+      // User Portal Flow (10)
+      getPath('/images/projects/digital-vault/10-landing-page.png'),
+      getPath('/images/projects/digital-vault/11-login.png'),
+      getPath('/images/projects/digital-vault/14-register.png'),
+      getPath('/images/projects/digital-vault/07-dashboard.png'),
+      getPath('/images/projects/digital-vault/08-documents.png'),
+      getPath('/images/projects/digital-vault/09-favorites.png'),
+      getPath('/images/projects/digital-vault/16-storage-details.png'),
+      getPath('/images/projects/digital-vault/12-notifications.png'),
+      getPath('/images/projects/digital-vault/13-profile.png'),
+      getPath('/images/projects/digital-vault/15-settings.png'),
+      // Admin Console Flow (6)
+      getPath('/images/projects/digital-vault/02-admin-dashboard.png'),
+      getPath('/images/projects/digital-vault/06-admin-user-management.png'),
+      getPath('/images/projects/digital-vault/03-admin-document-management.png'),
+      getPath('/images/projects/digital-vault/05-admin-send-notification.png'),
+      getPath('/images/projects/digital-vault/01-admin-contact-messages.png'),
+      getPath('/images/projects/digital-vault/04-admin-newsletter-subscribers.png')
+    ],
     githubUrl: "https://github.com/nitesh933438/Digital-Vault",
     liveDemoUrl: "https://nitesh933438.github.io/Digital-Vault/",
     status: "Completed",
@@ -429,22 +514,43 @@ export const PROJECTS: Project[] = [
     displayOrder: 5,
     creationDate: "2025",
     keyFeatures: [
-      "Master password encryption",
-      "Secure credential category management",
-      "Clean minimalist vault UI",
-      "Local and cloud storage sync options"
+      "Encrypted document repository with favorites and storage analytics",
+      "Dedicated User Vault Portal and Administrator Control Console",
+      "Real-time broadcast notifications and contact inquiry management",
+      "Storage quota breakdown and user access control"
     ]
   },
   {
     id: "golden-road-safety",
     slug: "golden-road-safety",
     title: "Golden Road Safety",
-    shortDescription: "An awareness and reporting web portal dedicated to traffic rules, road safety guidelines, and incident alerts.",
-    detailedDescription: "Golden Road Safety promotes civic responsibility and road safety education by providing clear guidelines, interactive hazard reporting, and safety tips for drivers and pedestrians.",
+    shortDescription: "An emergency response and road safety ecosystem built for the critical Golden Hour.",
+    detailedDescription: "GoldenGuard Road Safety connects citizens, Good Samaritan volunteers, nearby hospitals, and police units with 1-Tap SOS dispatch, Voice SOS commands, SaferRide crash detection, CPR training modules, and offline-first Firestore sync.",
     category: "Web Applications",
-    techStack: ["React", "Tailwind CSS", "JavaScript"],
+    techStack: ["React", "Tailwind CSS", "Firebase", "PWA"],
     mainScreenshot: getPath('/images/banners/golden_road_safety_banner_1793870365424.jpg'),
-    additionalScreenshots: [getPath('/images/projects/golden-road-safety/02-screenshot-2026-11-04-141946.png'), getPath('/images/projects/golden-road-safety/03-screenshot-2026-11-04-142025.png'), getPath('/images/projects/golden-road-safety/04-screenshot-2026-11-04-142051.png'), getPath('/images/projects/golden-road-safety/05-screenshot-2026-11-04-142329.png'), getPath('/images/projects/golden-road-safety/06-screenshot-2026-11-04-142352.png'), getPath('/images/projects/golden-road-safety/07-screenshot-2026-11-04-142417.png'), getPath('/images/projects/golden-road-safety/08-screenshot-2026-11-04-142530.png'), getPath('/images/projects/golden-road-safety/09-screenshot-2026-11-04-142555.png'), getPath('/images/projects/golden-road-safety/10-screenshot-2026-11-04-142708.png'), getPath('/images/projects/golden-road-safety/11-screenshot-2026-11-04-142734.png'), getPath('/images/projects/golden-road-safety/12-screenshot-2026-11-04-142754.png'), getPath('/images/projects/golden-road-safety/13-screenshot-2026-11-04-142837.png'), getPath('/images/projects/golden-road-safety/14-screenshot-2026-11-04-142941.png'), getPath('/images/projects/golden-road-safety/15-screenshot-2026-11-04-143019.png'), getPath('/images/projects/golden-road-safety/16-screenshot-2026-11-04-143116.png'), getPath('/images/projects/golden-road-safety/17-screenshot-2026-11-04-143141.png'), getPath('/images/projects/golden-road-safety/18-screenshot-2026-11-04-143157.png'), getPath('/images/projects/golden-road-safety/19-screenshot-2026-11-04-143234.png'), getPath('/images/projects/golden-road-safety/20-screenshot-2026-11-04-143257.png')],
+    additionalScreenshots: [
+      getPath('/images/projects/golden-road-safety/01-screenshot-2026-11-04-141641.png'),
+      getPath('/images/projects/golden-road-safety/02-screenshot-2026-11-04-141946.png'),
+      getPath('/images/projects/golden-road-safety/03-screenshot-2026-11-04-142025.png'),
+      getPath('/images/projects/golden-road-safety/04-screenshot-2026-11-04-142051.png'),
+      getPath('/images/projects/golden-road-safety/05-screenshot-2026-11-04-142329.png'),
+      getPath('/images/projects/golden-road-safety/06-screenshot-2026-11-04-142352.png'),
+      getPath('/images/projects/golden-road-safety/07-screenshot-2026-11-04-142417.png'),
+      getPath('/images/projects/golden-road-safety/08-screenshot-2026-11-04-142530.png'),
+      getPath('/images/projects/golden-road-safety/09-screenshot-2026-11-04-142555.png'),
+      getPath('/images/projects/golden-road-safety/10-screenshot-2026-11-04-142708.png'),
+      getPath('/images/projects/golden-road-safety/11-screenshot-2026-11-04-142734.png'),
+      getPath('/images/projects/golden-road-safety/12-screenshot-2026-11-04-142754.png'),
+      getPath('/images/projects/golden-road-safety/13-screenshot-2026-11-04-142837.png'),
+      getPath('/images/projects/golden-road-safety/14-screenshot-2026-11-04-142941.png'),
+      getPath('/images/projects/golden-road-safety/15-screenshot-2026-11-04-143019.png'),
+      getPath('/images/projects/golden-road-safety/16-screenshot-2026-11-04-143116.png'),
+      getPath('/images/projects/golden-road-safety/17-screenshot-2026-11-04-143141.png'),
+      getPath('/images/projects/golden-road-safety/18-screenshot-2026-11-04-143157.png'),
+      getPath('/images/projects/golden-road-safety/19-screenshot-2026-11-04-143234.png'),
+      getPath('/images/projects/golden-road-safety/20-screenshot-2026-11-04-143257.png')
+    ],
     githubUrl: "https://github.com/nitesh933438/Golden-Road-Safety",
     liveDemoUrl: "https://nitesh933438.github.io/Golden-Road-Safety/",
     status: "Completed",
@@ -452,10 +558,10 @@ export const PROJECTS: Project[] = [
     displayOrder: 6,
     creationDate: "2025",
     keyFeatures: [
-      "Road safety modules and traffic sign guides",
-      "Incident reporting form and emergency contacts",
-      "Fully responsive mobile-friendly design",
-      "Educational resources for safe driving"
+      "1-Tap Emergency SOS and hands-free Voice SOS command listener",
+      "SaferRide Guardian with G-force crash detection and auto-dispatch",
+      "Smart First Aid Assistant, CPR metronome, and Lifesaver Academy",
+      "Offline-first PWA with automatic Firestore queue synchronization"
     ]
   },
   {
@@ -463,11 +569,15 @@ export const PROJECTS: Project[] = [
     slug: "attendx-ai",
     title: "AttendX AI",
     shortDescription: "An AI-powered smart attendance system leveraging facial recognition and automated logging.",
-    detailedDescription: "AttendX AI streamlines classroom and workplace attendance by utilizing intelligent verification, instant logging, and exportable attendance reports.",
+    detailedDescription: "AttendX AI streamlines classroom and workplace attendance by utilizing intelligent verification, role-based Student and Teacher portals, Google Workspace OAuth, and exportable attendance reports.",
     category: "AI & Automation",
     techStack: ["React", "Node.js", "Python", "OpenCV", "Tailwind CSS"],
     mainScreenshot: getPath('/images/banners/attendx_ai_banner_1793870365409.jpg'),
-    additionalScreenshots: [getPath('/images/projects/attendx-ai/02-screenshot-2026-11-04-145256.png'), getPath('/images/projects/attendx-ai/03-screenshot-2026-11-04-145316.png')],
+    additionalScreenshots: [
+      getPath('/images/projects/attendx-ai/01-screenshot-2026-11-04-145231.png'),
+      getPath('/images/projects/attendx-ai/02-screenshot-2026-11-04-145256.png'),
+      getPath('/images/projects/attendx-ai/03-screenshot-2026-11-04-145316.png')
+    ],
     githubUrl: "https://github.com/nitesh933438/AttendX-AI",
     liveDemoUrl: "https://attend-x-ai.vercel.app",
     status: "Completed",
@@ -475,9 +585,9 @@ export const PROJECTS: Project[] = [
     displayOrder: 7,
     creationDate: "2025",
     keyFeatures: [
-      "Automated attendance logging dashboard",
-      "Real-time analytics and attendance percentages",
-      "Exportable CSV/PDF attendance reports",
+      "Smart attendance platform landing and real-time analytics showcase",
+      "Google OAuth and encrypted credential sign-in portal",
+      "Role-based Student and Teacher account onboarding",
       "Hosted live on Vercel"
     ]
   },
@@ -485,12 +595,24 @@ export const PROJECTS: Project[] = [
     id: "road-safety",
     slug: "road-safety",
     title: "Road Safety",
-    shortDescription: "A comprehensive civic safety platform providing traffic updates, emergency dispatch guides, and safe route planning.",
-    detailedDescription: "Road Safety focuses on accident prevention, emergency preparedness, and community-driven road hazard reporting to build safer commuting environments.",
+    shortDescription: "A next-generation AI emergency command center, GIS map radar, and driving guardian platform.",
+    detailedDescription: "Road Safety (GoldenGuard AI) combines an AI Emergency Command Center, 60-minute Golden Hour SOS triage, AI Driving Guardian pre-drive checks, multi-layer OpenStreetMap emergency radar, and OpenStreetMap reverse-geocoded GPS telemetry.",
     category: "Web Applications",
-    techStack: ["React", "Tailwind CSS", "Vite"],
+    techStack: ["React", "Tailwind CSS", "Vite", "OpenStreetMap"],
     mainScreenshot: getPath('/images/banners/road_safety_banner_1793870365256.jpg'),
-    additionalScreenshots: [getPath('/images/projects/road-safety/02-screenshot-2026-11-04-144325.png'), getPath('/images/projects/road-safety/03-screenshot-2026-11-04-144336.png'), getPath('/images/projects/road-safety/04-screenshot-2026-11-04-144347.png'), getPath('/images/projects/road-safety/05-screenshot-2026-11-04-144358.png'), getPath('/images/projects/road-safety/06-screenshot-2026-11-04-144605.png'), getPath('/images/projects/road-safety/07-screenshot-2026-11-04-144728.png'), getPath('/images/projects/road-safety/08-screenshot-2026-11-04-144804.png'), getPath('/images/projects/road-safety/09-screenshot-2026-11-04-144819.png'), getPath('/images/projects/road-safety/10-screenshot-2026-11-04-144840.png'), getPath('/images/projects/road-safety/11-screenshot-2026-11-04-145000.png')],
+    additionalScreenshots: [
+      getPath('/images/projects/road-safety/01-screenshot-2026-11-04-144236.png'),
+      getPath('/images/projects/road-safety/02-screenshot-2026-11-04-144325.png'),
+      getPath('/images/projects/road-safety/03-screenshot-2026-11-04-144336.png'),
+      getPath('/images/projects/road-safety/04-screenshot-2026-11-04-144347.png'),
+      getPath('/images/projects/road-safety/05-screenshot-2026-11-04-144358.png'),
+      getPath('/images/projects/road-safety/06-screenshot-2026-11-04-144605.png'),
+      getPath('/images/projects/road-safety/07-screenshot-2026-11-04-144728.png'),
+      getPath('/images/projects/road-safety/08-screenshot-2026-11-04-144804.png'),
+      getPath('/images/projects/road-safety/09-screenshot-2026-11-04-144819.png'),
+      getPath('/images/projects/road-safety/10-screenshot-2026-11-04-144840.png'),
+      getPath('/images/projects/road-safety/11-screenshot-2026-11-04-145000.png')
+    ],
     githubUrl: "https://github.com/nitesh933438/Road-Safety",
     liveDemoUrl: "https://road-safety-beta.vercel.app/",
     status: "Completed",
@@ -498,9 +620,10 @@ export const PROJECTS: Project[] = [
     displayOrder: 8,
     creationDate: "2025",
     keyFeatures: [
-      "Community road hazard mapping",
-      "Emergency contact quick-dialer",
-      "Traffic regulation guides",
+      "AI Emergency Command Center and 60-minute Golden Hour SOS hub",
+      "AI Driving Guardian with pre-drive safety checks and voice radar",
+      "Smart Emergency GIS Map with hospital, police, ambulance, and black-spot layers",
+      "Live OpenStreetMap reverse geocoding and enterprise notification generator"
     ]
   },
   {

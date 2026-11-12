@@ -75,11 +75,11 @@ const verifyAdmin = async (req: any, res: any, next: any) => {
   }
 
   const idToken = authHeader.split('Bearer ')[1];
-  const ADMIN_EMAIL = 'nitesh933438@gmail.com';
+  const ADMIN_EMAILS = ['nitesh933438@gmail.com', 'niteshkumarbaliyakothi@gmail.com'];
 
   try {
     const decodedToken = await getAuth().verifyIdToken(idToken);
-    if (decodedToken.email?.toLowerCase() !== ADMIN_EMAIL.toLowerCase()) {
+    if (!decodedToken.email || !ADMIN_EMAILS.includes(decodedToken.email.toLowerCase())) {
       return res.status(403).json({ error: 'Forbidden: Admin access required' });
     }
     req.user = decodedToken;
@@ -265,7 +265,7 @@ If a field is not found, leave it empty or null. Do not invent information. dete
     }
 
     const response = await ai.models.generateContent({
-      model: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
+      model: process.env.GEMINI_MODEL || 'gemini-3.8-flash',
       contents: [{ role: 'user', parts }],
       config: {
         responseMimeType: "application/json",
@@ -319,7 +319,7 @@ app.post('/api/ai/chat', verifyAdmin, async (req: any, res) => {
 You help the administrator understand the CMS and draft or improve portfolio content. You do not have direct database or storage write access in this chat endpoint. Never claim that you have saved, edited, deleted, published, or inspected live Firestore records. Give clear instructions or draft content for the administrator to review and apply in the relevant manager. Be concise, helpful, professional, and knowledgeable about full-stack development, MERN, AI, and portfolio content management.`;
 
     const response = await ai.models.generateContent({
-      model: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
+      model: process.env.GEMINI_MODEL || 'gemini-3.8-flash',
       contents: [{ role: 'user', parts: [{ text: `${systemInstruction}\n\nUser Question: ${message}` }] }],
     });
 
@@ -330,6 +330,43 @@ You help the administrator understand the CMS and draft or improve portfolio con
   } catch (error: any) {
     console.error('AI Chat error:', error);
     res.status(500).json({ error: error.message || 'AI Chat failed' });
+  }
+});
+
+// AI Description Generation Route for Projects & Certificates
+app.post('/api/ai/generate-description', verifyAdmin, async (req: any, res) => {
+  try {
+    if (!ai) return res.status(503).json({ error: 'Gemini API is not configured. Add GEMINI_API_KEY to environment.' });
+    const { type, context } = req.body;
+    if (!type || !context) return res.status(400).json({ error: 'Type and context are required' });
+
+    const promptText = `You are a technical portfolio copywriter for a senior Full-Stack & AI engineer named Nitesh Kumar.
+Generate compelling, accurate portfolio text based on this context:
+Type: ${type}
+Context: ${JSON.stringify(context)}
+
+Return a strict JSON object with:
+{
+  "shortDescription": "1-2 sentence compelling summary for card views",
+  "detailedDescription": "3-4 paragraphs explaining architecture, problem solved, and production features",
+  "fullDescription": "same as detailedDescription",
+  "keyFeatures": ["Feature 1 with tech detail", "Feature 2 with tech detail", "Feature 3 with tech detail", "Feature 4 with tech detail"]
+}`;
+
+    const response = await ai.models.generateContent({
+      model: process.env.GEMINI_MODEL || 'gemini-3.8-flash',
+      contents: [{ role: 'user', parts: [{ text: promptText }] }],
+      config: {
+        responseMimeType: "application/json",
+      },
+    });
+
+    const rawText = response.text || '';
+    const parsed = JSON.parse(rawText);
+    res.json({ success: true, data: parsed });
+  } catch (error: any) {
+    console.error('AI generate-description error:', error);
+    res.status(500).json({ error: error.message || 'AI description generation failed' });
   }
 });
 

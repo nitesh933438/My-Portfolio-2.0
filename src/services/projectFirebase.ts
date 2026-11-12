@@ -1,6 +1,7 @@
 import { collection, addDoc, updateDoc, deleteDoc, doc, onSnapshot, query, orderBy, getDocs } from 'firebase/firestore';
 import { db, auth, isUserAdmin } from './academicFirebase';
 import { Project, ProjectScreenshot, PROJECTS } from '../data/portfolio';
+import { getProjectScreenshotMetadata, isExcludedProjectScreenshot } from '../data/projectScreenshotCatalog';
 import { getStorageUrl, deleteFileProxy } from './supabaseStorage';
 
 export const resolveProjectImageUrl = (pathOrUrl: string): string => {
@@ -29,6 +30,102 @@ export const resolveProjectImageUrl = (pathOrUrl: string): string => {
 
 export const projectsColRef = collection(db, 'projects');
 
+export const mergeWithBundledProjects = (firestoreProjects: Project[]): Project[] => {
+  return firestoreProjects.map((fp) => {
+    const bundled = PROJECTS.find(
+      (bp) => bp.slug === fp.slug || bp.id === fp.id || bp.title.toLowerCase() === fp.title?.toLowerCase()
+    );
+
+    if (!bundled) {
+      return fp;
+    }
+
+    const projectKey = bundled.slug || bundled.id;
+    const currentAdd = (fp.additionalScreenshots || []).filter((url) => !isExcludedProjectScreenshot(url));
+    const bundledAdd = (bundled.additionalScreenshots || []).filter((url) => url !== bundled.mainScreenshot);
+
+    // Always prefer the official bundled Poster Cover unless admin uploaded a custom external/Supabase cover
+    const isCustomExternalCover =
+      fp.mainScreenshot &&
+      !isExcludedProjectScreenshot(fp.mainScreenshot) &&
+      !fp.mainScreenshot.includes('/images/projects/') &&
+      !fp.mainScreenshot.includes('/images/banners/');
+    const mergedMain = isCustomExternalCover ? fp.mainScreenshot : (bundled.mainScreenshot || fp.mainScreenshot);
+    const mainChanged = fp.mainScreenshot !== mergedMain;
+
+    // Check if any bundled screenshot is missing or if excluded screenshot was present or order changed
+    const hasExcluded = (fp.additionalScreenshots || []).some((url) => isExcludedProjectScreenshot(url));
+    const missingBundled = bundledAdd.some((bUrl) => !currentAdd.includes(bUrl));
+    const orderChanged =
+      bundledAdd.length > 0 &&
+      (currentAdd.length !== bundledAdd.length || currentAdd[0] !== bundledAdd[0]);
+
+    // Preserve any custom Supabase uploaded screenshots added by admin while keeping bundled screenshots in canonical order
+    const customUploaded = currentAdd.filter(
+      (url) =>
+        url !== mergedMain &&
+        !bundledAdd.includes(url) &&
+        !url.includes('/images/projects/') &&
+        !url.includes('/images/banners/')
+    );
+    const mergedAdditional = (bundledAdd.length > 0 ? [...bundledAdd, ...customUploaded] : currentAdd).filter(
+      (url) => url !== mergedMain
+    );
+
+    // Full ordered list: #01 is ALWAYS mergedMain (Poster Cover), followed by #02..#N mergedAdditional
+    const fullOrderedUrls = Array.from(new Set([mergedMain, ...mergedAdditional].filter(Boolean)));
+
+    let mergedMetadata = fp.screenshotMetadata;
+    if (mergedMetadata && mergedMetadata.length > 0) {
+      const filteredMeta = mergedMetadata.filter((m) => !isExcludedProjectScreenshot(m.url));
+      const metaByUrl = new Map<string, ProjectScreenshot>();
+      filteredMeta.forEach((m) => {
+        if (!metaByUrl.has(m.url)) {
+          metaByUrl.set(m.url, m);
+        }
+      });
+
+      mergedMetadata = fullOrderedUrls.map((url, idx) => {
+        const existing = metaByUrl.get(url);
+        const info = getProjectScreenshotMetadata(projectKey, idx, url);
+        return {
+          id: existing?.id || `scr_sync_${idx}_${Math.random().toString(36).substring(2, 7)}`,
+          url,
+          title: info.title,
+          category: info.category,
+          caption:
+            existing?.caption && !existing.caption.includes('workflow screenshot view')
+              ? existing.caption
+              : info.caption,
+          altText: existing?.altText || info.title,
+          displayOrder: idx + 1,
+          published: existing ? existing.published !== false : true,
+          isCover: idx === 0,
+        };
+      });
+    }
+
+    const updatedProject: Project = {
+      ...bundled,
+      ...fp,
+      slug: bundled.slug,
+      mainScreenshot: mergedMain,
+      additionalScreenshots: mergedAdditional,
+      screenshotMetadata: mergedMetadata,
+    };
+
+    if ((mainChanged || hasExcluded || missingBundled || orderChanged) && isUserAdmin(auth.currentUser) && fp.id) {
+      updateDoc(doc(db, 'projects', fp.id), {
+        mainScreenshot: mergedMain,
+        additionalScreenshots: mergedAdditional,
+        ...(mergedMetadata ? { screenshotMetadata: mergedMetadata } : {}),
+      }).catch(() => {});
+    }
+
+    return updatedProject;
+  });
+};
+
 export const initializeProjectsInFirestore = async () => {
   try {
     const querySnapshot = await getDocs(projectsColRef);
@@ -51,7 +148,7 @@ export const subscribeToProjects = (callback: (projects: Project[]) => void) => 
     if (projects.length === 0) {
       callback(PROJECTS);
     } else {
-      callback(projects);
+      callback(mergeWithBundledProjects(projects));
     }
   }, (err) => {
     console.warn('Projects listener offline fallback:', err.message);

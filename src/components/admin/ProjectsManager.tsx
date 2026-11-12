@@ -1,16 +1,37 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Project, ProjectCategory } from '../../data/portfolio';
-import { subscribeToProjects, saveProject, deleteProject, resolveProjectImageUrl } from '../../services/projectFirebase';
-import { auth, isUserAdmin } from '../../services/academicFirebase';
-import { uploadFileProxy, validateFile } from '../../services/supabaseStorage';
-import { Plus, Trash2, Edit2, Loader2, Save, X, Search, ExternalLink, Github, Eye, EyeOff, Info, Database, FileText, AlertCircle, Grid, Sparkles } from 'lucide-react';
+import { 
+  Plus, 
+  Search, 
+  Edit3, 
+  Trash2, 
+  ExternalLink, 
+  Github, 
+  Loader2, 
+  X, 
+  Save, 
+  Upload,
+  Sparkles,
+  Grid,
+  RefreshCw,
+  Star
+} from 'lucide-react';
+import { Project, ProjectCategory, ProjectStatus, ProjectScreenshot, PROJECTS } from '../../data/portfolio';
+import { 
+  subscribeToProjects, 
+  saveProject, 
+  deleteProject, 
+  resolveProjectImageUrl
+} from '../../services/projectFirebase';
+import { getProjectScreenshotMetadata, isExcludedProjectScreenshot } from '../../data/projectScreenshotCatalog';
+import { validateFile, uploadFileProxy } from '../../services/supabaseStorage';
+import { auth } from '../../services/academicFirebase';
 import { useAdminToast } from './AdminToastContext';
-import { ProjectScreenshotManager } from './ProjectScreenshotManager';
-import { AIScanner } from './AIScanner';
 import { useAIScanner } from '../../context/AIScannerContext';
+import { ProjectScreenshotManager } from './ProjectScreenshotManager';
+import { apiUrl, readJsonResponse } from '../../services/api';
 
-const categories: ProjectCategory[] = [
+const PROJECT_CATEGORIES: ProjectCategory[] = [
   'Full-Stack Development',
   'AI & Automation',
   'Web Applications',
@@ -22,168 +43,218 @@ const categories: ProjectCategory[] = [
   'Other Projects'
 ];
 
-const blankProject = (): Omit<Project, 'id'> => ({
-  slug: '',
-  title: '',
-  shortDescription: '',
-  detailedDescription: '',
-  category: 'Full-Stack Development',
-  techStack: [],
-  mainScreenshot: '',
-  additionalScreenshots: [],
-  githubUrl: '',
-  liveDemoUrl: '',
-  status: 'Completed',
-  featured: false,
-  displayOrder: 100,
-  keyFeatures: [],
-});
+const PROJECT_STATUSES: ProjectStatus[] = [
+  'Completed',
+  'In Progress',
+  'Planning',
+  'Coming Soon',
+  'Archived'
+];
+
+const buildProjectScreenshotGallery = (project: Project): ProjectScreenshot[] => {
+  const projectKey = project.slug || project.id;
+  if (project.screenshotMetadata && project.screenshotMetadata.length > 0) {
+    return [...project.screenshotMetadata]
+      .filter(s => !isExcludedProjectScreenshot(s.url))
+      .sort((a, b) => a.displayOrder - b.displayOrder);
+  }
+
+  const orderedUrls = Array.from(
+    new Set(
+      [project.mainScreenshot, ...(project.additionalScreenshots || [])]
+        .filter((url): url is string => Boolean(url) && !isExcludedProjectScreenshot(url))
+    )
+  );
+
+  return orderedUrls.map((url, idx) => {
+    const info = getProjectScreenshotMetadata(projectKey, idx, url);
+    return {
+      id: `scr_${idx}_${project.id}`,
+      url,
+      title: info.title,
+      category: info.category,
+      caption: info.caption,
+      altText: info.title,
+      displayOrder: idx + 1,
+      published: true,
+      isCover: idx === 0
+    };
+  });
+};
 
 export const ProjectsManager: React.FC = () => {
   const [projects, setProjects] = useState<Project[]>([]);
-  const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
-  
-  // Modal & Form state
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [form, setForm] = useState(blankProject());
-  const [mainImageFile, setMainImageFile] = useState<File | null>(null);
-  const [saving, setSaving] = useState(false);
-
-  // Delete confirmation state
-  const [deletingProject, setDeletingProject] = useState<Project | null>(null);
-  const [deleting, setDeleting] = useState(false);
-
-  // Dedicated Screenshot Manager state
+  const [editingProject, setEditingProject] = useState<Project | null>(null);
   const [managingScreenshotsProject, setManagingScreenshotsProject] = useState<Project | null>(null);
-
-  // AI Scanner state
-  const [isAIScannerOpen, setIsAIScannerOpen] = useState(false);
-
+  const [deletingProject, setDeletingProject] = useState<Project | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [syncingDefaults, setSyncingDefaults] = useState(false);
+  const [uploadStatus, setUploadStatus] = useState<string | null>(null);
+  const [aiGenerating, setAiGenerating] = useState(false);
+  const [techStackInput, setTechStackInput] = useState('');
+  const [keyFeaturesInput, setKeyFeaturesInput] = useState('');
   const { showToast } = useAdminToast();
   const { pendingResult, setPendingResult } = useAIScanner();
-  
-  useEffect(() => {
-    if (pendingResult && pendingResult.detectedModule === 'project') {
-      handleAIExtractedData(pendingResult);
-      if (pendingResult.sourceFile && pendingResult.detectedType?.toLowerCase().includes('screenshot')) {
-        setMainImageFile(pendingResult.sourceFile);
-      }
-      setPendingResult(null); // Clear context
-      setIsModalOpen(true); // Open modal
-    }
-  }, [pendingResult]);
 
   useEffect(() => {
-    const unsubscribe = subscribeToProjects((data) => {
-      setProjects(data);
-      setLoading(false);
-    });
-    return () => unsubscribe();
+    const unsub = subscribeToProjects(setProjects);
+    return () => unsub();
   }, []);
 
-  const handleChange = (key: string, val: any) => {
-    setForm(prev => ({ ...prev, [key]: val }));
+  useEffect(() => {
+    if (editingProject) {
+      setTechStackInput((editingProject.techStack || []).join(', '));
+      setKeyFeaturesInput((editingProject.keyFeatures || []).join('\n'));
+    }
+  }, [editingProject?.id]);
+
+  // Listen for AI Scanner Auto-fill results
+  useEffect(() => {
+    if (pendingResult && pendingResult.detectedModule === 'project') {
+      const { data } = pendingResult;
+      const newProj: Project = {
+        id: '',
+        slug: (data.title || 'untitled').toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+        title: data.title || '',
+        category: data.category || 'Full-Stack Development',
+        shortDescription: data.shortDescription || '',
+        detailedDescription: data.detailedDescription || data.fullDescription || '',
+        techStack: Array.isArray(data.techStack) ? data.techStack : ['React', 'TypeScript'],
+        keyFeatures: Array.isArray(data.keyFeatures) ? data.keyFeatures : [],
+        githubUrl: data.githubUrl || '',
+        liveDemoUrl: data.liveDemoUrl || '',
+        featured: false,
+        status: 'Completed',
+        displayOrder: projects.length + 1,
+        mainScreenshot: '',
+        additionalScreenshots: []
+      };
+      setEditingProject(newProj);
+      setTechStackInput(newProj.techStack.join(', '));
+      setKeyFeaturesInput(newProj.keyFeatures.join('\n'));
+      showToast('AI Scanner auto-filled new project details!', 'info');
+      setPendingResult(null);
+    }
+  }, [pendingResult, projects.length, showToast, setPendingResult]);
+
+  const filteredProjects = projects.filter(p => {
+    const matchesSearch = p.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                          p.shortDescription.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                          p.techStack.some(t => t.toLowerCase().includes(searchQuery.toLowerCase()));
+    const matchesCat = selectedCategory === 'All' || p.category === selectedCategory;
+    return matchesSearch && matchesCat;
+  });
+
+  const handleOpenEditProject = (project: Project) => {
+    setEditingProject({ ...project });
+    setTechStackInput((project.techStack || []).join(', '));
+    setKeyFeaturesInput((project.keyFeatures || []).join('\n'));
   };
 
-  const openAddModal = () => {
-    setEditingId(null);
-    setForm(blankProject());
-    setMainImageFile(null);
-    setIsModalOpen(true);
+  const handleOpenNewProject = () => {
+    const newProj: Project = {
+      id: '',
+      slug: '',
+      title: '',
+      category: 'Full-Stack Development',
+      shortDescription: '',
+      detailedDescription: '',
+      techStack: ['React', 'TypeScript', 'Node.js'],
+      keyFeatures: [],
+      githubUrl: '',
+      liveDemoUrl: '',
+      featured: false,
+      status: 'Completed',
+      displayOrder: projects.length + 1,
+      mainScreenshot: '',
+      additionalScreenshots: []
+    };
+    setEditingProject(newProj);
+    setTechStackInput(newProj.techStack.join(', '));
+    setKeyFeaturesInput('');
   };
 
-  const openEditModal = (proj: Project) => {
-    setEditingId(proj.id);
-    setForm({
-      slug: proj.slug || proj.id,
-      title: proj.title,
-      shortDescription: proj.shortDescription,
-      detailedDescription: proj.detailedDescription,
-      category: proj.category,
-      techStack: proj.techStack || [],
-      mainScreenshot: proj.mainScreenshot,
-      additionalScreenshots: proj.additionalScreenshots || [],
-      githubUrl: proj.githubUrl,
-      liveDemoUrl: proj.liveDemoUrl,
-      status: proj.status,
-      featured: proj.featured,
-      displayOrder: proj.displayOrder,
-      keyFeatures: proj.keyFeatures || [],
-    });
-    setMainImageFile(null);
-    setIsModalOpen(true);
-  };
-
-  const handleSave = async (e: React.FormEvent) => {
+  const handleSaveProject = async (e: React.FormEvent) => {
     e.preventDefault();
-    const idToken = await auth.currentUser?.getIdToken();
-    if (!idToken) return showToast('Unauthorized: Please sign in.', 'error');
-
-    setSaving(true);
+    if (!editingProject) return;
+    setLoading(true);
     try {
-      let mainScreenshot = form.mainScreenshot;
+      const parsedTech = techStackInput
+        .split(',')
+        .map(s => s.trim())
+        .filter(Boolean);
+      const parsedFeatures = keyFeaturesInput
+        .split('\n')
+        .map(s => s.trim())
+        .filter(Boolean);
+      const normalizedSlug = (editingProject.slug || editingProject.title || 'project')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-|-$/g, '');
 
-      if (mainImageFile) {
-        validateFile(mainImageFile, ['image/jpeg', 'image/png', 'image/webp', 'image/gif'], 20 * 1024 * 1024);
-        const { path } = await uploadFileProxy(mainImageFile, 'projects', idToken);
-        mainScreenshot = path;
-      }
-
-      if (!mainScreenshot) {
-        throw new Error('Project screenshot is required.');
-      }
-
-      const generatedSlug = form.slug || form.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
-
-      await saveProject({
-        ...form,
-        slug: generatedSlug,
-        mainScreenshot,
-      }, editingId || undefined);
-
-      showToast(editingId ? 'Project metadata updated' : 'Project created with Supabase storage', 'success');
-      setIsModalOpen(false);
-      setForm(blankProject());
-      setEditingId(null);
-      setMainImageFile(null);
+      const { id, ...projectPayload } = editingProject;
+      await saveProject(
+        {
+          ...projectPayload,
+          slug: normalizedSlug,
+          techStack: parsedTech.length > 0 ? parsedTech : ['React', 'TypeScript'],
+          keyFeatures: parsedFeatures
+        },
+        id || undefined
+      );
+      showToast('Project saved successfully!', 'success');
+      setEditingProject(null);
     } catch (err: any) {
       showToast(err.message || 'Failed to save project', 'error');
     } finally {
-      setSaving(false);
+      setLoading(false);
     }
   };
 
-  const handleAIExtractedData = (result: any) => {
-    if (!result || !result.data) return;
-    
-    const data = result.data;
-    setForm(prev => ({
-      ...prev,
-      title: data.title || prev.title,
-      shortDescription: data.shortDescription || prev.shortDescription,
-      detailedDescription: data.detailedDescription || prev.detailedDescription,
-      category: (data.category as ProjectCategory) || prev.category,
-      techStack: data.techStack || prev.techStack,
-      keyFeatures: data.keyFeatures || prev.keyFeatures,
-      githubUrl: data.githubUrl || prev.githubUrl,
-      liveDemoUrl: data.liveDemoUrl || prev.liveDemoUrl,
-      status: data.status || prev.status,
-    }));
-    
-    showToast('AI successfully populated the fields. Please review before saving.', 'success');
+  const handleSyncDefaultProjects = async () => {
+    if (syncingDefaults) return;
+    setSyncingDefaults(true);
+    try {
+      for (const defaultProj of PROJECTS) {
+        const existing = projects.find(
+          p => p.slug === defaultProj.slug || p.id === defaultProj.id || p.title.toLowerCase() === defaultProj.title.toLowerCase()
+        );
+        const normalizedGallery = buildProjectScreenshotGallery(defaultProj);
+        const { id: _defaultId, ...payload } = defaultProj;
+        await saveProject(
+          {
+            ...payload,
+            mainScreenshot: normalizedGallery[0]?.url || defaultProj.mainScreenshot,
+            additionalScreenshots: normalizedGallery.slice(1).map(s => s.url),
+            screenshotMetadata: normalizedGallery
+          },
+          existing?.id
+        );
+      }
+      showToast(`Synchronized all ${PROJECTS.length} projects & poster covers!`, 'success');
+    } catch (err: any) {
+      showToast(err.message || 'Failed to sync default projects', 'error');
+    } finally {
+      setSyncingDefaults(false);
+    }
   };
 
-  const confirmDelete = async () => {
+  const confirmDeleteProject = async () => {
     if (!deletingProject) return;
     setDeleting(true);
     try {
-      // Include all Supabase assets for deletion
-      const assets = [deletingProject.mainScreenshot, ...(deletingProject.additionalScreenshots || [])];
-      await deleteProject(deletingProject.id, assets, projects);
-      showToast(`Deleted "${deletingProject.title}" and its assets`, 'success');
+      const allItems = buildProjectScreenshotGallery(deletingProject);
+      const assetPaths = [
+        deletingProject.mainScreenshot,
+        ...(deletingProject.additionalScreenshots || []),
+        ...allItems.map(s => s.url)
+      ].filter(Boolean);
+
+      await deleteProject(deletingProject.id, assetPaths, projects);
+      showToast(`Project "${deletingProject.title}" deleted successfully`, 'success');
       setDeletingProject(null);
     } catch (err: any) {
       showToast(err.message || 'Failed to delete project', 'error');
@@ -192,276 +263,450 @@ export const ProjectsManager: React.FC = () => {
     }
   };
 
-  const filteredProjects = projects.filter(p => {
-    const matchesSearch = p.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          p.shortDescription.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesCat = selectedCategory === 'All' || p.category === selectedCategory;
-    return matchesSearch && matchesCat;
-  });
+  const handleGenerateWithAI = async () => {
+    if (!editingProject?.title) {
+      showToast('Please enter a project title first', 'error');
+      return;
+    }
+    setAiGenerating(true);
+    try {
+      const idToken = await auth.currentUser?.getIdToken();
+      if (!idToken) throw new Error('Unauthorized');
+
+      const response = await fetch(apiUrl('/api/ai/generate-description'), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${idToken}`
+        },
+        body: JSON.stringify({
+          type: 'project',
+          context: {
+            title: editingProject.title,
+            category: editingProject.category,
+            techStack: techStackInput.split(',').map(s => s.trim()).filter(Boolean)
+          }
+        })
+      });
+
+      const result = await readJsonResponse<any>(response);
+      if (!response.ok || result.success === false) throw new Error(result.error || 'AI generation failed');
+
+      setEditingProject({
+        ...editingProject,
+        shortDescription: result.data.shortDescription || editingProject.shortDescription,
+        detailedDescription: result.data.detailedDescription || result.data.fullDescription || editingProject.detailedDescription,
+        keyFeatures: result.data.keyFeatures || editingProject.keyFeatures
+      });
+      if (Array.isArray(result.data.keyFeatures)) {
+        setKeyFeaturesInput(result.data.keyFeatures.join('\n'));
+      }
+      showToast('Generated descriptions with AI!', 'success');
+    } catch (err: any) {
+      showToast(err.message, 'error');
+    } finally {
+      setAiGenerating(false);
+    }
+  };
+
+  const handleImageUpload = async (file: File) => {
+    if (!editingProject) return;
+    try {
+      validateFile(file, ['image/jpeg', 'image/png', 'image/webp'], 15 * 1024 * 1024);
+      setUploadStatus('Uploading screenshot...');
+      const idToken = await auth.currentUser?.getIdToken();
+      if (!idToken) throw new Error('Not authenticated');
+      const { path } = await uploadFileProxy(file, 'projects', idToken);
+      setEditingProject({ ...editingProject, mainScreenshot: path });
+      setUploadStatus(null);
+      showToast('Screenshot uploaded!', 'success');
+    } catch (err: any) {
+      setUploadStatus(null);
+      showToast(err.message, 'error');
+    }
+  };
+
+  const categories = ['All', ...Array.from(new Set([...PROJECT_CATEGORIES, ...projects.map(p => p.category)]))];
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-black text-slate-900 dark:text-white">Projects Manager</h1>
-          <div className="flex items-center gap-2 text-[11px] text-blue-500 font-bold uppercase tracking-wider mt-1">
-            <Database size={12} />
-            <span>Supabase Storage Integration</span>
+      {/* Header Controls */}
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 flex-1">
+          <div className="relative flex-1 max-w-md">
+            <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Search projects by title, stack..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-medium text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500"
+            />
           </div>
+          <select
+            value={selectedCategory}
+            onChange={(e) => setSelectedCategory(e.target.value)}
+            className="px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-bold text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500"
+          >
+            {categories.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
         </div>
-        <button
-          onClick={openAddModal}
-          className="flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-3 rounded-2xl text-xs font-bold shadow-lg shadow-indigo-600/20 transition-all"
-        >
-          <Plus size={16} /> Add New Project
-        </button>
-      </div>
 
-      {/* Filters & Search */}
-      <div className="flex flex-col sm:flex-row gap-4 items-center justify-between bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-4 rounded-3xl shadow-sm">
-        <div className="relative w-full sm:w-80">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-          <input
-            type="text"
-            placeholder="Search projects..."
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-medium focus:outline-none focus:border-indigo-500"
-          />
-        </div>
-        <div className="flex gap-2 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0 scrollbar-hide">
-          {['All', 'Full-Stack Development', 'AI & Automation', 'Web Applications', 'SaaS & Management'].map(cat => (
-            <button
-              key={cat}
-              onClick={() => setSelectedCategory(cat)}
-              className={`px-4 py-2.5 rounded-xl text-xs font-bold whitespace-nowrap transition-colors min-h-[44px] flex items-center justify-center ${
-                selectedCategory === cat
-                  ? 'bg-indigo-600 text-white shadow-md'
-                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
-              }`}
-            >
-              {cat}
-            </button>
-          ))}
+        <div className="flex flex-wrap items-center gap-2.5">
+          <button
+            type="button"
+            onClick={handleSyncDefaultProjects}
+            disabled={syncingDefaults}
+            className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
+            title="Sync all projects, Poster Covers (#01), and screenshots to Firestore"
+          >
+            <RefreshCw className={`w-4 h-4 text-indigo-600 dark:text-indigo-400 ${syncingDefaults ? 'animate-spin' : ''}`} />
+            <span>{syncingDefaults ? 'Syncing...' : 'Sync All Projects & Covers'}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleOpenNewProject}
+            className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/20 transition-all active:scale-95 cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Add Project</span>
+          </button>
         </div>
       </div>
 
-      {loading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-          {[1, 2, 3].map(i => (
-            <div key={i} className="h-80 rounded-3xl bg-slate-200 dark:bg-slate-900 animate-pulse" />
-          ))}
-        </div>
-      ) : filteredProjects.length === 0 ? (
-        <div className="rounded-3xl border border-dashed border-slate-300 dark:border-slate-800 p-16 text-center space-y-3 bg-white dark:bg-slate-900">
-          <h3 className="font-bold text-lg">No Projects Found</h3>
-          <p className="text-xs text-slate-500 max-w-sm mx-auto">Create your first project metadata and upload screenshots to Supabase.</p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-          {filteredProjects.map((project) => (
-            <motion.div
-              key={project.id}
-              layout
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl overflow-hidden shadow-sm flex flex-col justify-between group hover:border-indigo-500/50 transition-all"
-            >
-              <div>
-                <div className="relative h-48 overflow-hidden bg-slate-100 dark:bg-slate-950 flex items-center justify-center">
-                  <img 
-                    src={resolveProjectImageUrl(project.mainScreenshot)} 
-                    alt={project.title} 
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" 
-                    onError={e => (e.currentTarget.src = 'https://placehold.co/400x300?text=Asset+Error')} 
-                  />
-                  <div className="absolute top-3 right-3 flex gap-2">
-                    <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase backdrop-blur-md bg-emerald-500/90 text-white">
-                      {project.status}
+      {/* Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5 sm:gap-6">
+        {filteredProjects.map((project) => {
+          const normalizedScreenshots = buildProjectScreenshotGallery(project);
+          const coverUrl = normalizedScreenshots.find(s => s.isCover)?.url || normalizedScreenshots[0]?.url || project.mainScreenshot;
+
+          return (
+            <div key={project.id} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all flex flex-col">
+              <div className="aspect-video bg-slate-950 relative overflow-hidden group">
+                <img
+                  src={resolveProjectImageUrl(coverUrl)}
+                  alt={project.title}
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                  onError={(e) => { (e.target as HTMLImageElement).style.opacity = '0.2'; }}
+                />
+                <div className="absolute top-3 left-3 flex flex-wrap gap-1.5">
+                  <span className="px-2.5 py-1 rounded-full bg-slate-900/85 backdrop-blur-md text-white text-[10px] font-bold uppercase tracking-wider">
+                    {project.category}
+                  </span>
+                  {project.featured && (
+                    <span className="px-2.5 py-1 rounded-full bg-amber-500 text-slate-950 text-[10px] font-black uppercase tracking-wider flex items-center gap-1">
+                      <Star className="w-2.5 h-2.5 fill-slate-950" /> Featured
                     </span>
-                    {project.featured && (
-                      <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase bg-indigo-600 text-white">
-                        Featured
-                      </span>
+                  )}
+                </div>
+
+                {/* Screenshot Counter Badge Overlay */}
+                <button
+                  type="button"
+                  onClick={() => setManagingScreenshotsProject(project)}
+                  className="absolute bottom-3 right-3 px-3 py-1.5 rounded-xl bg-slate-900/90 hover:bg-indigo-600 text-white backdrop-blur-md text-[10px] font-bold flex items-center gap-1.5 shadow-lg transition-all cursor-pointer"
+                >
+                  <Grid size={12} />
+                  <span>{normalizedScreenshots.length} Screenshots</span>
+                </button>
+              </div>
+
+              <div className="p-4 sm:p-5 flex-1 flex flex-col space-y-3">
+                <div className="flex items-start justify-between gap-2">
+                  <h3 className="font-bold text-base text-slate-900 dark:text-white line-clamp-1">{project.title}</h3>
+                  <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 shrink-0">
+                    #{project.displayOrder}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 flex-1">{project.shortDescription}</p>
+                
+                <div className="flex flex-wrap gap-1.5 pt-2">
+                  {project.techStack.slice(0, 4).map(t => (
+                    <span key={t} className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-[10px] font-semibold text-slate-600 dark:text-slate-300">
+                      {t}
+                    </span>
+                  ))}
+                  {project.techStack.length > 4 && (
+                    <span className="px-2 py-0.5 rounded-md bg-slate-50 dark:bg-slate-800/60 text-[10px] font-semibold text-slate-400">
+                      +{project.techStack.length - 4}
+                    </span>
+                  )}
+                </div>
+
+                <div className="pt-4 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5">
+                    {project.githubUrl && (
+                      <a
+                        href={project.githubUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="p-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                        title="GitHub Repository"
+                      >
+                        <Github className="w-4 h-4" />
+                      </a>
+                    )}
+                    {project.liveDemoUrl && (
+                      <a
+                        href={project.liveDemoUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="p-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                        title="Live Demo"
+                      >
+                        <ExternalLink className="w-4 h-4" />
+                      </a>
                     )}
                   </div>
-                  {project.mainScreenshot.includes('/') && (
-                    <span className="absolute bottom-3 left-3 px-2 py-0.5 rounded-md bg-blue-600/90 text-white text-[8px] font-black uppercase">Supabase</span>
-                  )}
-                </div>
-
-                <div className="p-6 space-y-3">
-                  <div>
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-500">{project.category}</span>
-                    <h3 className="font-black text-lg text-slate-900 dark:text-white mt-0.5">{project.title}</h3>
+                  <div className="flex flex-wrap items-center gap-1.5 ml-auto">
+                    <button
+                      type="button"
+                      onClick={() => setManagingScreenshotsProject(project)}
+                      className="px-2.5 py-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                      title="Manage Project Screenshots"
+                    >
+                      <Grid className="w-3.5 h-3.5" />
+                      <span>Screenshots ({normalizedScreenshots.length})</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleOpenEditProject(project)}
+                      className="p-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors cursor-pointer"
+                      title="Edit Project Details"
+                    >
+                      <Edit3 className="w-4 h-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDeletingProject(project)}
+                      className="p-2 rounded-lg bg-rose-50 dark:bg-rose-950/30 text-rose-600 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-950/50 transition-colors cursor-pointer"
+                      title="Delete Project"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
                   </div>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed">{project.shortDescription}</p>
                 </div>
               </div>
+            </div>
+          );
+        })}
+      </div>
 
-              <div className="p-6 pt-0 flex items-center justify-between gap-2 border-t border-slate-100 dark:border-slate-800/80 mt-4">
-                <div className="flex gap-1.5">
-                  {project.githubUrl && (
-                    <a href={project.githubUrl} target="_blank" rel="noreferrer" className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:text-indigo-600">
-                      <Github size={14} />
-                    </a>
-                  )}
-                  {project.liveDemoUrl && (
-                    <a href={project.liveDemoUrl} target="_blank" rel="noreferrer" className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:text-indigo-600">
-                      <ExternalLink size={14} />
-                    </a>
-                  )}
-                </div>
-
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => setManagingScreenshotsProject(project)}
-                    className="px-3 py-2 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 text-xs font-bold border border-indigo-200 dark:border-indigo-800 flex items-center gap-1.5 transition-colors"
-                    title="Manage Screenshots & Gallery Order"
-                  >
-                    <Grid size={14} />
-                    <span>Screenshots ({project.screenshotMetadata?.length || (project.mainScreenshot ? (project.additionalScreenshots?.length || 0) + 1 : 0)})</span>
-                  </button>
-                  <button
-                    onClick={() => openEditModal(project)}
-                    className="p-2 rounded-xl border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 text-indigo-600"
-                    title="Edit Metadata"
-                  >
-                    <Edit2 size={14} />
-                  </button>
-                  <button
-                    onClick={() => setDeletingProject(project)}
-                    className="p-2 rounded-xl border border-rose-200 dark:border-rose-900/50 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-500"
-                    title="Delete Project"
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-              </div>
-            </motion.div>
-          ))}
-        </div>
-      )}
-
-      {/* ADD / EDIT MODAL */}
+      {/* Edit/Create Project Modal */}
       <AnimatePresence>
-        {isModalOpen && (
-          <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+        {editingProject && (
+          <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-4xl lg:max-w-5xl w-full p-6 sm:p-8 space-y-6 shadow-2xl max-h-[90vh] overflow-y-auto"
+              className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl sm:rounded-3xl max-w-3xl w-full p-4 sm:p-6 md:p-8 shadow-2xl space-y-6 my-auto max-h-[92vh] overflow-y-auto custom-scrollbar"
             >
-              <div className="flex justify-between items-center pb-4 border-b border-slate-200 dark:border-slate-800">
-                <h3 className="text-xl font-black text-slate-900 dark:text-white">{editingId ? 'Edit Project' : 'Add New Project'}</h3>
-                <button onClick={() => setIsModalOpen(false)} className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-900 dark:hover:text-white">
+              <div className="flex justify-between items-center border-b border-slate-200 dark:border-slate-800 pb-4 sticky top-0 bg-white dark:bg-slate-900 z-10">
+                <div>
+                  <h3 className="text-lg sm:text-xl font-black text-slate-900 dark:text-white">
+                    {editingProject.title ? `Edit: ${editingProject.title}` : 'Add New Project'}
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Configure project details, links, tech stack, and cover banner
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setEditingProject(null)}
+                  className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-colors"
+                >
                   <X size={20} />
                 </button>
               </div>
 
-              {/* AI Auto-Fill Trigger */}
-              <div className="bg-indigo-600/5 dark:bg-indigo-500/5 border border-indigo-100 dark:border-indigo-900/30 rounded-2xl p-4 flex items-center justify-between gap-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-lg shadow-indigo-600/20">
-                    <Sparkles size={20} />
-                  </div>
+              <form onSubmit={handleSaveProject} className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <h4 className="text-[11px] font-black uppercase tracking-wider text-slate-900 dark:text-white">Magic AI Auto-Fill</h4>
-                    <p className="text-[10px] text-slate-500">Scan GitHub, PDF or Text to populate fields instantly.</p>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setIsAIScannerOpen(true)}
-                  className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-black uppercase tracking-wider shadow-md transition-all active:scale-95"
-                >
-                  Scan Now
-                </button>
-              </div>
-
-              <form onSubmit={handleSave} className="space-y-4">
-                <div className="grid sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-bold uppercase text-slate-400 mb-1">Project Title *</label>
+                    <label className="block text-xs font-bold uppercase text-slate-500 dark:text-slate-400 mb-1">Title *</label>
                     <input
                       type="text"
                       required
-                      value={form.title}
-                      onChange={e => handleChange('title', e.target.value)}
-                      className="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-bold"
-                      placeholder="e.g. Enterprise AI SaaS"
+                      value={editingProject.title}
+                      onChange={e => setEditingProject({ ...editingProject, title: e.target.value })}
+                      placeholder="e.g. AttendX AI"
+                      className="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-bold text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold uppercase text-slate-400 mb-1">Category *</label>
+                    <label className="block text-xs font-bold uppercase text-slate-500 dark:text-slate-400 mb-1">Category *</label>
                     <select
-                      value={form.category}
-                      onChange={e => handleChange('category', e.target.value)}
-                      className="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-bold"
+                      value={editingProject.category}
+                      onChange={e => setEditingProject({ ...editingProject, category: e.target.value as ProjectCategory })}
+                      className="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-bold text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500"
                     >
-                      {categories.map(cat => (
+                      {PROJECT_CATEGORIES.map(cat => (
                         <option key={cat} value={cat}>{cat}</option>
                       ))}
                     </select>
                   </div>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-bold uppercase text-slate-400 mb-1">Main Screenshot (Supabase Storage) *</label>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={e => setMainImageFile(e.target.files?.[0] || null)}
-                    className="w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-indigo-50 file:text-indigo-600 dark:file:bg-slate-800 dark:file:text-indigo-400"
-                  />
-                  {editingId && !mainImageFile && (
-                    <p className="text-[10px] text-slate-500 italic mt-1">Leave empty to keep current screenshot.</p>
-                  )}
-                  {form.mainScreenshot && (
-                    <code className="text-[9px] text-blue-500 block mt-1 truncate">Current: {form.mainScreenshot}</code>
-                  )}
-                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold uppercase text-slate-500 dark:text-slate-400 mb-1">Status</label>
+                    <select
+                      value={editingProject.status}
+                      onChange={e => setEditingProject({ ...editingProject, status: e.target.value as ProjectStatus })}
+                      className="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-bold text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500"
+                    >
+                      {PROJECT_STATUSES.map(st => (
+                        <option key={st} value={st}>{st}</option>
+                      ))}
+                    </select>
+                  </div>
 
-                <div className="space-y-4">
-                  <div className="space-y-1.5">
-                    <label className="text-[11px] font-black uppercase text-slate-400 tracking-wider">Short Description *</label>
+                  <div>
+                    <label className="block text-xs font-bold uppercase text-slate-500 dark:text-slate-400 mb-1">Display Order</label>
                     <input
-                      type="text"
-                      required
-                      value={form.shortDescription}
-                      onChange={e => handleChange('shortDescription', e.target.value)}
-                      className="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-medium"
-                      placeholder="Brief overview"
+                      type="number"
+                      min={1}
+                      value={editingProject.displayOrder || 1}
+                      onChange={e => setEditingProject({ ...editingProject, displayOrder: Number(e.target.value) || 1 })}
+                      className="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-bold text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500"
                     />
                   </div>
-                  <div className="space-y-1.5">
-                    <label className="text-[11px] font-black uppercase text-slate-400 tracking-wider">Detailed Description *</label>
-                    <textarea
-                      rows={4}
-                      required
-                      value={form.detailedDescription}
-                      onChange={e => handleChange('detailedDescription', e.target.value)}
-                      className="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-medium"
+
+                  <div className="flex items-end">
+                    <label className="w-full flex items-center gap-2.5 p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(editingProject.featured)}
+                        onChange={e => setEditingProject({ ...editingProject, featured: e.target.checked })}
+                        className="w-4 h-4 rounded accent-indigo-600"
+                      />
+                      <span className="text-xs font-bold text-slate-900 dark:text-white">Featured Masterpiece</span>
+                    </label>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold uppercase text-slate-500 dark:text-slate-400 mb-1">GitHub Repository URL</label>
+                    <input
+                      type="url"
+                      value={editingProject.githubUrl || ''}
+                      onChange={e => setEditingProject({ ...editingProject, githubUrl: e.target.value })}
+                      placeholder="https://github.com/nitesh933438/..."
+                      className="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-medium text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold uppercase text-slate-500 dark:text-slate-400 mb-1">Live Demo URL</label>
+                    <input
+                      type="url"
+                      value={editingProject.liveDemoUrl || ''}
+                      onChange={e => setEditingProject({ ...editingProject, liveDemoUrl: e.target.value })}
+                      placeholder="https://..."
+                      className="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-medium text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500"
                     />
                   </div>
                 </div>
 
-                <div className="flex gap-3 pt-4 border-t border-slate-200 dark:border-slate-800">
+                <div>
+                  <label className="block text-xs font-bold uppercase text-slate-500 dark:text-slate-400 mb-1">
+                    Tech Stack (Comma-separated)
+                  </label>
+                  <input
+                    type="text"
+                    value={techStackInput}
+                    onChange={e => setTechStackInput(e.target.value)}
+                    placeholder="React, TypeScript, Node.js, MongoDB, Tailwind CSS"
+                    className="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-medium text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+
+                <div className="flex flex-wrap justify-between items-center gap-2 pt-2">
+                  <label className="block text-xs font-bold uppercase text-slate-500 dark:text-slate-400">Descriptions & Features</label>
                   <button
                     type="button"
-                    onClick={() => setIsModalOpen(false)}
-                    className="flex-1 py-3 rounded-xl border border-slate-200 dark:border-slate-800 text-xs font-bold text-slate-600 dark:text-slate-300"
+                    onClick={handleGenerateWithAI}
+                    disabled={aiGenerating}
+                    className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white text-[11px] font-bold flex items-center gap-1.5 shadow-sm hover:opacity-90 transition-all disabled:opacity-50 cursor-pointer"
+                  >
+                    {aiGenerating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                    <span>{aiGenerating ? 'Generating...' : 'Write with Gemini AI'}</span>
+                  </button>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold uppercase text-slate-500 dark:text-slate-400 mb-1">Short Description *</label>
+                  <textarea
+                    rows={2}
+                    required
+                    value={editingProject.shortDescription}
+                    onChange={e => setEditingProject({ ...editingProject, shortDescription: e.target.value })}
+                    className="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-medium text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold uppercase text-slate-500 dark:text-slate-400 mb-1">Detailed Description</label>
+                  <textarea
+                    rows={4}
+                    value={editingProject.detailedDescription}
+                    onChange={e => setEditingProject({ ...editingProject, detailedDescription: e.target.value })}
+                    className="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-medium text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold uppercase text-slate-500 dark:text-slate-400 mb-1">
+                    Key Features (One per line)
+                  </label>
+                  <textarea
+                    rows={4}
+                    value={keyFeaturesInput}
+                    onChange={e => setKeyFeaturesInput(e.target.value)}
+                    placeholder="Real-time attendance tracking&#10;Role-based access control&#10;Automated analytics dashboard"
+                    className="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-medium text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold uppercase text-slate-500 dark:text-slate-400 mb-1">Primary Poster Cover / Screenshot</label>
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                    <label className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 cursor-pointer text-xs font-bold transition-colors shrink-0">
+                      <Upload className="w-4 h-4" />
+                      <span>{uploadStatus || 'Upload Cover Image'}</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={e => e.target.files?.[0] && handleImageUpload(e.target.files[0])}
+                        className="hidden"
+                      />
+                    </label>
+                    <input
+                      type="text"
+                      value={editingProject.mainScreenshot}
+                      onChange={e => setEditingProject({ ...editingProject, mainScreenshot: e.target.value })}
+                      placeholder="/images/banners/... or storage path"
+                      className="flex-1 p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-medium text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex flex-col sm:flex-row justify-end gap-3 pt-4 border-t border-slate-200 dark:border-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => setEditingProject(null)}
+                    className="px-5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-bold cursor-pointer"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
-                    disabled={saving}
-                    className="flex-1 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-lg shadow-indigo-600/20 flex items-center justify-center gap-2 disabled:opacity-50"
+                    disabled={loading}
+                    className="px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 shadow-lg shadow-indigo-600/20"
                   >
-                    {saving ? <Loader2 className="animate-spin" size={16} /> : <Save size={16} />}
-                    <span>{saving ? 'Saving...' : 'Save Project'}</span>
+                    {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                    <span>Save Project</span>
                   </button>
                 </div>
               </form>
@@ -470,7 +715,7 @@ export const ProjectsManager: React.FC = () => {
         )}
       </AnimatePresence>
 
-      {/* DELETE CONFIRMATION MODAL */}
+      {/* Delete Project Confirmation Modal */}
       <AnimatePresence>
         {deletingProject && (
           <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
@@ -478,29 +723,37 @@ export const ProjectsManager: React.FC = () => {
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl text-center"
+              className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-md w-full p-6 space-y-5 shadow-2xl text-center"
             >
-              <div className="w-12 h-12 rounded-2xl bg-rose-500/10 text-rose-500 flex items-center justify-center mx-auto">
-                <AlertCircle className="w-6 h-6" />
+              <div className="w-16 h-16 rounded-2xl bg-rose-500/10 text-rose-500 flex items-center justify-center mx-auto">
+                <Trash2 size={32} />
               </div>
-              <h3 className="text-lg font-bold">Delete Project?</h3>
-              <p className="text-xs text-slate-500">
-                Are you sure you want to delete <strong className="text-slate-800 dark:text-slate-200">"{deletingProject.title}"</strong> and all its Supabase assets?
-              </p>
+
+              <div className="space-y-2">
+                <h4 className="text-lg font-black text-slate-900 dark:text-white">Delete Project Permanently?</h4>
+                <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                  Are you sure you want to delete <strong className="text-slate-900 dark:text-white">"{deletingProject.title}"</strong>? 
+                  This will remove the project and its screenshot gallery from the public portfolio.
+                </p>
+              </div>
+
               <div className="flex gap-3 pt-2">
                 <button
+                  type="button"
                   onClick={() => setDeletingProject(null)}
-                  className="flex-1 py-3 rounded-xl border border-slate-200 dark:border-slate-800 text-xs font-bold"
+                  disabled={deleting}
+                  className="flex-1 py-3 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-bold cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
-                  onClick={confirmDelete}
+                  type="button"
+                  onClick={confirmDeleteProject}
                   disabled={deleting}
-                  className="flex-1 py-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold flex items-center justify-center gap-2 disabled:opacity-50"
+                  className="flex-1 py-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold flex items-center justify-center gap-2 shadow-lg shadow-rose-600/20 disabled:opacity-50 cursor-pointer"
                 >
-                  {deleting ? <Loader2 className="animate-spin" size={16} /> : <Trash2 size={16} />}
-                  <span>{deleting ? 'Deleting...' : 'Confirm Delete'}</span>
+                  {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                  <span>{deleting ? 'Deleting...' : 'Delete Project'}</span>
                 </button>
               </div>
             </motion.div>
@@ -508,24 +761,19 @@ export const ProjectsManager: React.FC = () => {
         )}
       </AnimatePresence>
 
-      {/* DEDICATED SCREENSHOT MANAGER MODAL */}
+      {/* Dedicated Screenshot Manager Modal */}
       {managingScreenshotsProject && (
         <ProjectScreenshotManager
-          project={projects.find(p => p.id === managingScreenshotsProject.id) || managingScreenshotsProject}
+          isOpen={true}
+          project={managingScreenshotsProject}
           allProjects={projects}
-          isOpen={!!managingScreenshotsProject}
           onClose={() => setManagingScreenshotsProject(null)}
           onProjectUpdated={() => {
-            // Keep snapshot updated
+            const refreshed = projects.find(p => p.id === managingScreenshotsProject.id);
+            if (refreshed) setManagingScreenshotsProject(refreshed);
           }}
         />
       )}
-
-      {/* AI SCANNER */}
-      <AIScanner 
-        isOpen={isAIScannerOpen}
-        onClose={() => setIsAIScannerOpen(false)}
-      />
     </div>
   );
 };

@@ -252,7 +252,7 @@ export const AcademicAdminDashboard: React.FC<AcademicAdminDashboardProps> = ({
                   Admin Sign-In Required
                 </h4>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
-                  Academic record updates and marksheet uploads are strictly restricted to the portfolio administrator ({ADMIN_EMAIL}).
+                  Academic record updates and marksheet uploads are strictly restricted to the authorized portfolio administrator.
                 </p>
               </div>
               <button

@@ -1,28 +1,39 @@
-import React, { useState, useEffect, FC } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   X, 
   Download, 
-  FileText, 
-  CheckCircle, 
-  ExternalLink, 
   Printer, 
   Mail, 
   Phone, 
-  Globe,
+  MapPin, 
   Github, 
   Linkedin, 
+  ExternalLink, 
+  Award, 
+  BookOpen, 
+  Code2, 
+  Briefcase, 
   Copy, 
   Check, 
-  Sparkles, 
-  GraduationCap, 
-  Briefcase, 
-  Code, 
+  FileText,
   ZoomIn,
   ZoomOut,
-  Maximize2
+  RotateCcw,
+  Sparkles,
+  CheckCircle2,
+  Eye,
+  Loader2
 } from 'lucide-react';
+import { 
+  PROJECTS, 
+  SKILLS_DATA, 
+  EXPERIENCE_DATA, 
+  SOCIAL_LINKS 
+} from '../data/portfolio';
+import { BUNDLED_CERTIFICATES } from '../data/certificates';
 import { usePortfolio } from '../context/PortfolioContext';
+import { ACADEMIC_DATA } from '../data/education';
 import { resolveAssetUrl } from '../services/supabaseStorage';
 
 interface ResumeModalProps {
@@ -30,626 +41,794 @@ interface ResumeModalProps {
   onClose: () => void;
 }
 
-export const ResumeModal: FC<ResumeModalProps> = ({ isOpen, onClose }) => {
+export const ResumeModal: React.FC<ResumeModalProps> = ({ isOpen, onClose }) => {
   const { settings } = usePortfolio();
+  const [copiedEmail, setCopiedEmail] = useState(false);
   const [activeTab, setActiveTab] = useState<'document' | 'interactive'>('document');
-  const [zoomLevel, setZoomLevel] = useState<number>(100);
-  const [copiedField, setCopiedField] = useState<string | null>(null);
+  const [zoomLevel, setZoomLevel] = useState<number>(1);
+  const [imageLoaded, setImageLoaded] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+  const [downloadSuccess, setDownloadSuccess] = useState(false);
+  const [printing, setPrinting] = useState(false);
+  const atsResumeRef = useRef<HTMLDivElement>(null);
 
-  // Official resume PDF path specified by user attachment
-  const officialPdfUrl = '/assets/aistudio/Nitesh_Kumar_-_Resume_8ce55380.pdf';
-  const officialPreviewImg = '/assets/nitesh_resume_page.png';
+  const officialPdfUrl = resolveAssetUrl(
+    settings.resumeUrl || '/assets/aistudio/Nitesh_Kumar_-_Resume_8ce55380.pdf',
+    'resume'
+  );
+  const officialResumePageImg = '/assets/nitesh_resume_page.png';
 
-  useEffect(() => {
-    if (isOpen) {
-      document.body.style.overflow = 'hidden';
-      setZoomLevel(100);
-    } else {
-      document.body.style.overflow = '';
-    }
-    return () => {
-      document.body.style.overflow = '';
-    };
-  }, [isOpen]);
-
-  // Handle ESC key to close modal
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isOpen) {
-        onClose();
-      }
+      if (e.key === 'Escape') onClose();
     };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    if (isOpen) {
+      document.addEventListener('keydown', handleKeyDown);
+      document.body.style.overflow = 'hidden';
+    }
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+      document.body.style.overflow = 'unset';
+    };
   }, [isOpen, onClose]);
 
   if (!isOpen) return null;
 
+  const handleCopyEmail = async () => {
+    try {
+      await navigator.clipboard.writeText(settings.email);
+      setCopiedEmail(true);
+      setTimeout(() => setCopiedEmail(false), 2500);
+    } catch {
+      const textArea = document.createElement('textarea');
+      textArea.value = settings.email;
+      document.body.appendChild(textArea);
+      textArea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textArea);
+      setCopiedEmail(true);
+      setTimeout(() => setCopiedEmail(false), 2500);
+    }
+  };
+
+  const handleDownloadPdf = async () => {
+    if (downloading) return;
+    setDownloading(true);
+    try {
+      const response = await fetch(officialPdfUrl);
+      if (!response.ok) throw new Error('Failed to fetch PDF');
+      const blob = await response.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = 'Nitesh_Kumar_Resume.pdf';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 3000);
+      setDownloadSuccess(true);
+      setTimeout(() => setDownloadSuccess(false), 2500);
+    } catch {
+      // Direct fallback download if cross-origin blob fetch is restricted
+      const link = document.createElement('a');
+      link.href = officialPdfUrl;
+      link.download = 'Nitesh_Kumar_Resume.pdf';
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setDownloadSuccess(true);
+      setTimeout(() => setDownloadSuccess(false), 2500);
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   const handlePrint = () => {
-    window.print();
+    if (printing) return;
+    setPrinting(true);
+
+    try {
+      const existingFrame = document.getElementById('resume-print-iframe');
+      if (existingFrame) existingFrame.remove();
+
+      const iframe = document.createElement('iframe');
+      iframe.id = 'resume-print-iframe';
+      iframe.style.position = 'fixed';
+      iframe.style.right = '0';
+      iframe.style.bottom = '0';
+      iframe.style.width = '0';
+      iframe.style.height = '0';
+      iframe.style.border = '0';
+      iframe.style.visibility = 'hidden';
+      document.body.appendChild(iframe);
+
+      const doc = iframe.contentWindow?.document;
+      if (!doc) {
+        window.print();
+        setPrinting(false);
+        return;
+      }
+
+      if (activeTab === 'document') {
+        const imgSrc = new URL(officialResumePageImg, window.location.origin).href;
+        doc.open();
+        doc.write(`
+          <!DOCTYPE html>
+          <html>
+            <head>
+              <title>${settings.name} - Official Resume</title>
+              <style>
+                @page { size: A4 portrait; margin: 0; }
+                * { box-sizing: border-box; margin: 0; padding: 0; }
+                html, body {
+                  width: 100%;
+                  height: 100%;
+                  background: #ffffff;
+                  display: flex;
+                  align-items: center;
+                  justify-content: center;
+                  -webkit-print-color-adjust: exact;
+                  print-color-adjust: exact;
+                }
+                img {
+                  width: 100%;
+                  max-width: 210mm;
+                  max-height: 297mm;
+                  height: auto;
+                  object-fit: contain;
+                  display: block;
+                }
+              </style>
+            </head>
+            <body>
+              <img id="resume-img" src="${imgSrc}" alt="${settings.name} Official Resume" />
+              <script>
+                const img = document.getElementById('resume-img');
+                function triggerPrint() {
+                  setTimeout(function() {
+                    window.focus();
+                    window.print();
+                  }, 150);
+                }
+                if (img.complete) {
+                  triggerPrint();
+                } else {
+                  img.onload = triggerPrint;
+                  img.onerror = triggerPrint;
+                }
+              </script>
+            </body>
+          </html>
+        `);
+        doc.close();
+      } else {
+        const atsHtml = atsResumeRef.current?.innerHTML || '';
+        const styleSheets = Array.from(document.querySelectorAll('link[rel="stylesheet"], style'))
+          .map((node) => node.outerHTML)
+          .join('\n');
+
+        doc.open();
+        doc.write(`
+          <!DOCTYPE html>
+          <html>
+            <head>
+              <title>${settings.name} - ATS Resume</title>
+              ${styleSheets}
+              <style>
+                @page { size: A4 portrait; margin: 10mm; }
+                html, body {
+                  background: #ffffff !important;
+                  color: #0f172a !important;
+                  -webkit-print-color-adjust: exact;
+                  print-color-adjust: exact;
+                  font-family: Inter, system-ui, -apple-system, sans-serif;
+                }
+                .print-wrapper {
+                  width: 100%;
+                  max-width: 190mm;
+                  margin: 0 auto;
+                }
+              </style>
+            </head>
+            <body>
+              <div class="print-wrapper">${atsHtml}</div>
+              <script>
+                setTimeout(function() {
+                  window.focus();
+                  window.print();
+                }, 250);
+              </script>
+            </body>
+          </html>
+        `);
+        doc.close();
+      }
+
+      setTimeout(() => setPrinting(false), 1200);
+    } catch {
+      window.print();
+      setPrinting(false);
+    }
   };
 
-  const handleCopy = (text: string, field: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedField(field);
-    setTimeout(() => setCopiedField(null), 2000);
-  };
+  const handleZoomIn = () => setZoomLevel(prev => Math.min(prev + 0.2, 2.2));
+  const handleZoomOut = () => setZoomLevel(prev => Math.max(prev - 0.2, 0.6));
+  const handleResetZoom = () => setZoomLevel(1);
 
-  const handleDownloadPdf = () => {
-    const link = document.createElement('a');
-    link.href = officialPdfUrl;
-    link.download = 'Nitesh_Kumar_-_Resume.pdf';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
+  const githubLink = SOCIAL_LINKS.find(s => s.platform === 'GitHub')?.url || settings.github || 'https://github.com/nitesh933438';
+  const linkedinLink = SOCIAL_LINKS.find(s => s.platform === 'LinkedIn')?.url || settings.linkedin || 'https://www.linkedin.com/in/nitesh-kumar-8a65693a2';
+
+  const university = ACADEMIC_DATA.university;
+  const class12 = ACADEMIC_DATA.schooling.find(s => s.id === 'bseb-12th');
+  const class10 = ACADEMIC_DATA.schooling.find(s => s.id === 'bseb-10th');
 
   return (
     <AnimatePresence>
-      {isOpen && (
-        <div 
-          className="fixed inset-0 z-[70] flex items-center justify-center p-2 sm:p-4 lg:p-6 bg-slate-950/85 backdrop-blur-md overflow-hidden resume-modal-backdrop"
-          onClick={onClose}
-        >
-          {/* Printable Resume CSS Styling */}
-          <style>{`
-            @media print {
-              body * {
-                visibility: hidden !important;
-              }
-              #printable-ats-resume, #printable-ats-resume * {
-                visibility: visible !important;
-              }
-              #printable-ats-resume {
-                position: absolute !important;
-                left: 0 !important;
-                top: 0 !important;
-                width: 100% !important;
-                max-width: 100% !important;
-                margin: 0 !important;
-                padding: 16px !important;
-                background: white !important;
-                color: #0f172a !important;
-                box-shadow: none !important;
-                border: none !important;
-              }
-              .no-print, .resume-modal-backdrop, header, footer {
-                display: none !important;
-              }
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 md:p-6 overflow-y-auto bg-slate-950/85 backdrop-blur-md">
+        
+        {/* Global Print-Only Stylesheet so Ctrl+P / Cmd+P also works in BOTH tabs */}
+        <style>{`
+          @media print {
+            body * {
+              visibility: hidden !important;
             }
-          `}</style>
+            #printable-resume-surface,
+            #printable-resume-surface * {
+              visibility: visible !important;
+            }
+            #printable-resume-surface {
+              position: absolute !important;
+              left: 0 !important;
+              top: 0 !important;
+              width: 100% !important;
+              max-width: 100% !important;
+              margin: 0 !important;
+              padding: 0 !important;
+              box-shadow: none !important;
+              border: none !important;
+              background: white !important;
+              color: black !important;
+              overflow: visible !important;
+            }
+            .no-print {
+              display: none !important;
+            }
+            @page {
+              size: A4 portrait;
+              margin: 8mm;
+            }
+          }
+        `}</style>
 
-          <motion.div 
-            initial={{ opacity: 0, scale: 0.96, y: 15 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.96, y: 15 }}
-            transition={{ duration: 0.2 }}
-            className="relative w-full max-w-4xl bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl shadow-2xl overflow-hidden flex flex-col h-[94dvh] max-h-[94dvh] border border-slate-200 dark:border-slate-800"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Top Toolbar / Header */}
-            <div className="flex flex-wrap items-center justify-between gap-3 px-3.5 sm:px-6 py-3 sm:py-4 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/90 shrink-0">
-              
-              {/* Left Title */}
-              <div className="flex items-center gap-2.5 min-w-0">
-                <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-blue-600/10 dark:bg-blue-500/20 flex items-center justify-center text-blue-600 dark:text-blue-400 shrink-0">
-                  <FileText className="w-4 h-4 sm:w-5 sm:h-5" />
+        {/* Backdrop Click to Close */}
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          onClick={onClose}
+          className="fixed inset-0 no-print"
+        />
+
+        {/* Modal Window */}
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95, y: 20 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.95, y: 20 }}
+          transition={{ duration: 0.25 }}
+          className="relative w-full max-w-6xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl sm:rounded-3xl shadow-2xl overflow-hidden my-auto max-h-[95vh] flex flex-col z-10"
+        >
+          {/* Sticky Top Action Bar */}
+          <div className="flex flex-wrap items-center justify-between gap-2 px-3 sm:px-6 py-3 bg-white dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 no-print shrink-0">
+            
+            {/* Left: Branding & View Mode Switcher */}
+            <div className="flex items-center gap-2 sm:gap-4 flex-wrap">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-gradient-to-tr from-indigo-600 to-purple-600 flex items-center justify-center text-white font-bold text-xs shadow-md shadow-indigo-500/20 shrink-0">
+                  <FileText className="w-4 h-4" />
                 </div>
-                <div className="min-w-0">
-                  <div className="flex items-center gap-1.5 sm:gap-2">
-                    <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white truncate">
-                      Nitesh Kumar — Resume
-                    </h3>
-                    <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px] font-semibold">
-                      <CheckCircle className="w-3 h-3" />
-                      Official 2025
+                <div className="hidden sm:block">
+                  <h3 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white leading-tight flex items-center gap-1.5">
+                    <span>{settings.name} — Official Resume</span>
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                      <CheckCircle2 className="w-2.5 h-2.5" /> Verified CV
                     </span>
-                  </div>
-                  <p className="text-[10px] sm:text-xs text-slate-500 dark:text-slate-400 truncate">
-                    Full-Stack Developer | MERN Stack Developer
+                  </h3>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                    B.Tech CSE • Full-Stack MERN & AI Developer
                   </p>
                 </div>
               </div>
 
-              {/* Center: View Mode Toggle */}
-              <div className="flex items-center p-1 bg-slate-100 dark:bg-slate-800 rounded-xl order-last sm:order-none w-full sm:w-auto justify-center">
+              {/* View Mode Switcher */}
+              <div className="flex items-center p-1 rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800">
                 <button
+                  type="button"
                   onClick={() => setActiveTab('document')}
-                  className={`flex-1 sm:flex-none px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-[11px] sm:text-xs font-bold transition-all cursor-pointer ${
                     activeTab === 'document'
-                      ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-sm'
+                      ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-xs'
                       : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                   }`}
                 >
-                  Document View
+                  <Eye className="w-3.5 h-3.5" />
+                  <span>Document View</span>
                 </button>
                 <button
+                  type="button"
                   onClick={() => setActiveTab('interactive')}
-                  className={`flex-1 sm:flex-none px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-[11px] sm:text-xs font-bold transition-all cursor-pointer ${
                     activeTab === 'interactive'
-                      ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-sm'
+                      ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-xs'
                       : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                   }`}
                 >
-                  Interactive ATS
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>Interactive ATS</span>
                 </button>
               </div>
-
-              {/* Right Action Icons */}
-              <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 ml-auto sm:ml-0">
-                <button
-                  onClick={handlePrint}
-                  className="p-2 sm:p-2.5 rounded-xl text-slate-600 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                  title="Print Resume"
-                  aria-label="Print Resume"
-                >
-                  <Printer className="w-4 h-4 sm:w-4.5 sm:h-4.5" />
-                </button>
-                <button
-                  onClick={handleDownloadPdf}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs transition-all shadow-sm active:scale-95"
-                  title="Download Resume PDF"
-                >
-                  <Download className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                  <span className="hidden xs:inline">Download</span>
-                  <span className="xs:hidden">PDF</span>
-                </button>
-                <button
-                  onClick={onClose}
-                  className="p-2 sm:p-2.5 rounded-xl text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                  aria-label="Close Modal"
-                >
-                  <X className="w-4 h-4 sm:w-5 sm:h-5" />
-                </button>
-              </div>
-
             </div>
 
-            {/* Main Content Area */}
-            <div className="flex-1 overflow-y-auto bg-slate-100 dark:bg-slate-950 p-2 sm:p-4 lg:p-6 flex flex-col items-center">
-              
-              {activeTab === 'document' ? (
-                /* Document View: Crisp High-Resolution Page View that works 100% on phones + Desktop Embed */
-                <div className="w-full flex flex-col items-center max-w-3xl space-y-3">
-                  
-                  {/* Zoom Controls Bar */}
-                  <div className="flex items-center justify-between w-full px-2 py-1.5 text-xs text-slate-500 dark:text-slate-400">
-                    <span className="text-[11px] font-medium">Original Resume Page (1 / 1)</span>
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={() => setZoomLevel((z) => Math.max(70, z - 15))}
-                        className="p-1 rounded bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:text-blue-600"
-                        title="Zoom Out"
-                      >
-                        <ZoomOut className="w-3.5 h-3.5" />
-                      </button>
-                      <span className="text-[10px] font-mono px-1.5">{zoomLevel}%</span>
-                      <button
-                        onClick={() => setZoomLevel((z) => Math.min(150, z + 15))}
-                        className="p-1 rounded bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:text-blue-600"
-                        title="Zoom In"
-                      >
-                        <ZoomIn className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        onClick={() => setZoomLevel(100)}
-                        className="text-[10px] font-medium px-2 py-1 rounded bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:text-blue-600 ml-1"
-                      >
-                        Reset
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Rendered Document Container */}
-                  <div className="w-full flex justify-center overflow-x-auto pb-6 custom-scrollbar">
-                    <div 
-                      style={{ 
-                        width: `${zoomLevel}%`, 
-                        minWidth: zoomLevel > 100 ? `${zoomLevel}%` : '280px',
-                        maxWidth: zoomLevel > 100 ? 'none' : '100%'
-                      }}
-                      className="transition-all duration-200 shadow-2xl rounded-xl overflow-hidden border border-slate-300 dark:border-slate-700 bg-white shrink-0"
+            {/* Right: Zoom Controls & Download / Print Actions */}
+            <div className="flex items-center gap-1.5 sm:gap-2 ml-auto">
+              {/* Zoom Controls (Only in Document View) */}
+              {activeTab === 'document' && (
+                <div className="hidden md:flex items-center gap-1 px-2 py-1 rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 mr-1">
+                  <button
+                    type="button"
+                    onClick={handleZoomOut}
+                    title="Zoom Out"
+                    className="p-1 rounded-lg hover:bg-white dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 transition-colors cursor-pointer"
+                  >
+                    <ZoomOut className="w-3.5 h-3.5" />
+                  </button>
+                  <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300 min-w-[38px] text-center tabular-nums">
+                    {Math.round(zoomLevel * 100)}%
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleZoomIn}
+                    title="Zoom In"
+                    className="p-1 rounded-lg hover:bg-white dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 transition-colors cursor-pointer"
+                  >
+                    <ZoomIn className="w-3.5 h-3.5" />
+                  </button>
+                  {zoomLevel !== 1 && (
+                    <button
+                      type="button"
+                      onClick={handleResetZoom}
+                      title="Reset Zoom"
+                      className="p-1 rounded-lg hover:bg-white dark:hover:bg-slate-800 text-slate-500 hover:text-indigo-600 transition-colors cursor-pointer"
                     >
-                      <img 
-                        src={officialPreviewImg} 
-                        alt="Nitesh Kumar Resume Document" 
-                        className="w-full h-auto block select-none"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Desktop Native PDF embed option toggle */}
-                  <div className="hidden lg:flex items-center justify-center gap-2 pt-2 text-xs text-slate-400">
-                    <span>Prefer raw browser PDF viewer?</span>
-                    <a
-                      href={officialPdfUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-blue-600 dark:text-blue-400 hover:underline inline-flex items-center gap-1 font-semibold"
-                    >
-                      <span>Open PDF in new tab</span>
-                      <ExternalLink className="w-3 h-3" />
-                    </a>
-                  </div>
-
-                </div>
-              ) : (
-                /* Interactive ATS View (Exact 2-column layout from uploaded resume) */
-                <div 
-                  id="printable-ats-resume"
-                  className="w-full max-w-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm p-4 sm:p-8 space-y-6 text-slate-800 dark:text-slate-200 text-xs sm:text-sm"
-                >
-                  {/* Top Header Row with Name & Profile Photo */}
-                  <div className="flex flex-col-reverse sm:flex-row sm:items-start sm:justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-5">
-                    <div className="space-y-1.5 min-w-0">
-                      <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-slate-900 dark:text-white uppercase">
-                        NITESH KUMAR
-                      </h1>
-                      <div className="text-xs sm:text-sm font-bold text-blue-600 dark:text-blue-400">
-                        Full-Stack Developer | MERN Stack Developer
-                      </div>
-
-                      {/* Contact & Links Matrix */}
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 pt-2 text-[11px] text-slate-600 dark:text-slate-400 font-medium">
-                        <a 
-                          href="mailto:nitesh933438@gmail.com" 
-                          className="flex items-center gap-1.5 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
-                        >
-                          <Mail className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                          <span className="truncate">nitesh933438@gmail.com</span>
-                        </a>
-
-                        <a 
-                          href="https://nitesh.me/" 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          className="flex items-center gap-1.5 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
-                        >
-                          <Globe className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                          <span className="truncate">https://nitesh.me/</span>
-                        </a>
-
-                        <a 
-                          href="https://github.com/nitesh933438" 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          className="flex items-center gap-1.5 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
-                        >
-                          <Github className="w-3.5 h-3.5 text-slate-800 dark:text-slate-200 shrink-0" />
-                          <span className="truncate">github.com/nitesh933438</span>
-                        </a>
-
-                        <a 
-                          href="https://www.linkedin.com/in/nitesh933438/" 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          className="flex items-center gap-1.5 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
-                        >
-                          <Linkedin className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                          <span className="truncate">linkedin.com/in/nitesh933438</span>
-                        </a>
-                      </div>
-                    </div>
-
-                    {/* Photo Container */}
-                    <div className="w-20 h-24 sm:w-24 sm:h-28 rounded-xl overflow-hidden border-2 border-slate-300 dark:border-slate-700 shadow-md shrink-0 bg-slate-900">
-                      <img 
-                        src="/assets/aistudio/Any_Profile_Photo_0559445a.png" 
-                        alt="Nitesh Kumar" 
-                        className="w-full h-full object-cover object-center"
-                      />
-                    </div>
-                  </div>
-
-                  {/* 2-Column Body Layout matching the resume */}
-                  <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-start">
-                    
-                    {/* Left Column (5 cols): Technical Skills, Education, Additional Info */}
-                    <div className="md:col-span-5 space-y-6 border-b md:border-b-0 md:border-r border-slate-200 dark:border-slate-800 md:pr-6 pb-6 md:pb-0">
-                      
-                      {/* Technical Skills */}
-                      <div className="space-y-3">
-                        <div className="flex items-center justify-between border-b border-blue-600 pb-1">
-                          <h2 className="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white">
-                            TECHNICAL SKILLS
-                          </h2>
-                          <div className="w-8 h-0.5 bg-blue-600" />
-                        </div>
-
-                        <div className="space-y-2 text-[11px]">
-                          <div>
-                            <span className="font-bold text-blue-700 dark:text-blue-400 block">Frontend</span>
-                            <span className="text-slate-600 dark:text-slate-300">
-                              React.js, HTML5, CSS3, JavaScript (ES6+), Tailwind CSS, Responsive Web Design.
-                            </span>
-                          </div>
-
-                          <div>
-                            <span className="font-bold text-blue-700 dark:text-blue-400 block">Backend</span>
-                            <span className="text-slate-600 dark:text-slate-300">
-                              Node.js, Express.js, RESTful APIs, Authentication, Webhooks.
-                            </span>
-                          </div>
-
-                          <div>
-                            <span className="font-bold text-blue-700 dark:text-blue-400 block">Database</span>
-                            <span className="text-slate-600 dark:text-slate-300">
-                              MongoDB, Mongoose, Cloud Storage Integration.
-                            </span>
-                          </div>
-
-                          <div>
-                            <span className="font-bold text-blue-700 dark:text-blue-400 block">Programming</span>
-                            <span className="text-slate-600 dark:text-slate-300">
-                              JavaScript, C, C++.
-                            </span>
-                          </div>
-
-                          <div>
-                            <span className="font-bold text-blue-700 dark:text-blue-400 block">Tools</span>
-                            <span className="text-slate-600 dark:text-slate-300">
-                              Git, GitHub, VS Code, Postman, Vercel, Render.
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Education */}
-                      <div className="space-y-3">
-                        <div className="flex items-center justify-between border-b border-blue-600 pb-1">
-                          <h2 className="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white">
-                            EDUCATION
-                          </h2>
-                          <div className="w-8 h-0.5 bg-blue-600" />
-                        </div>
-
-                        <div className="space-y-3 text-[11px]">
-                          <div className="space-y-0.5">
-                            <h3 className="font-bold text-slate-900 dark:text-white leading-tight">
-                              B.Tech – Computer Science and Engineering
-                            </h3>
-                            <p className="text-slate-500 dark:text-slate-400">
-                              Arka Jain University | 2025–2029 | Pursuing
-                            </p>
-                            <div className="p-1.5 rounded bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800/60 font-semibold text-blue-800 dark:text-blue-300 text-[10px] mt-1">
-                              Semester 1: SGPA 7.91 | Semester 2: SGPA 9.23
-                            </div>
-                          </div>
-
-                          <div className="space-y-0.5 pt-1 border-t border-slate-100 dark:border-slate-800">
-                            <h3 className="font-bold text-slate-900 dark:text-white leading-tight">
-                              12th – Science
-                            </h3>
-                            <p className="text-slate-500 dark:text-slate-400">
-                              Bihar Board | 2025 | 78.6%
-                            </p>
-                          </div>
-
-                          <div className="space-y-0.5 pt-1 border-t border-slate-100 dark:border-slate-800">
-                            <h3 className="font-bold text-slate-900 dark:text-white leading-tight">
-                              10th
-                            </h3>
-                            <p className="text-slate-500 dark:text-slate-400">
-                              Bihar Board | 2023 | 79.8%
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Additional Information */}
-                      <div className="space-y-3">
-                        <div className="flex items-center justify-between border-b border-blue-600 pb-1">
-                          <h2 className="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white">
-                            ADDITIONAL INFORMATION
-                          </h2>
-                          <div className="w-8 h-0.5 bg-blue-600" />
-                        </div>
-
-                        <div className="space-y-2 text-[11px]">
-                          <div>
-                            <span className="font-bold text-slate-900 dark:text-white block">Currently Learning:</span>
-                            <span className="text-slate-600 dark:text-slate-300">
-                              MERN Stack Architecture & Scalable Web Systems.
-                            </span>
-                          </div>
-
-                          <div>
-                            <span className="font-bold text-slate-900 dark:text-white block">Core Focus:</span>
-                            <span className="text-slate-600 dark:text-slate-300">
-                              Full-Stack Web Applications, REST API Design & Practical Software Engineering.
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-
-                    </div>
-
-                    {/* Right Column (7 cols): Summary & Featured Projects */}
-                    <div className="md:col-span-7 space-y-6">
-                      
-                      {/* Professional Summary */}
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between border-b border-blue-600 pb-1">
-                          <h2 className="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white">
-                            PROFESSIONAL SUMMARY
-                          </h2>
-                          <div className="w-8 h-0.5 bg-blue-600" />
-                        </div>
-                        <p className="text-slate-600 dark:text-slate-300 leading-relaxed text-[11px] sm:text-xs">
-                          Computer Science and Engineering undergraduate specializing in full-stack web development and MERN Stack technologies. Focused on practical software development—building responsive, user-centric web applications with clean code and scalable RESTful architectures.
-                        </p>
-                      </div>
-
-                      {/* Featured Projects */}
-                      <div className="space-y-3.5">
-                        <div className="flex items-center justify-between border-b border-blue-600 pb-1">
-                          <h2 className="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white">
-                            FEATURED PROJECTS
-                          </h2>
-                          <div className="w-8 h-0.5 bg-blue-600" />
-                        </div>
-
-                        <div className="space-y-3">
-                          {/* Digital Vault */}
-                          <div className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 space-y-1">
-                            <h3 className="font-bold text-slate-900 dark:text-white text-xs">Digital Vault</h3>
-                            <p className="text-[11px] text-slate-600 dark:text-slate-300">
-                              Secure cloud-based document storage and management platform.
-                            </p>
-                            <p className="text-[10px] text-slate-500 dark:text-slate-400">
-                              <strong className="text-slate-700 dark:text-slate-200">Tech:</strong> React.js, Node.js, Express.js, MongoDB, Cloud Storage.
-                            </p>
-                            <a 
-                              href="https://github.com/nitesh933438/Digital-Vault-Demo" 
-                              target="_blank" 
-                              rel="noopener noreferrer"
-                              className="text-[10px] font-semibold text-blue-600 dark:text-blue-400 hover:underline inline-flex items-center gap-1 pt-0.5"
-                            >
-                              <span>GitHub: Digital-Vault-Demo</span>
-                              <ExternalLink className="w-3 h-3" />
-                            </a>
-                          </div>
-
-                          {/* WorkSphere HRMS */}
-                          <div className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 space-y-1">
-                            <h3 className="font-bold text-slate-900 dark:text-white text-xs">WorkSphere HRMS</h3>
-                            <p className="text-[11px] text-slate-600 dark:text-slate-300">
-                              Employee management, attendance, leave tracking and analytics system.
-                            </p>
-                            <p className="text-[10px] text-slate-500 dark:text-slate-400">
-                              <strong className="text-slate-700 dark:text-slate-200">Tech:</strong> MERN Stack, REST APIs.
-                            </p>
-                            <a 
-                              href="https://github.com/nitesh933438/WorkSphere-HRMS-Demo" 
-                              target="_blank" 
-                              rel="noopener noreferrer"
-                              className="text-[10px] font-semibold text-blue-600 dark:text-blue-400 hover:underline inline-flex items-center gap-1 pt-0.5"
-                            >
-                              <span>GitHub: WorkSphere-HRMS-Demo</span>
-                              <ExternalLink className="w-3 h-3" />
-                            </a>
-                          </div>
-
-                          {/* AttendX AI */}
-                          <div className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 space-y-1">
-                            <h3 className="font-bold text-slate-900 dark:text-white text-xs">AttendX AI</h3>
-                            <p className="text-[11px] text-slate-600 dark:text-slate-300">
-                              Smart attendance tracking, automated logging and reporting platform.
-                            </p>
-                            <p className="text-[10px] text-slate-500 dark:text-slate-400">
-                              <strong className="text-slate-700 dark:text-slate-200">Tech:</strong> React.js, Node.js, Express.js, AI Integration.
-                            </p>
-                            <a 
-                              href="https://github.com/nitesh933438/AttendX-AI" 
-                              target="_blank" 
-                              rel="noopener noreferrer"
-                              className="text-[10px] font-semibold text-blue-600 dark:text-blue-400 hover:underline inline-flex items-center gap-1 pt-0.5"
-                            >
-                              <span>GitHub: AttendX-AI</span>
-                              <ExternalLink className="w-3 h-3" />
-                            </a>
-                          </div>
-
-                          {/* WhatsApp Personal AI Bot */}
-                          <div className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 space-y-1">
-                            <h3 className="font-bold text-slate-900 dark:text-white text-xs">WhatsApp Personal AI Bot</h3>
-                            <p className="text-[11px] text-slate-600 dark:text-slate-300">
-                              AI-powered WhatsApp automation and intelligent conversational messaging assistant.
-                            </p>
-                            <p className="text-[10px] text-slate-500 dark:text-slate-400">
-                              <strong className="text-slate-700 dark:text-slate-200">Tech:</strong> Node.js, Express.js, JavaScript, Webhooks, REST APIs.
-                            </p>
-                            <a 
-                              href="https://github.com/nitesh933438/WhatsApp-Personal-AI-Bot-Demo" 
-                              target="_blank" 
-                              rel="noopener noreferrer"
-                              className="text-[10px] font-semibold text-blue-600 dark:text-blue-400 hover:underline inline-flex items-center gap-1 pt-0.5"
-                            >
-                              <span>GitHub: WhatsApp-Personal-AI-Bot-Demo</span>
-                              <ExternalLink className="w-3 h-3" />
-                            </a>
-                          </div>
-
-                          {/* Money Details */}
-                          <div className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 space-y-1">
-                            <h3 className="font-bold text-slate-900 dark:text-white text-xs">Money Details</h3>
-                            <p className="text-[11px] text-slate-600 dark:text-slate-300">
-                              Personal income, expense tracking and financial transaction management application.
-                            </p>
-                            <p className="text-[10px] text-slate-500 dark:text-slate-400">
-                              <strong className="text-slate-700 dark:text-slate-200">Tech:</strong> React.js, Node.js, Express.js, MongoDB, JavaScript.
-                            </p>
-                            <a 
-                              href="https://github.com/nitesh933438/Money-Details-Demo" 
-                              target="_blank" 
-                              rel="noopener noreferrer"
-                              className="text-[10px] font-semibold text-blue-600 dark:text-blue-400 hover:underline inline-flex items-center gap-1 pt-0.5"
-                            >
-                              <span>GitHub: Money-Details-Demo</span>
-                              <ExternalLink className="w-3 h-3" />
-                            </a>
-                          </div>
-
-                        </div>
-                      </div>
-
-                    </div>
-
-                  </div>
-
-                  {/* Document Footer */}
-                  <div className="pt-4 border-t border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2 text-[10px] text-slate-400">
-                    <span>Nitesh Kumar · Full-Stack Developer</span>
-                    <span>Arka Jain University (2025–2029) · BSEB 2025</span>
-                  </div>
-
+                      <RotateCcw className="w-3 h-3" />
+                    </button>
+                  )}
                 </div>
               )}
 
+              <button
+                type="button"
+                onClick={handleCopyEmail}
+                className="hidden lg:inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-semibold transition-colors cursor-pointer"
+                title="Copy Email Address"
+              >
+                {copiedEmail ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5 text-slate-400" />}
+                <span>{copiedEmail ? 'Copied!' : 'Copy Email'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handlePrint}
+                disabled={printing}
+                className="inline-flex items-center gap-1.5 px-2.5 sm:px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-bold transition-all active:scale-95 cursor-pointer disabled:opacity-60"
+                title={activeTab === 'document' ? 'Print Official Resume' : 'Print ATS Resume'}
+              >
+                {printing ? <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-600" /> : <Printer className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />}
+                <span className="hidden xs:inline sm:inline">{printing ? 'Printing...' : 'Print'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleDownloadPdf}
+                disabled={downloading}
+                className="inline-flex items-center gap-1.5 px-3 sm:px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition-all shadow-md shadow-indigo-600/25 active:scale-95 cursor-pointer disabled:opacity-60"
+                title="Download Official PDF Resume"
+              >
+                {downloading ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : downloadSuccess ? (
+                  <Check className="w-3.5 h-3.5 text-emerald-300" />
+                ) : (
+                  <Download className="w-3.5 h-3.5" />
+                )}
+                <span>{downloading ? 'Saving...' : downloadSuccess ? 'Downloaded!' : 'Download PDF'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={onClose}
+                className="p-2 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-500 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                aria-label="Close Resume Modal"
+              >
+                <X className="w-4 h-4 sm:w-5 sm:h-5" />
+              </button>
             </div>
+          </div>
 
-            {/* Sticky Bottom Actions */}
-            <div className="px-3.5 sm:px-6 py-3 sm:py-4 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3 shrink-0">
-              <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
-                <button
-                  onClick={() => handleCopy('nitesh933438@gmail.com', 'email')}
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:border-blue-500 text-slate-700 dark:text-slate-300 transition-colors"
+          {/* Scrollable Modal Body */}
+          <div className="flex-1 overflow-y-auto p-2 sm:p-6 md:p-8 bg-slate-200/70 dark:bg-slate-950/90 custom-scrollbar">
+            
+            {/* TAB 1: OFFICIAL UPLOADED RESUME DOCUMENT VIEW */}
+            {activeTab === 'document' && (
+              <div className="flex flex-col items-center">
+                
+                {/* Mobile Zoom & Quick Action Strip */}
+                <div className="flex md:hidden items-center justify-between w-full max-w-[850px] mb-3 px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs no-print">
+                  <span className="font-bold text-slate-600 dark:text-slate-300">Zoom Document:</span>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={handleZoomOut}
+                      className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200"
+                      aria-label="Zoom Out"
+                    >
+                      <ZoomOut className="w-3.5 h-3.5" />
+                    </button>
+                    <span className="font-mono font-bold text-slate-800 dark:text-slate-200 min-w-[38px] text-center">
+                      {Math.round(zoomLevel * 100)}%
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleZoomIn}
+                      className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200"
+                      aria-label="Zoom In"
+                    >
+                      <ZoomIn className="w-3.5 h-3.5" />
+                    </button>
+                    {zoomLevel !== 1 && (
+                      <button
+                        type="button"
+                        onClick={handleResetZoom}
+                        className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-indigo-600 dark:text-indigo-400"
+                        aria-label="Reset Zoom"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* High-Resolution Official Resume Page Container */}
+                <div
+                  id="printable-resume-surface"
+                  className="relative bg-white rounded-xl sm:rounded-2xl shadow-2xl border border-slate-300 dark:border-slate-800 overflow-hidden transition-all duration-200 origin-top"
+                  style={{
+                    width: zoomLevel === 1 ? '100%' : `${Math.round(zoomLevel * 850)}px`,
+                    maxWidth: zoomLevel === 1 ? '850px' : 'none',
+                  }}
                 >
-                  {copiedField === 'email' ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
-                  <span className="text-[11px] font-medium">{copiedField === 'email' ? 'Copied Email' : 'Copy Email'}</span>
-                </button>
-                <a
-                  href={officialPdfUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:border-blue-500 text-slate-700 dark:text-slate-300 transition-colors"
-                >
-                  <ExternalLink className="w-3.5 h-3.5" />
-                  <span className="text-[11px] font-medium">Open in New Tab</span>
-                </a>
+                  {!imageLoaded && (
+                    <div className="w-full aspect-[1/1.414] min-h-[420px] flex flex-col items-center justify-center bg-white text-slate-400 gap-3 p-8">
+                      <div className="w-10 h-10 rounded-full border-3 border-indigo-600 border-t-transparent animate-spin" />
+                      <span className="text-xs font-semibold text-slate-500">Loading Official Resume Document...</span>
+                    </div>
+                  )}
+                  <img
+                    src={officialResumePageImg}
+                    alt={`${settings.name} Official Resume`}
+                    onLoad={() => setImageLoaded(true)}
+                    className={`w-full h-auto block select-none ${imageLoaded ? 'opacity-100' : 'opacity-0'}`}
+                  />
+                </div>
+
+                {/* Quick Bottom Action Strip */}
+                <div className="mt-5 flex flex-wrap items-center justify-center gap-3 no-print pb-2">
+                  <button
+                    type="button"
+                    onClick={handlePrint}
+                    disabled={printing}
+                    className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-slate-700 text-xs font-bold shadow-sm transition-all active:scale-95 cursor-pointer"
+                  >
+                    <Printer className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                    <span>Print Official Resume</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleDownloadPdf}
+                    disabled={downloading}
+                    className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-lg shadow-indigo-600/25 transition-all active:scale-95 cursor-pointer"
+                  >
+                    <Download className="w-4 h-4" />
+                    <span>Download Official Resume (PDF)</span>
+                  </button>
+
+                  <a
+                    href={officialPdfUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-700 text-xs font-bold transition-all active:scale-95"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                    <span>Open PDF in New Tab</span>
+                  </a>
+                </div>
               </div>
+            )}
 
-              <div className="flex items-center gap-2 ml-auto">
-                <button
-                  onClick={onClose}
-                  className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors"
-                >
-                  Close
-                </button>
+            {/* TAB 2: INTERACTIVE ATS LIVE DATA RESUME */}
+            {activeTab === 'interactive' && (
+              <div 
+                id="printable-resume-surface"
+                ref={atsResumeRef}
+                className="max-w-[850px] mx-auto bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 rounded-2xl shadow-xl border border-slate-200/90 dark:border-slate-800 p-6 sm:p-10 md:p-12 space-y-7"
+              >
+                {/* Resume Header */}
+                <header className="border-b-2 border-slate-900 dark:border-slate-700 pb-6 flex flex-col md:flex-row md:items-end justify-between gap-4">
+                  <div>
+                    <h1 className="text-3xl sm:text-4xl font-black tracking-tight text-slate-900 dark:text-white uppercase">
+                      {settings.name}
+                    </h1>
+                    <p className="text-base sm:text-lg font-bold text-indigo-600 dark:text-indigo-400 mt-1">
+                      {settings.title}
+                    </p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 font-medium">
+                      B.Tech in Computer Science & Engineering • Arka Jain University (2025 – 2029)
+                    </p>
+                  </div>
 
-                <button
-                  onClick={handleDownloadPdf}
-                  className="inline-flex items-center gap-2 px-4 sm:px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs transition-all shadow-md active:scale-95"
-                >
-                  <Download className="w-4 h-4" />
-                  <span>Download CV (PDF)</span>
-                </button>
+                  {/* Contact Info Grid */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-1 gap-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 md:text-right">
+                    <a href={`mailto:${settings.email}`} className="inline-flex md:justify-end items-center gap-1.5 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors">
+                      <Mail className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                      <span>{settings.email}</span>
+                    </a>
+                    <a href={`tel:${settings.whatsapp}`} className="inline-flex md:justify-end items-center gap-1.5 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors">
+                      <Phone className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                      <span>{settings.whatsapp}</span>
+                    </a>
+                    <div className="inline-flex md:justify-end items-center gap-1.5">
+                      <MapPin className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                      <span>{settings.location}</span>
+                    </div>
+                    <div className="inline-flex md:justify-end items-center gap-3 pt-0.5">
+                      <a href={githubLink} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-slate-700 dark:text-slate-300 hover:text-indigo-600 font-semibold">
+                        <Github className="w-3.5 h-3.5" />
+                        <span>GitHub</span>
+                      </a>
+                      <span>•</span>
+                      <a href={linkedinLink} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-slate-700 dark:text-slate-300 hover:text-indigo-600 font-semibold">
+                        <Linkedin className="w-3.5 h-3.5" />
+                        <span>LinkedIn</span>
+                      </a>
+                    </div>
+                  </div>
+                </header>
+
+                {/* 1. Career Objective / Summary */}
+                <section className="space-y-2">
+                  <h2 className="text-xs font-black uppercase tracking-[0.2em] text-indigo-600 dark:text-indigo-400 flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-1.5">
+                    <Briefcase className="w-3.5 h-3.5" />
+                    <span>Executive Summary</span>
+                  </h2>
+                  <p className="text-xs sm:text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
+                    {settings.bio} Experienced in architecting end-to-end full-stack web applications using the MERN stack (MongoDB, Express.js, React, Node.js), TypeScript, Tailwind CSS, Firebase, and Google Gemini AI APIs with a strong focus on scalable architecture, clean code, and production readiness.
+                  </p>
+                </section>
+
+                {/* 2. Academic Qualifications */}
+                <section className="space-y-3">
+                  <h2 className="text-xs font-black uppercase tracking-[0.2em] text-indigo-600 dark:text-indigo-400 flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-1.5">
+                    <BookOpen className="w-3.5 h-3.5" />
+                    <span>Education & Academic Record</span>
+                  </h2>
+
+                  <div className="space-y-3">
+                    {/* University */}
+                    <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200/80 dark:border-slate-800/80">
+                      <div className="flex flex-wrap items-baseline justify-between gap-2">
+                        <div>
+                          <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                            {university.degree} — {university.branch}
+                          </h3>
+                          <p className="text-xs font-semibold text-indigo-600 dark:text-indigo-400">
+                            {university.institution}, {university.location}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-xs font-bold text-slate-700 dark:text-slate-300 block">{university.session}</span>
+                          <span className="text-[11px] font-extrabold text-emerald-600 dark:text-emerald-400">
+                            Sem 1 SGPA: 7.91 | Sem 2 SGPA: 9.23 / 10.0
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Class 12 & Class 10 */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {class12 && (
+                        <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200/80 dark:border-slate-800/80">
+                          <div className="flex items-baseline justify-between gap-2">
+                            <h4 className="text-xs font-bold text-slate-900 dark:text-white">
+                              {class12.qualificationTitle} (Class XII - PCM)
+                            </h4>
+                            <span className="text-xs font-extrabold text-emerald-600 dark:text-emerald-400">
+                              {class12.percentage}%
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5">
+                            {class12.boardFullName} • {class12.board} ({class12.passingYear})
+                          </p>
+                          <p className="text-[10px] font-semibold text-slate-500 mt-1">
+                            Marks: {class12.totalMarks}/{class12.maxMarks} ({class12.division})
+                          </p>
+                        </div>
+                      )}
+
+                      {class10 && (
+                        <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200/80 dark:border-slate-800/80">
+                          <div className="flex items-baseline justify-between gap-2">
+                            <h4 className="text-xs font-bold text-slate-900 dark:text-white">
+                              {class10.qualificationTitle} (Class X)
+                            </h4>
+                            <span className="text-xs font-extrabold text-emerald-600 dark:text-emerald-400">
+                              {class10.percentage}%
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5">
+                            {class10.boardFullName} • {class10.board} ({class10.passingYear})
+                          </p>
+                          <p className="text-[10px] font-semibold text-slate-500 mt-1">
+                            Marks: {class10.totalMarks}/{class10.maxMarks} ({class10.division})
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </section>
+
+                {/* 3. Technical Skills */}
+                <section className="space-y-2.5">
+                  <h2 className="text-xs font-black uppercase tracking-[0.2em] text-indigo-600 dark:text-indigo-400 flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-1.5">
+                    <Code2 className="w-3.5 h-3.5" />
+                    <span>Technical Skills & Stack</span>
+                  </h2>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
+                    {SKILLS_DATA.map((group) => (
+                      <div key={group.category} className="flex flex-col sm:flex-row sm:items-baseline gap-1 sm:gap-2">
+                        <span className="font-bold text-slate-900 dark:text-white shrink-0 min-w-[145px]">
+                          {group.category}:
+                        </span>
+                        <span className="text-slate-600 dark:text-slate-300">
+                          {group.skills.map(s => s.name).join(', ')}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+
+                {/* 4. Experience */}
+                <section className="space-y-3">
+                  <h2 className="text-xs font-black uppercase tracking-[0.2em] text-indigo-600 dark:text-indigo-400 flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-1.5">
+                    <Briefcase className="w-3.5 h-3.5" />
+                    <span>Development Experience</span>
+                  </h2>
+                  {EXPERIENCE_DATA.map((exp, idx) => (
+                    <div key={idx} className="space-y-1.5">
+                      <div className="flex flex-wrap items-baseline justify-between gap-2">
+                        <div>
+                          <h3 className="text-sm font-bold text-slate-900 dark:text-white">{exp.role}</h3>
+                          <p className="text-xs font-semibold text-indigo-600 dark:text-indigo-400">{exp.company} • {exp.type}</p>
+                        </div>
+                        <span className="text-xs font-bold text-slate-500">{exp.period} | {exp.location}</span>
+                      </div>
+                      <ul className="list-disc list-inside space-y-1 text-xs text-slate-700 dark:text-slate-300">
+                        {exp.highlights.map((item, i) => (
+                          <li key={i} className="leading-relaxed">{item}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
+                </section>
+
+                {/* 5. Key Full-Stack & AI Projects */}
+                <section className="space-y-3">
+                  <h2 className="text-xs font-black uppercase tracking-[0.2em] text-indigo-600 dark:text-indigo-400 flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-1.5">
+                    <Code2 className="w-3.5 h-3.5" />
+                    <span>Featured Engineering Projects ({PROJECTS.length} Total)</span>
+                  </h2>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {PROJECTS.slice(0, 6).map((proj) => (
+                      <div key={proj.id} className="p-3 rounded-xl border border-slate-200/80 dark:border-slate-800/80 bg-slate-50/60 dark:bg-slate-950/40 flex flex-col justify-between">
+                        <div>
+                          <div className="flex items-start justify-between gap-2">
+                            <h3 className="text-xs font-bold text-slate-900 dark:text-white">{proj.title}</h3>
+                            <div className="flex items-center gap-1.5 shrink-0 no-print">
+                              {proj.githubUrl && (
+                                <a href={proj.githubUrl} target="_blank" rel="noopener noreferrer" className="text-slate-400 hover:text-indigo-600" title="GitHub Code">
+                                  <Github className="w-3.5 h-3.5" />
+                                </a>
+                              )}
+                              {proj.liveDemoUrl && (
+                                <a href={proj.liveDemoUrl} target="_blank" rel="noopener noreferrer" className="text-slate-400 hover:text-indigo-600" title="Live Demo">
+                                  <ExternalLink className="w-3.5 h-3.5" />
+                                </a>
+                              )}
+                            </div>
+                          </div>
+                          <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-1 line-clamp-2 leading-relaxed">
+                            {proj.shortDescription}
+                          </p>
+                        </div>
+                        <div className="mt-2 pt-1.5 border-t border-slate-200/60 dark:border-slate-800/60 text-[10px] font-semibold text-indigo-600 dark:text-indigo-400">
+                          Stack: {proj.techStack.slice(0, 5).join(' • ')}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+
+                {/* 6. Highlighted Certifications & Achievements */}
+                <section className="space-y-2.5">
+                  <h2 className="text-xs font-black uppercase tracking-[0.2em] text-indigo-600 dark:text-indigo-400 flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-1.5">
+                    <Award className="w-3.5 h-3.5" />
+                    <span>Key Certifications & Recognitions ({BUNDLED_CERTIFICATES.length}+ Verified Credentials)</span>
+                  </h2>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                    {BUNDLED_CERTIFICATES.filter(c => c.featured).slice(0, 8).map((cert) => (
+                      <div key={cert.id} className="flex items-start gap-2">
+                        <span className="w-1.5 h-1.5 rounded-full bg-indigo-600 dark:bg-indigo-400 mt-1.5 shrink-0" />
+                        <div>
+                          <span className="font-bold text-slate-900 dark:text-white">{cert.title}</span>
+                          <span className="text-slate-500 dark:text-slate-400"> — {cert.issuer} ({cert.issueDate})</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+
               </div>
+            )}
+          </div>
+
+          {/* Bottom Bar (No-print) */}
+          <div className="px-4 sm:px-6 py-3 bg-white dark:bg-slate-950 border-t border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500 dark:text-slate-400 no-print shrink-0">
+            <span className="truncate">
+              Viewing <strong>{activeTab === 'document' ? 'Official Original Resume' : 'Interactive ATS Summary'}</strong>
+            </span>
+            <div className="flex items-center gap-3 ml-auto">
+              <button
+                type="button"
+                onClick={handlePrint}
+                className="font-bold text-slate-700 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 inline-flex items-center gap-1 cursor-pointer"
+              >
+                <Printer className="w-3.5 h-3.5" />
+                <span>Print</span>
+              </button>
+              <span>•</span>
+              <button
+                type="button"
+                onClick={handleDownloadPdf}
+                className="font-bold text-indigo-600 dark:text-indigo-400 hover:underline inline-flex items-center gap-1 cursor-pointer"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Download PDF</span>
+              </button>
+              <span>•</span>
+              <a
+                href={officialPdfUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-bold text-indigo-600 dark:text-indigo-400 hover:underline inline-flex items-center gap-1"
+              >
+                <span>Open Raw PDF</span>
+                <ExternalLink className="w-3 h-3" />
+              </a>
             </div>
-
-          </motion.div>
-        </div>
-      )}
+          </div>
+        </motion.div>
+      </div>
     </AnimatePresence>
   );
 };

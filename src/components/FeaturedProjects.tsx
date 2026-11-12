@@ -134,13 +134,14 @@ export const FeaturedProjects: React.FC<FeaturedProjectsProps> = ({ onSelectProj
 
         <ScrollReveal delay={0.5}>
           <div className="mt-20 text-center">
-            <a 
-              href="#projects" 
-              className="inline-flex items-center gap-3 px-10 py-5 rounded-2xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-black text-xs uppercase tracking-[0.2em] shadow-2xl hover:scale-105 active:scale-95 transition-all"
+            <button
+              type="button"
+              onClick={() => document.getElementById('projects')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+              className="inline-flex items-center gap-3 px-10 py-5 rounded-2xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-black text-xs uppercase tracking-[0.2em] shadow-2xl hover:scale-105 active:scale-95 transition-all cursor-pointer"
             >
               <LayoutGrid className="w-5 h-5" />
               <span>Explore All Projects</span>
-            </a>
+            </button>
           </div>
         </ScrollReveal>
 

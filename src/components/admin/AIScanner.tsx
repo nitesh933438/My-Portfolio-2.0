@@ -210,21 +210,64 @@ export const AIScanner: React.FC<AIScannerProps> = ({ isOpen, onClose }) => {
                       accept=".pdf,.jpg,.jpeg,.png,.webp"
                     />
                     {file ? (
-                      <div className="text-center animate-in fade-in zoom-in duration-300">
-                        <div className="w-16 h-16 rounded-2xl bg-indigo-600 text-white flex items-center justify-center mx-auto mb-3 shadow-lg shadow-indigo-600/20">
-                          <FileText size={32} />
-                        </div>
-                        <p className="text-xs font-black text-slate-900 dark:text-white truncate max-w-[200px]">
+                      <div className="text-center p-3 flex flex-col items-center animate-in fade-in zoom-in duration-200">
+                        {file.type.startsWith('image/') ? (
+                          <div className="relative mb-3 group">
+                            <img
+                              src={URL.createObjectURL(file)}
+                              alt="Upload preview"
+                              className="w-24 h-24 sm:w-28 sm:h-28 object-cover rounded-2xl border-2 border-indigo-500 shadow-lg shadow-indigo-600/20"
+                            />
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setFile(null);
+                              }}
+                              className="absolute -top-2 -right-2 p-1.5 rounded-full bg-rose-600 hover:bg-rose-700 text-white shadow-md transition-all cursor-pointer"
+                              title="Remove file"
+                            >
+                              <X size={14} />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="relative mb-3">
+                            <div className="w-16 h-16 rounded-2xl bg-indigo-600 text-white flex items-center justify-center mx-auto shadow-lg shadow-indigo-600/20">
+                              <FileText size={32} />
+                            </div>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setFile(null);
+                              }}
+                              className="absolute -top-2 -right-2 p-1.5 rounded-full bg-rose-600 hover:bg-rose-700 text-white shadow-md transition-all cursor-pointer"
+                              title="Remove file"
+                            >
+                              <X size={14} />
+                            </button>
+                          </div>
+                        )}
+                        <p className="text-xs font-black text-slate-900 dark:text-white truncate max-w-[240px]">
                           {file.name}
                         </p>
+                        <p className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 mt-0.5">
+                          {(file.size / 1024 / 1024).toFixed(2)} MB • {file.type || 'Document'}
+                        </p>
+                        <span className="text-[10px] font-bold text-indigo-600 dark:text-cyan-400 mt-1 inline-block">
+                          Click to choose a different photo / document
+                        </span>
                       </div>
                     ) : (
-                      <div className="text-center">
+                      <div className="text-center p-4">
                         <div className="w-16 h-16 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-400 flex items-center justify-center mx-auto mb-3">
                           <Upload size={32} />
                         </div>
-                        <p className="text-xs font-bold text-slate-600 dark:text-slate-400">
-                          Drop file to scan
+                        <p className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                          Click to upload or drag & drop photo / document
+                        </p>
+                        <p className="text-[11px] text-slate-400 mt-1">
+                          Certificates, marksheets, project screenshots, or resumes (PDF, JPG, PNG, WEBP)
                         </p>
                       </div>
                     )}

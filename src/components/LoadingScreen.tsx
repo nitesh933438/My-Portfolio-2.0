@@ -3,16 +3,29 @@ import { motion, AnimatePresence } from 'motion/react';
 import { NKLogo } from './NKLogo';
 
 export const LoadingScreen: React.FC = () => {
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(() => {
+    // Only show loading screen once per session. Navigating back or between pages should never re-trigger it.
+    if (typeof window !== 'undefined' && window.sessionStorage) {
+      return !window.sessionStorage.getItem('nitesh_portfolio_has_loaded');
+    }
+    return true;
+  });
 
   useEffect(() => {
-    // Fast, elegant entrance without annoying the user (650ms display then smooth exit)
+    if (!isLoading) return;
+
+    // Fast, elegant entrance on first visit only
     const timer = setTimeout(() => {
       setIsLoading(false);
-    }, 700);
+      try {
+        window.sessionStorage.setItem('nitesh_portfolio_has_loaded', 'true');
+      } catch {
+        // ignore
+      }
+    }, 650);
 
     return () => clearTimeout(timer);
-  }, []);
+  }, [isLoading]);
 
   return (
     <AnimatePresence>

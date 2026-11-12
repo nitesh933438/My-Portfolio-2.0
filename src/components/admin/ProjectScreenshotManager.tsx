@@ -10,6 +10,7 @@ import { auth } from '../../services/academicFirebase';
 import { uploadFileProxy, deleteFileProxy, validateFile } from '../../services/supabaseStorage';
 import { useAdminToast } from './AdminToastContext';
 import { ImageViewer } from '../ImageViewer';
+import { getProjectScreenshotMetadata, isExcludedProjectScreenshot } from '../../data/projectScreenshotCatalog';
 import { 
   X, 
   Upload, 
@@ -83,28 +84,85 @@ export const ProjectScreenshotManager: React.FC<ProjectScreenshotManagerProps> =
   const [previewViewerOpen, setPreviewViewerOpen] = useState(false);
   const [previewIndex, setPreviewIndex] = useState(0);
 
-  // Initialize screenshots list from project data
+  // Initialize screenshots list from project data (Poster Cover is always #01)
   useEffect(() => {
     if (!project) return;
+    const projectKey = project.slug || project.id;
 
     if (project.screenshotMetadata && project.screenshotMetadata.length > 0) {
-      // Use existing metadata array
-      const sorted = [...project.screenshotMetadata].sort((a, b) => a.displayOrder - b.displayOrder);
-      setScreenshots(sorted);
+      const filtered = [...project.screenshotMetadata]
+        .filter(s => !isExcludedProjectScreenshot(s.url))
+        .sort((a, b) => a.displayOrder - b.displayOrder);
+
+      const hasMain = filtered.some(s => s.url === project.mainScreenshot);
+      const ordered = hasMain
+        ? [
+            ...filtered.filter(s => s.url === project.mainScreenshot),
+            ...filtered.filter(s => s.url !== project.mainScreenshot)
+          ]
+        : project.mainScreenshot
+        ? [
+            {
+              id: `scr_cover_${Math.random().toString(36).substring(2, 7)}`,
+              url: project.mainScreenshot,
+              title: '',
+              caption: '',
+              altText: `${project.title} Poster Cover`,
+              category: 'Poster Cover',
+              displayOrder: 1,
+              published: true,
+              isCover: true
+            },
+            ...filtered
+          ]
+        : filtered;
+
+      const upgraded = ordered.map((item, idx) => {
+        const catalogMeta = getProjectScreenshotMetadata(projectKey, idx, item.url);
+        const isGenericTitle =
+          !item.title ||
+          item.title.includes('Application Screenshot') ||
+          item.title.includes('Cover View') ||
+          item.title.includes('Application Screen View');
+        const isGenericCategory =
+          !item.category || item.category === 'Workflow' || item.category === 'Cover';
+
+        return {
+          ...item,
+          displayOrder: idx + 1,
+          isCover: idx === 0,
+          title: isGenericTitle ? catalogMeta.title : item.title,
+          category: isGenericCategory ? catalogMeta.category : item.category,
+          caption:
+            item.caption && !item.caption.includes('workflow screenshot view')
+              ? item.caption
+              : catalogMeta.caption
+        };
+      });
+      setScreenshots(upgraded);
     } else {
-      // Build initial screenshotMetadata list from legacy mainScreenshot + additionalScreenshots
-      const allUrls = [project.mainScreenshot, ...(project.additionalScreenshots || [])].filter(Boolean);
-      const initial: ProjectScreenshot[] = allUrls.map((url, idx) => ({
-        id: `scr_legacy_${idx}_${Math.random().toString(36).substring(2, 7)}`,
-        url,
-        title: idx === 0 ? `01 – ${project.title} Cover View` : `${String(idx + 1).padStart(2, '0')} – Application Screenshot`,
-        caption: `${project.title} workflow screenshot view.`,
-        altText: `${project.title} screenshot ${idx + 1}`,
-        category: idx === 0 ? 'Cover' : 'Workflow',
-        displayOrder: idx + 1,
-        published: true,
-        isCover: idx === 0
-      }));
+      // Build initial screenshotMetadata list from [mainScreenshot (Poster Cover), ...additionalScreenshots]
+      const allUrls = Array.from(
+        new Set(
+          [project.mainScreenshot, ...(project.additionalScreenshots || [])]
+            .filter(Boolean)
+            .filter(u => !isExcludedProjectScreenshot(u))
+        )
+      );
+      const initial: ProjectScreenshot[] = allUrls.map((url, idx) => {
+        const meta = getProjectScreenshotMetadata(projectKey, idx, url);
+        return {
+          id: `scr_legacy_${idx}_${Math.random().toString(36).substring(2, 7)}`,
+          url,
+          title: meta.title,
+          caption: meta.caption,
+          altText: `${project.title} – ${meta.title}`,
+          category: meta.category,
+          displayOrder: idx + 1,
+          published: true,
+          isCover: idx === 0
+        };
+      });
       setScreenshots(initial);
     }
 
@@ -381,10 +439,7 @@ export const ProjectScreenshotManager: React.FC<ProjectScreenshotManagerProps> =
     <AnimatePresence>
       <div 
         className="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-2 sm:p-6 overflow-y-auto"
-        onClick={() => {
-          if (hasUnsavedChanges && !window.confirm('You have unsaved changes. Close anyway?')) return;
-          onClose();
-        }}
+        onClick={() => onClose()}
       >
         <motion.div
           initial={{ opacity: 0, scale: 0.96 }}
@@ -394,7 +449,7 @@ export const ProjectScreenshotManager: React.FC<ProjectScreenshotManagerProps> =
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}
-          <div className="flex items-center justify-between px-4 sm:px-8 py-4 border-b border-slate-100 dark:border-slate-800 shrink-0 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md sticky top-0 z-30">
+          <div className="flex flex-wrap items-center justify-between gap-2 px-4 sm:px-8 py-4 border-b border-slate-100 dark:border-slate-800 shrink-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md sticky top-0 z-30">
             <div className="flex items-center gap-3 sm:gap-4 min-w-0">
               <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-indigo-600/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
                 <Grid className="w-5 h-5 sm:w-6 sm:h-6" />
@@ -409,14 +464,15 @@ export const ProjectScreenshotManager: React.FC<ProjectScreenshotManagerProps> =
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 ml-auto">
               {publishedScreenshots.length > 0 && (
                 <button
+                  type="button"
                   onClick={() => {
                     setPreviewIndex(0);
                     setPreviewViewerOpen(true);
                   }}
-                  className="px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition-all flex items-center gap-2"
+                  className="px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition-all flex items-center gap-2 cursor-pointer"
                   title="Preview Public Gallery Lightbox"
                 >
                   <Maximize2 size={14} />
@@ -425,9 +481,10 @@ export const ProjectScreenshotManager: React.FC<ProjectScreenshotManagerProps> =
               )}
 
               <button
+                type="button"
                 onClick={handleSaveChanges}
                 disabled={!hasUnsavedChanges || saving}
-                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 shadow-lg ${
+                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 shadow-lg cursor-pointer ${
                   hasUnsavedChanges 
                     ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/20 active:scale-95' 
                     : 'bg-slate-100 dark:bg-slate-800 text-slate-400 cursor-not-allowed'
@@ -438,11 +495,10 @@ export const ProjectScreenshotManager: React.FC<ProjectScreenshotManagerProps> =
               </button>
 
               <button
-                onClick={() => {
-                  if (hasUnsavedChanges && !window.confirm('You have unsaved changes. Close anyway?')) return;
-                  onClose();
-                }}
-                className="p-2.5 rounded-2xl text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-all"
+                type="button"
+                onClick={onClose}
+                className="p-2.5 rounded-2xl text-slate-500 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-all cursor-pointer"
+                aria-label="Close Screenshot Manager"
               >
                 <X size={20} />
               </button>
@@ -451,15 +507,16 @@ export const ProjectScreenshotManager: React.FC<ProjectScreenshotManagerProps> =
 
           {/* Unsaved Changes Banner */}
           {hasUnsavedChanges && (
-            <div className="bg-amber-500/10 border-b border-amber-500/20 px-6 py-2.5 flex items-center justify-between text-xs font-semibold text-amber-600 dark:text-amber-400 shrink-0">
+            <div className="bg-amber-500/10 border-b border-amber-500/20 px-4 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs font-semibold text-amber-600 dark:text-amber-400 shrink-0">
               <span className="flex items-center gap-2">
-                <AlertCircle size={14} />
+                <AlertCircle size={14} className="shrink-0" />
                 <span>You have unsaved reordering or screenshot metadata edits. Click "Save Changes" to save permanently.</span>
               </span>
               <button
+                type="button"
                 onClick={handleSaveChanges}
                 disabled={saving}
-                className="px-3 py-1 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-[11px] font-bold transition-colors"
+                className="px-3 py-1 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-[11px] font-bold transition-colors cursor-pointer"
               >
                 Save Now
               </button>
@@ -514,8 +571,9 @@ export const ProjectScreenshotManager: React.FC<ProjectScreenshotManagerProps> =
               <div className="flex flex-wrap items-center justify-between gap-4 p-4 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800">
                 <div className="flex items-center gap-3">
                   <button
+                    type="button"
                     onClick={toggleSelectAll}
-                    className="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-slate-300 hover:text-indigo-600"
+                    className="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-slate-300 hover:text-indigo-600 cursor-pointer"
                   >
                     {selectedIds.length === screenshots.length ? (
                       <CheckSquare className="w-4 h-4 text-indigo-600" />
@@ -531,21 +589,24 @@ export const ProjectScreenshotManager: React.FC<ProjectScreenshotManagerProps> =
                 {selectedIds.length > 0 && (
                   <div className="flex flex-wrap items-center gap-2">
                     <button
+                      type="button"
                       onClick={() => handleBulkPublish(true)}
-                      className="px-3 py-1.5 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-xs font-bold hover:bg-emerald-500/20 transition-colors flex items-center gap-1.5"
+                      className="px-3 py-1.5 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-xs font-bold hover:bg-emerald-500/20 transition-colors flex items-center gap-1.5 cursor-pointer"
                     >
                       <Eye size={14} /> Publish Selected
                     </button>
                     <button
+                      type="button"
                       onClick={() => handleBulkPublish(false)}
-                      className="px-3 py-1.5 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 text-xs font-bold hover:bg-amber-500/20 transition-colors flex items-center gap-1.5"
+                      className="px-3 py-1.5 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 text-xs font-bold hover:bg-amber-500/20 transition-colors flex items-center gap-1.5 cursor-pointer"
                     >
                       <EyeOff size={14} /> Unpublish Selected
                     </button>
                     <button
+                      type="button"
                       onClick={handleBulkDelete}
                       disabled={bulkDeleting}
-                      className="px-3 py-1.5 rounded-xl bg-rose-500/10 text-rose-600 dark:text-rose-400 text-xs font-bold hover:bg-rose-500/20 transition-colors flex items-center gap-1.5"
+                      className="px-3 py-1.5 rounded-xl bg-rose-500/10 text-rose-600 dark:text-rose-400 text-xs font-bold hover:bg-rose-500/20 transition-colors flex items-center gap-1.5 cursor-pointer"
                     >
                       {bulkDeleting ? <Loader2 className="animate-spin" size={14} /> : <Trash2 size={14} />}
                       Delete Selected ({selectedIds.length})
@@ -592,8 +653,9 @@ export const ProjectScreenshotManager: React.FC<ProjectScreenshotManagerProps> =
                         </div>
 
                         <button
+                          type="button"
                           onClick={() => toggleSelectId(item.id)}
-                          className="text-slate-400 hover:text-indigo-600"
+                          className="text-slate-400 hover:text-indigo-600 cursor-pointer"
                         >
                           {selectedIds.includes(item.id) ? (
                             <CheckSquare className="w-4 h-4 text-indigo-600" />
@@ -647,11 +709,12 @@ export const ProjectScreenshotManager: React.FC<ProjectScreenshotManagerProps> =
                       </div>
 
                       {/* Controls Actions */}
-                      <div className="flex items-center justify-between sm:justify-end gap-2 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100 dark:border-slate-800">
+                      <div className="flex flex-wrap items-center justify-between sm:justify-end gap-2 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100 dark:border-slate-800">
                         {/* Cover Toggle Button */}
                         <button
+                          type="button"
                           onClick={() => handleSetCover(item.id)}
-                          className={`p-2 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5 ${
+                          className={`p-2 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer ${
                             item.isCover 
                               ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20' 
                               : 'text-slate-400 hover:text-amber-500 hover:bg-slate-100 dark:hover:bg-slate-800'
@@ -664,8 +727,9 @@ export const ProjectScreenshotManager: React.FC<ProjectScreenshotManagerProps> =
 
                         {/* Visibility Toggle */}
                         <button
+                          type="button"
                           onClick={() => handleTogglePublish(item.id)}
-                          className={`p-2 rounded-xl text-xs transition-colors ${
+                          className={`p-2 rounded-xl text-xs transition-colors cursor-pointer ${
                             item.published 
                               ? 'text-emerald-500 hover:bg-emerald-500/10' 
                               : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
@@ -678,17 +742,19 @@ export const ProjectScreenshotManager: React.FC<ProjectScreenshotManagerProps> =
                         {/* Reorder Arrows */}
                         <div className="flex items-center gap-0.5 bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl">
                           <button
+                            type="button"
                             onClick={() => moveItem(index, index - 1)}
                             disabled={index === 0}
-                            className="p-1 text-slate-400 hover:text-indigo-600 disabled:opacity-20"
+                            className="p-1 text-slate-600 dark:text-slate-300 hover:text-indigo-600 disabled:opacity-20 cursor-pointer"
                             title="Move Up"
                           >
                             <ChevronUp size={14} />
                           </button>
                           <button
+                            type="button"
                             onClick={() => moveItem(index, index + 1)}
                             disabled={index === screenshots.length - 1}
-                            className="p-1 text-slate-400 hover:text-indigo-600 disabled:opacity-20"
+                            className="p-1 text-slate-600 dark:text-slate-300 hover:text-indigo-600 disabled:opacity-20 cursor-pointer"
                             title="Move Down"
                           >
                             <ChevronDown size={14} />
@@ -697,8 +763,9 @@ export const ProjectScreenshotManager: React.FC<ProjectScreenshotManagerProps> =
 
                         {/* Edit Metadata Button */}
                         <button
+                          type="button"
                           onClick={() => setEditingItem({ ...item })}
-                          className="p-2 rounded-xl border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 text-indigo-600"
+                          className="p-2 rounded-xl border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 text-indigo-600 dark:text-indigo-400 cursor-pointer"
                           title="Edit Title, Caption & Alt Text"
                         >
                           <Edit3 size={16} />
@@ -706,7 +773,7 @@ export const ProjectScreenshotManager: React.FC<ProjectScreenshotManagerProps> =
 
                         {/* Replace Image Button */}
                         <label 
-                          className="p-2 rounded-xl border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 text-blue-600 cursor-pointer"
+                          className="p-2 rounded-xl border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 text-blue-600 dark:text-blue-400 cursor-pointer"
                           title="Replace Image File"
                         >
                           <RefreshCw size={16} />
@@ -723,8 +790,9 @@ export const ProjectScreenshotManager: React.FC<ProjectScreenshotManagerProps> =
 
                         {/* Delete Button */}
                         <button
+                          type="button"
                           onClick={() => setDeletingItem(item)}
-                          className="p-2 rounded-xl border border-rose-200 dark:border-rose-900/50 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-500"
+                          className="p-2 rounded-xl border border-rose-200 dark:border-rose-900/50 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-500 cursor-pointer"
                           title="Delete Screenshot"
                         >
                           <Trash2 size={16} />
@@ -738,24 +806,23 @@ export const ProjectScreenshotManager: React.FC<ProjectScreenshotManagerProps> =
           </div>
 
           {/* Sticky Footer */}
-          <div className="px-6 py-4 bg-slate-50 dark:bg-slate-950 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-4 shrink-0">
-            <p className="text-xs text-slate-400 hidden sm:block">
+          <div className="px-4 sm:px-6 py-4 bg-slate-50 dark:bg-slate-950 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-4 shrink-0">
+            <p className="text-xs text-slate-500 dark:text-slate-400 hidden sm:block">
               Changes to display order update public project gallery immediately upon saving.
             </p>
             <div className="flex items-center gap-3 ml-auto">
               <button
-                onClick={() => {
-                  if (hasUnsavedChanges && !window.confirm('You have unsaved changes. Close anyway?')) return;
-                  onClose();
-                }}
-                className="px-5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 text-xs font-bold text-slate-600 dark:text-slate-300"
+                type="button"
+                onClick={onClose}
+                className="px-5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
               >
                 Close
               </button>
               <button
+                type="button"
                 onClick={handleSaveChanges}
                 disabled={!hasUnsavedChanges || saving}
-                className={`px-6 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 shadow-lg ${
+                className={`px-6 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 shadow-lg cursor-pointer ${
                   hasUnsavedChanges 
                     ? 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-600/20 active:scale-95' 
                     : 'bg-slate-100 dark:bg-slate-800 text-slate-400 cursor-not-allowed'
@@ -781,52 +848,52 @@ export const ProjectScreenshotManager: React.FC<ProjectScreenshotManagerProps> =
               >
                 <div className="flex justify-between items-center pb-3 border-b border-slate-200 dark:border-slate-800">
                   <h4 className="text-lg font-bold text-slate-900 dark:text-white">Edit Screenshot Details</h4>
-                  <button onClick={() => setEditingItem(null)} className="p-1 rounded-lg text-slate-400 hover:text-slate-900 dark:hover:text-white">
+                  <button type="button" onClick={() => setEditingItem(null)} className="p-1 rounded-lg text-slate-500 hover:text-slate-900 dark:hover:text-white">
                     <X size={18} />
                   </button>
                 </div>
 
                 <form onSubmit={handleSaveMetadata} className="space-y-4">
                   <div>
-                    <label className="block text-xs font-bold uppercase text-slate-400 mb-1">Title *</label>
+                    <label className="block text-xs font-bold uppercase text-slate-500 dark:text-slate-400 mb-1">Title *</label>
                     <input
                       type="text"
                       required
                       value={editingItem.title}
                       onChange={(e) => setEditingItem({ ...editingItem, title: e.target.value })}
-                      className="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-bold"
+                      className="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-bold text-slate-900 dark:text-white"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-xs font-bold uppercase text-slate-400 mb-1">Category / Section</label>
+                    <label className="block text-xs font-bold uppercase text-slate-500 dark:text-slate-400 mb-1">Category / Section</label>
                     <input
                       type="text"
                       value={editingItem.category || ''}
                       onChange={(e) => setEditingItem({ ...editingItem, category: e.target.value })}
-                      className="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-medium"
+                      className="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-medium text-slate-900 dark:text-white"
                       placeholder="e.g. Core Overview, Mobile View, Settings"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-xs font-bold uppercase text-slate-400 mb-1">Caption / Description</label>
+                    <label className="block text-xs font-bold uppercase text-slate-500 dark:text-slate-400 mb-1">Caption / Description</label>
                     <textarea
                       rows={3}
                       value={editingItem.caption || ''}
                       onChange={(e) => setEditingItem({ ...editingItem, caption: e.target.value })}
-                      className="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-medium"
+                      className="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-medium text-slate-900 dark:text-white"
                       placeholder="Describe what this screenshot demonstrates..."
                     />
                   </div>
 
                   <div>
-                    <label className="block text-xs font-bold uppercase text-slate-400 mb-1">Alt Text (Accessibility)</label>
+                    <label className="block text-xs font-bold uppercase text-slate-500 dark:text-slate-400 mb-1">Alt Text (Accessibility)</label>
                     <input
                       type="text"
                       value={editingItem.altText || ''}
                       onChange={(e) => setEditingItem({ ...editingItem, altText: e.target.value })}
-                      className="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-medium"
+                      className="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-medium text-slate-900 dark:text-white"
                       placeholder="Screen reader description"
                     />
                   </div>
@@ -835,7 +902,7 @@ export const ProjectScreenshotManager: React.FC<ProjectScreenshotManagerProps> =
                     <button
                       type="button"
                       onClick={() => setEditingItem(null)}
-                      className="flex-1 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 text-xs font-bold"
+                      className="flex-1 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
                     >
                       Cancel
                     </button>
@@ -863,7 +930,7 @@ export const ProjectScreenshotManager: React.FC<ProjectScreenshotManagerProps> =
                 className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-sm w-full p-6 space-y-4 shadow-2xl text-center"
                 onClick={(e) => e.stopPropagation()}
               >
-                <div className="w-20 h-16 rounded-xl overflow-hidden bg-slate-950 mx-auto border border-slate-800">
+                <div className="w-20 h-16 rounded-xl overflow-hidden bg-slate-950 mx-auto border border-slate-200 dark:border-slate-800">
                   <img 
                     src={resolveProjectImageUrl(deletingItem.url)} 
                     alt={deletingItem.title} 
@@ -872,18 +939,20 @@ export const ProjectScreenshotManager: React.FC<ProjectScreenshotManagerProps> =
                 </div>
                 <div className="space-y-1">
                   <h4 className="text-base font-bold text-slate-900 dark:text-white">Delete Screenshot?</h4>
-                  <p className="text-xs text-slate-500">
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
                     Are you sure you want to remove <strong className="text-slate-800 dark:text-slate-200">"{deletingItem.title}"</strong>? Serial numbers will automatically update.
                   </p>
                 </div>
                 <div className="flex gap-3 pt-2">
                   <button
+                    type="button"
                     onClick={() => setDeletingItem(null)}
-                    className="flex-1 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 text-xs font-bold"
+                    className="flex-1 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
                   >
                     Cancel
                   </button>
                   <button
+                    type="button"
                     onClick={confirmDeleteIndividual}
                     disabled={deleting}
                     className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold flex items-center justify-center gap-2 disabled:opacity-50"

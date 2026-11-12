@@ -115,13 +115,21 @@ export const EducationManager: React.FC = () => {
     }
   };
 
-  const handleRollbackSem = async (semNum: number) => {
-    if (!confirm(`Rollback Semester ${semNum} to upcoming?`)) return;
+  // Confirmation modal state for rollback
+  const [rollbackSemNumber, setRollbackSemNumber] = useState<number | null>(null);
+  const [rollingBack, setRollingBack] = useState(false);
+
+  const confirmRollbackSem = async () => {
+    if (rollbackSemNumber === null) return;
+    setRollingBack(true);
     try {
-      await rollbackSemesterResult(semNum, auth.currentUser?.email || 'admin@portfolio.com');
-      showToast(`Semester ${semNum} rolled back successfully.`, 'success');
+      await rollbackSemesterResult(rollbackSemNumber, auth.currentUser?.email || 'admin@portfolio.com');
+      showToast(`Semester ${rollbackSemNumber} rolled back successfully.`, 'success');
+      setRollbackSemNumber(null);
     } catch (err: any) {
       showToast(`Rollback failed: ${err.message}`, 'error');
+    } finally {
+      setRollingBack(false);
     }
   };
 
@@ -215,8 +223,9 @@ export const EducationManager: React.FC = () => {
                     </button>
                     {sem.isDeclared && (
                       <button
-                        onClick={() => handleRollbackSem(sem.semesterNumber)}
-                        className="py-2.5 px-3 bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 rounded-xl text-xs font-bold min-h-[44px]"
+                        type="button"
+                        onClick={() => setRollbackSemNumber(sem.semesterNumber)}
+                        className="py-2.5 px-3 bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 rounded-xl text-xs font-bold min-h-[44px] cursor-pointer"
                         title="Rollback to Upcoming"
                       >
                         Rollback
@@ -292,8 +301,8 @@ export const EducationManager: React.FC = () => {
                 </div>
               </button>
               <div>
-                <label className="block text-xs font-bold uppercase text-slate-400 mb-1.5">Status</label>
-                <select value={statusInput} onChange={(e) => setStatusInput(e.target.value as any)} className="w-full p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-bold min-h-[48px]">
+                <label className="block text-xs font-bold uppercase text-slate-500 dark:text-slate-400 mb-1.5">Status</label>
+                <select value={statusInput} onChange={(e) => setStatusInput(e.target.value as any)} className="w-full p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-bold text-slate-900 dark:text-white min-h-[48px]">
                   <option value="PASS">PASS</option>
                   <option value="FAIL">FAIL</option>
                   <option value="UPCOMING">UPCOMING</option>
@@ -302,18 +311,18 @@ export const EducationManager: React.FC = () => {
               {statusInput !== 'UPCOMING' && (
                 <>
                   <div>
-                    <label className="block text-xs font-bold uppercase text-slate-400 mb-1.5">SGPA (e.g. 8.50)</label>
-                    <input type="number" step="0.01" min="0" max="10" value={sgpaInput} onChange={(e) => setSgpaInput(e.target.value)} className="w-full p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-bold min-h-[48px]" />
+                    <label className="block text-xs font-bold uppercase text-slate-500 dark:text-slate-400 mb-1.5">SGPA (e.g. 8.50)</label>
+                    <input type="number" step="0.01" min="0" max="10" value={sgpaInput} onChange={(e) => setSgpaInput(e.target.value)} className="w-full p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-bold text-slate-900 dark:text-white min-h-[48px]" />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold uppercase text-slate-400 mb-1.5">Declaration Date</label>
-                    <input type="text" value={declDateInput} onChange={(e) => setDeclDateInput(e.target.value)} placeholder="e.g. 20 July 2026" className="w-full p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-bold min-h-[48px]" />
+                    <label className="block text-xs font-bold uppercase text-slate-500 dark:text-slate-400 mb-1.5">Declaration Date</label>
+                    <input type="text" value={declDateInput} onChange={(e) => setDeclDateInput(e.target.value)} placeholder="e.g. 20 July 2026" className="w-full p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-bold text-slate-900 dark:text-white min-h-[48px]" />
                   </div>
                 </>
               )}
               <div className="flex flex-col sm:flex-row gap-3 pt-2">
-                <button onClick={() => setEditingSemester(null)} className="flex-1 py-3.5 border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-bold min-h-[44px]">Cancel</button>
-                <button onClick={handleSaveSemester} className="flex-1 py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-lg shadow-indigo-600/20 min-h-[44px]">Save Changes</button>
+                <button type="button" onClick={() => setEditingSemester(null)} className="flex-1 py-3.5 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl text-xs font-bold min-h-[44px] cursor-pointer">Cancel</button>
+                <button type="button" onClick={handleSaveSemester} className="flex-1 py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-lg shadow-indigo-600/20 min-h-[44px] cursor-pointer">Save Changes</button>
               </div>
             </motion.div>
           </div>
@@ -350,22 +359,67 @@ export const EducationManager: React.FC = () => {
                 </div>
               </button>
               <div>
-                <label className="block text-xs font-bold uppercase text-slate-400 mb-1.5">Percentage (%)</label>
-                <input type="number" step="0.1" value={editingSchool.percentage} onChange={(e) => setEditingSchool({ ...editingSchool, percentage: parseFloat(e.target.value) })} className="w-full p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-bold" required />
+                <label className="block text-xs font-bold uppercase text-slate-500 dark:text-slate-400 mb-1.5">Percentage (%)</label>
+                <input type="number" step="0.1" value={editingSchool.percentage} onChange={(e) => setEditingSchool({ ...editingSchool, percentage: parseFloat(e.target.value) })} className="w-full p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-bold text-slate-900 dark:text-white" required />
               </div>
               <div>
-                <label className="block text-xs font-bold uppercase text-slate-400 mb-1.5">Total Marks Obtained</label>
-                <input type="number" value={editingSchool.totalMarks} onChange={(e) => setEditingSchool({ ...editingSchool, totalMarks: parseInt(e.target.value) })} className="w-full p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-bold" required />
+                <label className="block text-xs font-bold uppercase text-slate-500 dark:text-slate-400 mb-1.5">Total Marks Obtained</label>
+                <input type="number" value={editingSchool.totalMarks} onChange={(e) => setEditingSchool({ ...editingSchool, totalMarks: parseInt(e.target.value) })} className="w-full p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-bold text-slate-900 dark:text-white" required />
               </div>
               <div>
-                <label className="block text-xs font-bold uppercase text-slate-400 mb-1.5">Passing Year</label>
-                <input type="text" value={editingSchool.passingYear} onChange={(e) => setEditingSchool({ ...editingSchool, passingYear: e.target.value })} className="w-full p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-bold" required />
+                <label className="block text-xs font-bold uppercase text-slate-500 dark:text-slate-400 mb-1.5">Passing Year</label>
+                <input type="text" value={editingSchool.passingYear} onChange={(e) => setEditingSchool({ ...editingSchool, passingYear: e.target.value })} className="w-full p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-bold text-slate-900 dark:text-white" required />
               </div>
               <div className="flex gap-3 pt-2">
-                <button type="button" onClick={() => setEditingSchool(null)} className="flex-1 py-3 border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-bold">Cancel</button>
-                <button type="submit" className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-lg shadow-indigo-600/20">Save Changes</button>
+                <button type="button" onClick={() => setEditingSchool(null)} className="flex-1 py-3 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl text-xs font-bold cursor-pointer">Cancel</button>
+                <button type="submit" className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-lg shadow-indigo-600/20 cursor-pointer">Save Changes</button>
               </div>
             </motion.form>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ROLLBACK CONFIRMATION MODAL */}
+      <AnimatePresence>
+        {rollbackSemNumber !== null && (
+          <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl space-y-5 text-center"
+            >
+              <div className="w-14 h-14 rounded-2xl bg-rose-500/10 text-rose-500 flex items-center justify-center mx-auto">
+                <AlertCircle size={28} />
+              </div>
+              <div className="space-y-2">
+                <h3 className="text-lg font-black text-slate-900 dark:text-white">
+                  Rollback Semester {rollbackSemNumber}?
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                  Are you sure you want to revert Semester {rollbackSemNumber} to <strong className="text-slate-900 dark:text-slate-200">UPCOMING</strong> status? The published SGPA will be hidden from the public portfolio.
+                </p>
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setRollbackSemNumber(null)}
+                  disabled={rollingBack}
+                  className="flex-1 py-3 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl text-xs font-bold min-h-[44px] cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={confirmRollbackSem}
+                  disabled={rollingBack}
+                  className="flex-1 py-3 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold shadow-lg shadow-rose-600/20 min-h-[44px] flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  {rollingBack ? <Loader2 size={14} className="animate-spin" /> : null}
+                  <span>{rollingBack ? 'Rolling back...' : 'Confirm Rollback'}</span>
+                </button>
+              </div>
+            </motion.div>
           </div>
         )}
       </AnimatePresence>

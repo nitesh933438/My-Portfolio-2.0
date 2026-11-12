@@ -291,106 +291,106 @@ export const SettingsManager: React.FC = () => {
 
           {/* Main Form Section */}
           <div className="lg:col-span-2 space-y-6">
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-8 space-y-5 shadow-sm">
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 sm:p-8 space-y-5 shadow-sm">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-bold uppercase text-slate-400 mb-1.5">Full Name *</label>
+                  <label className="block text-xs font-bold uppercase text-slate-500 dark:text-slate-400 mb-1.5">Full Name *</label>
                   <input
                     type="text"
                     value={form.name}
                     onChange={e => handleChange('name', e.target.value)}
-                    className="w-full p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-bold"
+                    className="w-full p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-bold text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500"
                     required
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold uppercase text-slate-400 mb-1.5">Professional Title *</label>
+                  <label className="block text-xs font-bold uppercase text-slate-500 dark:text-slate-400 mb-1.5">Professional Title *</label>
                   <input
                     type="text"
                     value={form.title}
                     onChange={e => handleChange('title', e.target.value)}
-                    className="w-full p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-bold"
+                    className="w-full p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-bold text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500"
                     required
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold uppercase text-slate-400 mb-1.5">Email Address *</label>
+                  <label className="block text-xs font-bold uppercase text-slate-500 dark:text-slate-400 mb-1.5">Email Address *</label>
                   <input
                     type="email"
                     value={form.email}
                     onChange={e => handleChange('email', e.target.value)}
-                    className="w-full p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-bold"
+                    className="w-full p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-bold text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500"
                     required
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold uppercase text-slate-400 mb-1.5">WhatsApp Number *</label>
+                  <label className="block text-xs font-bold uppercase text-slate-500 dark:text-slate-400 mb-1.5">WhatsApp Number *</label>
                   <input
                     type="text"
                     value={form.whatsapp}
                     onChange={e => handleChange('whatsapp', e.target.value)}
-                    className="w-full p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-bold"
+                    className="w-full p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-bold text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500"
                     required
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-bold uppercase text-slate-400 mb-1.5">Location *</label>
+                <label className="block text-xs font-bold uppercase text-slate-500 dark:text-slate-400 mb-1.5">Location *</label>
                 <input
                   type="text"
                   value={form.location}
                   onChange={e => handleChange('location', e.target.value)}
-                  className="w-full p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-bold"
+                  className="w-full p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-bold text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500"
                   required
                 />
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-bold uppercase text-slate-400 mb-1.5">GitHub URL</label>
+                  <label className="block text-xs font-bold uppercase text-slate-500 dark:text-slate-400 mb-1.5">GitHub URL</label>
                   <input
                     type="url"
                     value={form.github}
                     onChange={e => handleChange('github', e.target.value)}
                     placeholder="https://github.com/username"
-                    className="w-full p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-bold"
+                    className="w-full p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-bold text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold uppercase text-slate-400 mb-1.5">LinkedIn URL</label>
+                  <label className="block text-xs font-bold uppercase text-slate-500 dark:text-slate-400 mb-1.5">LinkedIn URL</label>
                   <input
                     type="url"
                     value={form.linkedin}
                     onChange={e => handleChange('linkedin', e.target.value)}
                     placeholder="https://linkedin.com/in/username"
-                    className="w-full p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-bold"
+                    className="w-full p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-bold text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold uppercase text-slate-400 mb-1.5">Instagram URL</label>
+                  <label className="block text-xs font-bold uppercase text-slate-500 dark:text-slate-400 mb-1.5">Instagram URL</label>
                   <input
                     type="url"
                     value={form.instagram}
                     onChange={e => handleChange('instagram', e.target.value)}
                     placeholder="https://instagram.com/username"
-                    className="w-full p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-bold"
+                    className="w-full p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-bold text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-bold uppercase text-slate-400 mb-1.5">Professional Bio *</label>
+                <label className="block text-xs font-bold uppercase text-slate-500 dark:text-slate-400 mb-1.5">Professional Bio *</label>
                 <textarea
                   rows={6}
                   value={form.bio}
                   onChange={e => handleChange('bio', e.target.value)}
-                  className="w-full p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-medium leading-relaxed"
+                  className="w-full p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-medium text-slate-900 dark:text-white leading-relaxed focus:outline-none focus:border-indigo-500"
                   required
                 />
               </div>
@@ -398,7 +398,7 @@ export const SettingsManager: React.FC = () => {
               <button
                 type="submit"
                 disabled={saving}
-                className="w-full py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-bold text-xs shadow-lg shadow-indigo-600/20 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                className="w-full py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-bold text-xs shadow-lg shadow-indigo-600/20 transition-all flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
               >
                 {saving ? <Loader2 className="animate-spin" size={16} /> : <Save size={16} />}
                 <span>{saving ? 'Saving Changes...' : 'Save Portfolio Settings'}</span>

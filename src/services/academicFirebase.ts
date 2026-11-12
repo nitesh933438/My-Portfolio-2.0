@@ -39,10 +39,11 @@ try {
 }
 
 export const ADMIN_EMAIL = 'nitesh933438@gmail.com';
+export const ADMIN_EMAILS = ['nitesh933438@gmail.com', 'niteshkumarbaliyakothi@gmail.com'];
 
 export const isUserAdmin = (user: User | null): boolean => {
-  if (!user) return false;
-  return user.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase();
+  if (!user || !user.email) return false;
+  return ADMIN_EMAILS.includes(user.email.toLowerCase());
 };
 
 export interface AuditRecordItem {

@@ -15,11 +15,9 @@ import {
   Award,
   CheckCircle2,
   AlertCircle,
-  RefreshCw,
   FileText,
   Terminal,
   ExternalLink,
-  Info,
   Database,
   CloudUpload,
   Plus,
@@ -27,12 +25,13 @@ import {
   Zap,
   Check,
   XCircle,
-  Sparkles
+  Sparkles,
+  Star
 } from 'lucide-react';
 import { AIScanner } from './admin/AIScanner';
 import { useAIScanner } from '../context/AIScannerContext';
-import { auth, googleProvider, isUserAdmin, ADMIN_EMAIL } from '../services/academicFirebase';
-import { bulkScanCertificates, isIndividualVerificationUrl } from '../services/verificationDetection';
+import { auth, googleProvider, isUserAdmin } from '../services/academicFirebase';
+import { bulkScanCertificates, detectVerificationUrl, isIndividualVerificationUrl } from '../services/verificationDetection';
 import {
   markBundledCertificatesImported,
   removeCertificate,
@@ -40,6 +39,8 @@ import {
   subscribeToCertificates,
   testSingleCertificateDiagnostic,
   resolveCertificateUrl,
+  resolveCertificatePreviewImageUrl,
+  resolveCertificateOriginalFileUrl,
   type ImportDiagnostic
 } from '../services/certificateFirebase';
 import { uploadFileProxy, validateFile } from '../services/supabaseStorage';
@@ -58,12 +59,21 @@ const blank = (): Omit<PortfolioCertificate, 'id' | 'createdAt' | 'updatedAt'> =
   issueDate: '',
   expiryDate: '',
   credentialId: '',
+  verificationCode: '',
   credentialUrl: '',
   suggestedCredentialUrl: '',
-  verificationStatus: undefined,
+  verificationStatus: 'approved',
   imageUrl: '',
   fileUrl: '',
   fileType: 'image',
+  grade: '',
+  score: '',
+  assignmentScore: '',
+  examScore: '',
+  credits: '',
+  duration: '',
+  totalCandidates: '',
+  coordinator: '',
   skills: [],
   featured: false,
   published: true,
@@ -110,18 +120,25 @@ export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
   const handleAIExtractedData = (result: any) => {
     if (!result || !result.data) return;
     const data = result.data;
-    setForm(prev => ({
-      ...prev,
-      title: data.title || prev.title,
-      issuer: data.issuer || prev.issuer,
-      category: data.category || prev.category,
-      issueDate: data.issueDate || prev.issueDate,
-      credentialId: data.credentialId || prev.credentialId,
-      credentialUrl: data.credentialUrl || prev.credentialUrl,
-      skills: data.skills || prev.skills,
-      description: data.description || prev.description,
-    }));
-    showToast('AI extracted certificate data successfully.', 'success');
+    setForm(prev => {
+      const next = {
+        ...prev,
+        title: data.title || prev.title,
+        issuer: data.issuer || prev.issuer,
+        category: data.category || prev.category,
+        issueDate: data.issueDate || prev.issueDate,
+        credentialId: data.credentialId || prev.credentialId,
+        credentialUrl: data.credentialUrl || prev.credentialUrl,
+        skills: data.skills || prev.skills,
+        description: data.description || prev.description
+      };
+      if (!next.credentialUrl && next.credentialId) {
+        const autoUrl = detectVerificationUrl({ ...next, id: 'temp' } as PortfolioCertificate);
+        if (autoUrl) next.credentialUrl = autoUrl;
+      }
+      return next;
+    });
+    showToast('AI extracted certificate data and auto-linked verification URL.', 'success');
   };
 
   const runBulkScan = async () => {
@@ -129,7 +146,7 @@ export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
     try {
       const suggestions = bulkScanCertificates(items);
       if (suggestions.length === 0) {
-        showToast('No new verification links detected.', 'info');
+        showToast('All verifiable certificates already have approved verification links.', 'info');
         return;
       }
 
@@ -138,7 +155,7 @@ export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
         await saveCertificate(update as any, update.id);
         count++;
       }
-      showToast(`Scan complete. ${count} verification links suggested for review.`, 'success');
+      showToast(`Auto-linked and approved ${count} verification URLs.`, 'success');
     } catch (err: any) {
       showToast(`Scan failed: ${err.message}`, 'error');
     } finally {
@@ -152,12 +169,15 @@ export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
       return;
     }
     try {
-      await saveCertificate({
-        ...item,
-        credentialUrl: item.suggestedCredentialUrl,
-        suggestedCredentialUrl: '',
-        verificationStatus: 'approved'
-      } as any, item.id);
+      await saveCertificate(
+        {
+          ...item,
+          credentialUrl: item.suggestedCredentialUrl,
+          suggestedCredentialUrl: '',
+          verificationStatus: 'approved'
+        } as any,
+        item.id
+      );
       showToast('Link approved and published.', 'success');
     } catch (err: any) {
       showToast(`Action failed: ${err.message}`, 'error');
@@ -166,11 +186,14 @@ export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
 
   const handleRejectLink = async (item: PortfolioCertificate) => {
     try {
-      await saveCertificate({
-        ...item,
-        suggestedCredentialUrl: '',
-        verificationStatus: 'rejected'
-      } as any, item.id);
+      await saveCertificate(
+        {
+          ...item,
+          suggestedCredentialUrl: '',
+          verificationStatus: 'rejected'
+        } as any,
+        item.id
+      );
       showToast('Suggestion rejected.', 'info');
     } catch (err: any) {
       showToast(`Action failed: ${err.message}`, 'error');
@@ -195,11 +218,27 @@ export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
     setTimeout(() => setToast(null), 5000);
   };
 
-  const change = (key: string, value: unknown) => setForm(old => ({ ...old, [key]: value }));
+  const change = (key: string, value: unknown) => {
+    setForm(old => {
+      const next = { ...old, [key]: value };
+      if ((key === 'credentialId' || key === 'issuer' || key === 'verificationCode') && !next.credentialUrl) {
+        const auto = detectVerificationUrl({ ...next, id: 'preview' } as PortfolioCertificate);
+        if (auto) {
+          next.credentialUrl = auto;
+          next.verificationStatus = 'approved';
+        }
+      }
+      return next;
+    });
+  };
 
   const edit = (item: PortfolioCertificate) => {
     setEditing(item.id);
-    setForm({ ...item, skills: item.skills || [] });
+    setForm({
+      ...blank(),
+      ...item,
+      skills: item.skills || []
+    });
     setFile(null);
     showToast(`Editing "${item.title}"`, 'info');
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -225,7 +264,8 @@ export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
   };
 
   /**
-   * Imports certificates into Supabase Storage and Firestore.
+   * Syncs all 43 bundled certificates (including NPTEL Programming in Java Elite at #1)
+   * and their enriched metadata/verification links into Firestore.
    */
   const processImportList = async (targetItems: PortfolioCertificate[]) => {
     if (!targetItems.length) return;
@@ -247,85 +287,40 @@ export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
 
     setImportStats({ total: totalCount, completed: 0, skipped: 0, failed: 0 });
 
-    const BATCH_SIZE = 3; // Smaller batches for storage uploads
+    const BATCH_SIZE = 4;
 
     try {
       for (let i = 0; i < targetItems.length; i += BATCH_SIZE) {
         const batch = targetItems.slice(i, i + BATCH_SIZE);
-        setImportStage(`Uploading batch ${Math.floor(i / BATCH_SIZE) + 1}...`);
+        setImportStage(`Syncing batch ${Math.floor(i / BATCH_SIZE) + 1} of ${Math.ceil(targetItems.length / BATCH_SIZE)}...`);
 
         await Promise.all(
           batch.map(async item => {
-            // Match existing records by document ID or title + issuer. When the
-            // bundled source now contains a real URL printed on the certificate,
-            // safely merge only that verification metadata into the existing record.
-            const duplicate = items.find(x => x.id === item.id || (x.title === item.title && x.issuer === item.issuer));
-            if (duplicate) {
-              try {
-                const hasSourceVerification = isIndividualVerificationUrl(item.credentialUrl);
-                const hasExistingVerification = isIndividualVerificationUrl(duplicate.credentialUrl);
-                if (hasSourceVerification && !hasExistingVerification) {
-                  await saveCertificate({
-                    ...duplicate,
-                    credentialUrl: item.credentialUrl,
-                    credentialId: item.credentialId || duplicate.credentialId || '',
-                    suggestedCredentialUrl: '',
-                    verificationStatus: duplicate.verificationStatus === 'rejected' ? 'pending' : duplicate.verificationStatus
-                  } as any, duplicate.id);
-                  completedCount++;
-                  setImportStats(prev => ({ ...prev, completed: completedCount }));
-                } else {
-                  skippedCount++;
-                  setImportStats(prev => ({ ...prev, skipped: skippedCount }));
-                }
-              } catch (err: any) {
-                failedCount++;
-                newFailures.push({ item, error: err.message || 'Verification metadata update failed' });
-                setImportStats(prev => ({ ...prev, failed: failedCount }));
-              } finally {
-                const processed = completedCount + skippedCount + failedCount;
-                setImportProgress(Math.round((processed / totalCount) * 100));
-              }
-              return;
-            }
+            const duplicate = items.find(
+              x =>
+                x.id === item.id ||
+                (x.sourceAsset && item.sourceAsset && x.sourceAsset === item.sourceAsset) ||
+                (x.title.toLowerCase() === item.title.toLowerCase() && x.issuer.toLowerCase() === item.issuer.toLowerCase())
+            );
 
             try {
-              // 1. Fetch local asset
-              const assetName = item.sourceAsset || `${item.id}.jpg`;
-              const assetUrl = `/certificates/${assetName}`;
-              const response = await fetch(assetUrl);
-              if (!response.ok) throw new Error(`Local asset not found: ${assetUrl}`);
-              const blob = await response.blob();
-              const mimeType = assetName.toLowerCase().endsWith('.pdf') ? 'application/pdf' : (blob.type || 'image/jpeg');
-              const file = new File([blob], assetName, { type: mimeType });
-
-              // 2. Prefer Supabase Storage, but keep bundled local assets usable
-              // when Supabase is not configured in a local/development environment.
-              let storedFileUrl = assetUrl;
-              let storedImageUrl = item.fileType === 'image' ? assetUrl : '';
-              try {
-                const uploaded = await uploadFileProxy(file, 'certificates', idToken);
-                storedFileUrl = uploaded.path;
-                storedImageUrl = item.fileType === 'image' ? uploaded.url : '';
-              } catch (storageError) {
-                console.warn(`Supabase upload unavailable for ${item.title}; keeping bundled local asset.`, storageError);
-              }
-
-              // 3. Save metadata to Firestore with whichever asset location succeeded.
               const { id, createdAt, updatedAt, ...payload } = item;
-              await saveCertificate({
-                ...payload,
-                imageUrl: storedImageUrl,
-                fileUrl: storedFileUrl,
-                sourceAsset: item.sourceAsset || `${item.id}.jpg`,
-                published: true
-              }, item.id);
+              await saveCertificate(
+                {
+                  ...payload,
+                  imageUrl: duplicate?.imageUrl && !duplicate.imageUrl.endsWith('.pdf') ? duplicate.imageUrl : item.imageUrl,
+                  fileUrl: duplicate?.fileUrl || item.fileUrl,
+                  sourceAsset: item.sourceAsset || `${item.id}.jpg`,
+                  published: duplicate ? duplicate.published !== false : true
+                },
+                duplicate?.id || item.id
+              );
 
               completedCount++;
               setImportStats(prev => ({ ...prev, completed: completedCount }));
             } catch (err: any) {
               failedCount++;
-              newFailures.push({ item, error: err.message || 'Import failed' });
+              newFailures.push({ item, error: err.message || 'Sync failed' });
               setImportStats(prev => ({ ...prev, failed: failedCount }));
             } finally {
               const processed = completedCount + skippedCount + failedCount;
@@ -339,7 +334,12 @@ export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
 
       setFailedCertificates(newFailures);
       setImportSummary({ total: totalCount, imported: completedCount, skipped: skippedCount, failed: failedCount });
-      showToast(failedCount === 0 ? 'Certificate catalog and verification links synced!' : 'Sync completed with warnings.', failedCount === 0 ? 'success' : 'error');
+      showToast(
+        failedCount === 0
+          ? `Successfully synced all ${completedCount} certificates & verification links!`
+          : 'Sync completed with warnings.',
+        failedCount === 0 ? 'success' : 'error'
+      );
     } catch (err: any) {
       showToast(err.message || 'Import failed.', 'error');
     } finally {
@@ -348,7 +348,6 @@ export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
   };
 
   const importBundled = () => {
-    if (!confirm(`Import ${BUNDLED_CERTIFICATES.length} certificates into Supabase and Firestore? Existing records will be skipped.`)) return;
     processImportList(BUNDLED_CERTIFICATES);
   };
 
@@ -357,14 +356,14 @@ export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
     const idToken = await user?.getIdToken();
     if (!idToken) return showToast('Session expired.', 'error');
 
-    // URL Validation
     if (form.credentialUrl) {
       let parsed: URL;
-      try { parsed = new URL(form.credentialUrl); } catch { return showToast('Enter a valid credential verification URL.', 'error'); }
+      try {
+        parsed = new URL(form.credentialUrl);
+      } catch {
+        return showToast('Enter a valid credential verification URL.', 'error');
+      }
       if (parsed.protocol !== 'https:') return showToast('Credential verification links must use HTTPS.', 'error');
-    }
-    if (form.verificationStatus === 'approved' && !isIndividualVerificationUrl(form.credentialUrl)) {
-      return showToast('Only a credential-specific URL can be marked Approved. Add the individual verification link first.', 'error');
     }
     if (form.issueDate && form.expiryDate && form.expiryDate < form.issueDate) {
       return showToast('Expiry date cannot be earlier than issue date.', 'error');
@@ -382,17 +381,20 @@ export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
         fileUrl = path;
       }
 
-      if (!fileUrl && !form.sourceAsset) {
-        throw new Error('Please upload a file or specify a source asset.');
+      if (!fileUrl && !form.sourceAsset && !imageUrl) {
+        throw new Error('Please upload a file or specify a source asset / image URL.');
       }
 
-      await saveCertificate({ 
-        ...form, 
-        imageUrl: imageUrl || resolveCertificateUrl(form.sourceAsset || ''), 
-        fileUrl: fileUrl || form.sourceAsset || '',
-        fileType: file ? (file.type === 'application/pdf' ? 'pdf' : 'image') : form.fileType
-      }, editing);
-      
+      await saveCertificate(
+        {
+          ...form,
+          imageUrl: imageUrl || resolveCertificateUrl(form.sourceAsset || ''),
+          fileUrl: fileUrl || form.sourceAsset || imageUrl || '',
+          fileType: file ? (file.type === 'application/pdf' ? 'pdf' : 'image') : form.fileType
+        },
+        editing
+      );
+
       showToast(editing ? 'Certificate updated.' : 'Certificate saved.', 'success');
       setForm(blank());
       setEditing(undefined);
@@ -423,30 +425,45 @@ export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
     const next = [...ordered];
     [next[index], next[targetIndex]] = [next[targetIndex], next[index]];
     try {
-      await Promise.all(next.map((entry, position) => {
-        const { id, ...data } = entry;
-        return saveCertificate({ ...data, displayOrder: position + 1 }, id);
-      }));
+      await Promise.all(
+        next.map((entry, position) => {
+          const { id, ...data } = entry;
+          return saveCertificate({ ...data, displayOrder: position }, id);
+        })
+      );
       showToast('Certificate order updated.', 'success');
     } catch (err: any) {
       showToast(err.message || 'Could not update certificate order.', 'error');
     }
   };
 
+  const moveToFirst = async (item: PortfolioCertificate) => {
+    try {
+      const { id, ...data } = item;
+      await saveCertificate({ ...data, displayOrder: 0, featured: true }, id);
+      showToast(`"${item.title}" pinned to #1 first position!`, 'success');
+    } catch (err: any) {
+      showToast(err.message || 'Could not pin certificate.', 'error');
+    }
+  };
+
   const orderedItems = [...items].sort((a, b) => (a.displayOrder ?? 9999) - (b.displayOrder ?? 9999));
   const filteredItems = orderedItems.filter(item => {
-    const matchesSearch = item.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          item.issuer.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesSearch =
+      item.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      item.issuer.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (item.credentialId || '').toLowerCase().includes(searchQuery.toLowerCase());
     return matchesSearch && (selectedCategory === 'All' || item.category === selectedCategory);
   });
 
-  if (!user || !isUserAdmin(user)) return (
-    <main className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white grid place-items-center p-6 text-center">
-      {!user ? (
-        <div className="max-w-md w-full rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-8 space-y-4 shadow-xl">
-          <Award className="w-12 h-12 text-indigo-400 mx-auto" />
-          <h1 className="text-2xl font-black">Admin Access Required</h1>
-          <button 
+  if (!user || !isUserAdmin(user))
+    return (
+      <main className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white grid place-items-center p-6 text-center">
+        {!user ? (
+          <div className="max-w-md w-full rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-8 space-y-4 shadow-xl">
+            <Award className="w-12 h-12 text-indigo-400 mx-auto" />
+            <h1 className="text-2xl font-black">Admin Access Required</h1>
+            <button
               onClick={async () => {
                 try {
                   await signInWithPopup(auth, googleProvider);
@@ -454,29 +471,37 @@ export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
                   console.error('Sign-in error:', err);
                   showToast(`Sign-in failed: ${err.message}`, 'error');
                 }
-              }} 
-              className="w-full rounded-xl bg-indigo-600 py-3 font-bold"
+              }}
+              className="w-full rounded-xl bg-indigo-600 text-white py-3 font-bold"
             >
               Sign in with Google
             </button>
-          <button onClick={onBack} className="text-xs text-slate-400 underline">Back to portfolio</button>
-        </div>
-      ) : (
-        <div className="space-y-4">
-          <h1 className="text-2xl font-bold text-rose-500">Access Denied</h1>
-          <p className="text-slate-400 text-xs">Account {user.email} is not authorized.</p>
-          <button onClick={() => signOut(auth)} className="text-xs font-bold text-indigo-400 underline">Sign out</button>
-        </div>
-      )}
-    </main>
-  );
+            <button onClick={onBack} className="text-xs text-slate-400 underline">
+              Back to portfolio
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <h1 className="text-2xl font-bold text-rose-500">Access Denied</h1>
+            <p className="text-slate-400 text-xs">Account {user.email} is not authorized.</p>
+            <button onClick={() => signOut(auth)} className="text-xs font-bold text-indigo-400 underline">
+              Sign out
+            </button>
+          </div>
+        )}
+      </main>
+    );
 
   return (
-    <div className="space-y-8 max-w-7xl mx-auto px-4 py-8">
+    <div className="space-y-8 max-w-7xl mx-auto px-4 py-6">
       {/* Toast Notification */}
       {toast && (
-        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 p-4 rounded-2xl shadow-xl border bg-slate-900/95 border-slate-700 text-white backdrop-blur-md animate-in fade-in slide-in-from-bottom-4">
-          {toast.type === 'success' ? <CheckCircle2 className="w-5 h-5 text-emerald-400" /> : <AlertCircle className="w-5 h-5 text-rose-400" />}
+        <div className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-50 flex items-center gap-3 p-4 rounded-2xl shadow-xl border bg-white/95 dark:bg-slate-900/95 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white backdrop-blur-md max-w-[90vw]">
+          {toast.type === 'success' ? (
+            <CheckCircle2 className="w-5 h-5 text-emerald-500 dark:text-emerald-400 shrink-0" />
+          ) : (
+            <AlertCircle className="w-5 h-5 text-rose-500 dark:text-rose-400 shrink-0" />
+          )}
           <span className="text-xs font-bold">{toast.message}</span>
         </div>
       )}
@@ -484,27 +509,42 @@ export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="space-y-1">
-          <button onClick={onBack} className="text-xs text-indigo-600 dark:text-indigo-400 flex items-center gap-1.5 font-bold hover:underline mb-2">
+          <button
+            onClick={onBack}
+            className="text-xs text-indigo-600 dark:text-indigo-400 flex items-center gap-1.5 font-bold hover:underline mb-2"
+          >
             <ArrowLeft size={14} /> Back to Dashboard
           </button>
           <h1 className="text-3xl font-black text-slate-900 dark:text-white">Certificate CMS</h1>
           <div className="flex items-center gap-2 text-xs text-blue-600 dark:text-blue-400 font-bold">
             <Database size={14} />
-            <span>Supabase Storage + Firestore Bridge</span>
+            <span>{items.length} Total Credentials · Auto-Linked Verification System</span>
           </div>
         </div>
         <div className="flex flex-wrap gap-2.5">
-          <button onClick={runBulkScan} disabled={scanning || importing} className="rounded-2xl border border-cyan-500/40 bg-cyan-500/5 hover:bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 px-4 py-3 text-xs font-bold flex items-center gap-2">
+          <button
+            onClick={runBulkScan}
+            disabled={scanning || importing}
+            className="rounded-2xl border border-cyan-500/40 bg-cyan-500/5 hover:bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 px-4 py-3 text-xs font-bold flex items-center gap-2 transition-all active:scale-95"
+          >
             {scanning ? <Loader2 className="animate-spin" size={14} /> : <Zap size={14} />}
-            Bulk Scan Links
+            Auto-Detect Links
           </button>
-          <button onClick={runSingleCertificateTest} disabled={diagnosticRunning || importing} className="rounded-2xl border border-indigo-500/40 bg-indigo-500/5 hover:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 px-4 py-3 text-xs font-bold flex items-center gap-2">
+          <button
+            onClick={runSingleCertificateTest}
+            disabled={diagnosticRunning || importing}
+            className="rounded-2xl border border-indigo-500/40 bg-indigo-500/5 hover:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 px-4 py-3 text-xs font-bold flex items-center gap-2 transition-all active:scale-95"
+          >
             {diagnosticRunning ? <Loader2 className="animate-spin" size={14} /> : <Terminal size={14} />}
-            Test Supabase Bridge
+            Test Bridge
           </button>
-          <button onClick={importBundled} disabled={importing} className="rounded-2xl bg-cyan-600 hover:bg-cyan-700 text-white px-5 py-3 text-xs font-bold shadow-lg flex items-center gap-2">
+          <button
+            onClick={importBundled}
+            disabled={importing}
+            className="rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-3 text-xs font-bold shadow-lg shadow-indigo-600/20 flex items-center gap-2 transition-all active:scale-95"
+          >
             {importing ? <Loader2 className="animate-spin" size={14} /> : <CloudUpload size={14} />}
-            {items.length >= BUNDLED_CERTIFICATES.length ? `Sync ${BUNDLED_CERTIFICATES.length} Certificates` : `Import ${BUNDLED_CERTIFICATES.length} Certificates`}
+            Sync All {BUNDLED_CERTIFICATES.length} Certificates & Links
           </button>
         </div>
       </div>
@@ -514,10 +554,12 @@ export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
         <div className="rounded-3xl border border-cyan-500/30 bg-cyan-500/5 p-6 space-y-4">
           <div className="flex justify-between items-end">
             <div className="space-y-1">
-              <span className="text-[10px] font-black uppercase text-cyan-600 dark:text-cyan-400 tracking-widest">Supabase Migration</span>
+              <span className="text-[10px] font-black uppercase text-cyan-600 dark:text-cyan-400 tracking-widest">
+                Firestore Synchronization
+              </span>
               <p className="text-xs text-slate-900 dark:text-white font-bold">{importStage}</p>
             </div>
-            <span className="text-2xl font-black text-cyan-600 dark:text-cyan-400">{importProgress}%</span>
+            <span className="text-2xl font-black text-cyan-600 dark:text-cyan-400 tabular-nums">{importProgress}%</span>
           </div>
           <div className="h-2 w-full rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden">
             <div className="h-full bg-cyan-500 transition-all duration-300" style={{ width: `${importProgress}%` }} />
@@ -525,11 +567,27 @@ export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
         </div>
       )}
 
-      <div className="grid grid-cols-1 xl:grid-cols-[1fr_2fr] gap-8">
+      {importSummary && (
+        <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/5 p-4 flex items-center justify-between text-xs">
+          <span className="font-bold text-emerald-600 dark:text-emerald-400">
+            Synced {importSummary.imported} of {importSummary.total} certificates to Firestore ({failedCertificates.length} errors).
+          </span>
+          <button onClick={() => setImportSummary(null)} className="text-slate-400 hover:text-white font-bold">
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 xl:grid-cols-[1.05fr_1.95fr] gap-8">
         {/* Form */}
-        <form onSubmit={submit} className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 sm:p-8 space-y-6 h-fit xl:sticky xl:top-8 shadow-sm">
+        <form
+          onSubmit={submit}
+          className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 sm:p-7 space-y-5 h-fit xl:sticky xl:top-20 shadow-sm"
+        >
           <div className="flex items-center justify-between">
-            <h2 className="text-xl font-black text-slate-900 dark:text-white">{editing ? 'Edit Certificate' : 'Add Certificate'}</h2>
+            <h2 className="text-xl font-black text-slate-900 dark:text-white">
+              {editing ? 'Edit Certificate' : 'Add Certificate'}
+            </h2>
             <div className="p-2 rounded-xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">
               {editing ? <Edit2 size={18} /> : <Plus size={18} />}
             </div>
@@ -542,8 +600,12 @@ export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
                 <Sparkles size={20} />
               </div>
               <div>
-                <h4 className="text-[11px] font-black uppercase tracking-wider text-slate-900 dark:text-white">AI Assistant</h4>
-                <p className="text-[10px] text-slate-500 dark:text-slate-400">Scan certificate image/PDF to auto-fill.</p>
+                <h4 className="text-[11px] font-black uppercase tracking-wider text-slate-900 dark:text-white">
+                  AI Certificate Scanner
+                </h4>
+                <p className="text-[10px] text-slate-500 dark:text-slate-400">
+                  Scan certificate image/PDF to auto-extract details & verification link.
+                </p>
               </div>
             </div>
             <button
@@ -556,56 +618,111 @@ export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
           </div>
 
           <div className="space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <label className="text-[11px] font-black uppercase text-slate-500 tracking-wider">Title *</label>
-                <input required value={form.title} onChange={e => change('title', e.target.value)} className="w-full rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-3 text-sm text-slate-900 dark:text-white" placeholder="Certificate Name" />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+              <div className="space-y-1">
+                <label className="text-[10px] font-black uppercase text-slate-500 tracking-wider">Title *</label>
+                <input
+                  required
+                  value={form.title}
+                  onChange={e => change('title', e.target.value)}
+                  className="w-full rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-2.5 text-xs text-slate-900 dark:text-white"
+                  placeholder="Programming in Java — NPTEL Elite"
+                />
               </div>
-              <div className="space-y-1.5">
-                <label className="text-[11px] font-black uppercase text-slate-500 tracking-wider">Issuer *</label>
-                <input required value={form.issuer} onChange={e => change('issuer', e.target.value)} className="w-full rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-3 text-sm text-slate-900 dark:text-white" placeholder="Provider" />
+              <div className="space-y-1">
+                <label className="text-[10px] font-black uppercase text-slate-500 tracking-wider">Issuer *</label>
+                <input
+                  required
+                  value={form.issuer}
+                  onChange={e => change('issuer', e.target.value)}
+                  className="w-full rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-2.5 text-xs text-slate-900 dark:text-white"
+                  placeholder="NPTEL · IIT Kharagpur"
+                />
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <label className="text-[11px] font-black uppercase text-slate-500 tracking-wider">Category *</label>
-                <select value={form.category} onChange={e => change('category', e.target.value)} className="w-full rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-3 text-sm text-slate-900 dark:text-white">
-                  {CERTIFICATE_CATEGORIES.map(c => <option key={c}>{c}</option>)}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+              <div className="space-y-1">
+                <label className="text-[10px] font-black uppercase text-slate-500 tracking-wider">Category *</label>
+                <select
+                  value={form.category}
+                  onChange={e => change('category', e.target.value)}
+                  className="w-full rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-2.5 text-xs text-slate-900 dark:text-white"
+                >
+                  {CERTIFICATE_CATEGORIES.map(c => (
+                    <option key={c}>{c}</option>
+                  ))}
                 </select>
               </div>
-              <div className="space-y-1.5">
-                <label className="text-[11px] font-black uppercase text-slate-500 tracking-wider">Issue Date</label>
-                <input type="date" value={form.issueDate} onChange={e => change('issueDate', e.target.value)} className="w-full rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-3 text-sm text-slate-900 dark:text-white" />
+              <div className="space-y-1">
+                <label className="text-[10px] font-black uppercase text-slate-500 tracking-wider">Issue Date</label>
+                <input
+                  type="date"
+                  value={form.issueDate}
+                  onChange={e => change('issueDate', e.target.value)}
+                  className="w-full rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-2.5 text-xs text-slate-900 dark:text-white"
+                />
               </div>
-              <div className="space-y-1.5">
-                <label className="text-[11px] font-black uppercase text-slate-500 tracking-wider">Expiry Date (Optional)</label>
-                <input type="date" min={form.issueDate || undefined} value={form.expiryDate || ''} onChange={e => change('expiryDate', e.target.value)} className="w-full rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-3 text-sm text-slate-900 dark:text-white" />
+              <div className="space-y-1">
+                <label className="text-[10px] font-black uppercase text-slate-500 tracking-wider">Display Order</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={form.displayOrder}
+                  onChange={e => change('displayOrder', Math.max(0, Number(e.target.value) || 0))}
+                  className="w-full rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-2.5 text-xs text-slate-900 dark:text-white"
+                />
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <label className="text-[11px] font-black uppercase text-slate-500 tracking-wider">Display Order</label>
-                <input type="number" min="0" step="1" value={form.displayOrder} onChange={e => change('displayOrder', Math.max(0, Number(e.target.value) || 0))} className="w-full rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-3 text-sm text-slate-900 dark:text-white" />
-                <p className="text-[10px] text-slate-500">Smaller number appears earlier. Use 0 or 1 for the first position.</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+              <div className="space-y-1">
+                <label className="text-[10px] font-black uppercase text-slate-500 tracking-wider">
+                  Roll No / Credential ID
+                </label>
+                <input
+                  value={form.credentialId || ''}
+                  onChange={e => change('credentialId', e.target.value.trim())}
+                  className="w-full rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-2.5 text-xs text-slate-900 dark:text-white font-mono"
+                  placeholder="NPTEL26CS153S1262000875"
+                />
               </div>
-              <div className="space-y-1.5">
-                <label className="text-[11px] font-black uppercase text-slate-500 tracking-wider">Credential ID (Optional)</label>
-              <input value={form.credentialId || ''} onChange={e => change('credentialId', e.target.value.trim())} className="w-full rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-3 text-sm text-slate-900 dark:text-white" placeholder="Issuer-provided credential ID" />
+              <div className="space-y-1">
+                <label className="text-[10px] font-black uppercase text-slate-500 tracking-wider">
+                  Verification Code (Optional)
+                </label>
+                <input
+                  value={form.verificationCode || ''}
+                  onChange={e => change('verificationCode', e.target.value.trim())}
+                  className="w-full rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-2.5 text-xs text-slate-900 dark:text-white font-mono"
+                  placeholder="NOC-TYQF-10FH-WWG48"
+                />
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <label className="text-[11px] font-black uppercase text-slate-500 tracking-wider">Credential Verification URL</label>
-                <input type="url" value={form.credentialUrl} onChange={e => change('credentialUrl', e.target.value)} className="w-full rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-3 text-sm text-slate-900 dark:text-white" placeholder="https://issuer.com/verify/credential-id" />
-                <p className="text-[10px] text-slate-500">Use the individual credential page, not the issuer homepage. HTTPS links only.</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+              <div className="space-y-1">
+                <label className="text-[10px] font-black uppercase text-slate-500 tracking-wider">
+                  Credential Verification URL
+                </label>
+                <input
+                  type="url"
+                  value={form.credentialUrl || ''}
+                  onChange={e => change('credentialUrl', e.target.value)}
+                  className="w-full rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-2.5 text-xs text-slate-900 dark:text-white"
+                  placeholder="https://nptel.ac.in/verify/NOC-TYQF-10FH-WWG48"
+                />
               </div>
-              <div className="space-y-1.5">
-                <label className="text-[11px] font-black uppercase text-slate-500 tracking-wider">Verification Status</label>
-                <select value={form.verificationStatus || ''} onChange={e => change('verificationStatus', e.target.value || undefined)} className="w-full rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-3 text-sm text-slate-900 dark:text-white">
-                  <option value="">Legacy / Unknown</option>
+              <div className="space-y-1">
+                <label className="text-[10px] font-black uppercase text-slate-500 tracking-wider">
+                  Verification Status
+                </label>
+                <select
+                  value={form.verificationStatus || 'approved'}
+                  onChange={e => change('verificationStatus', e.target.value || undefined)}
+                  className="w-full rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-2.5 text-xs text-slate-900 dark:text-white"
+                >
                   <option value="approved">Approved / Verified</option>
                   <option value="pending">Pending Review</option>
                   <option value="rejected">Rejected / Unverified</option>
@@ -613,140 +730,361 @@ export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
               </div>
             </div>
 
-            {form.suggestedCredentialUrl && (
-              <div className="space-y-1.5 p-3 rounded-xl bg-cyan-500/5 border border-cyan-500/20">
-                <label className="text-[11px] font-black uppercase text-cyan-600 dark:text-cyan-400 tracking-widest flex items-center gap-1">
-                  <Zap size={12} /> Detected Suggestion (Pending)
-                </label>
-                <input type="url" value={form.suggestedCredentialUrl} onChange={e => change('suggestedCredentialUrl', e.target.value)} className="w-full rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-3 text-sm text-slate-900 dark:text-white" placeholder="https://..." />
-                <p className="text-[10px] text-slate-500">Edit this URL and save, or approve it from the list to publish.</p>
+            {/* Academic / NPTEL Score & Credits Fields */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              <div className="space-y-1">
+                <label className="text-[10px] font-black uppercase text-slate-500 tracking-wider">Grade / Badge</label>
+                <input
+                  value={form.grade || ''}
+                  onChange={e => change('grade', e.target.value)}
+                  className="w-full rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-2 text-xs text-slate-900 dark:text-white"
+                  placeholder="ELITE"
+                />
               </div>
-            )}
+              <div className="space-y-1">
+                <label className="text-[10px] font-black uppercase text-slate-500 tracking-wider">Score</label>
+                <input
+                  value={form.score || ''}
+                  onChange={e => change('score', e.target.value)}
+                  className="w-full rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-2 text-xs text-slate-900 dark:text-white"
+                  placeholder="78%"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] font-black uppercase text-slate-500 tracking-wider">Credits</label>
+                <input
+                  value={form.credits || ''}
+                  onChange={e => change('credits', e.target.value)}
+                  className="w-full rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-2 text-xs text-slate-900 dark:text-white"
+                  placeholder="4 Credits"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] font-black uppercase text-slate-500 tracking-wider">Assignments</label>
+                <input
+                  value={form.assignmentScore || ''}
+                  onChange={e => change('assignmentScore', e.target.value)}
+                  className="w-full rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-2 text-xs text-slate-900 dark:text-white"
+                  placeholder="24.94/25"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] font-black uppercase text-slate-500 tracking-wider">Proctored Exam</label>
+                <input
+                  value={form.examScore || ''}
+                  onChange={e => change('examScore', e.target.value)}
+                  className="w-full rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-2 text-xs text-slate-900 dark:text-white"
+                  placeholder="52.5/75"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] font-black uppercase text-slate-500 tracking-wider">Duration</label>
+                <input
+                  value={form.duration || ''}
+                  onChange={e => change('duration', e.target.value)}
+                  className="w-full rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-2 text-xs text-slate-900 dark:text-white"
+                  placeholder="12 Weeks (Jul–Oct 2026)"
+                />
+              </div>
+            </div>
 
-            <div className="space-y-1.5">
-              <label className="text-[11px] font-black uppercase text-slate-500 tracking-wider">Certificate File (Supabase Storage) *</label>
+            <div className="space-y-1">
+              <label className="text-[10px] font-black uppercase text-slate-500 tracking-wider">
+                Certificate File (Image or PDF)
+              </label>
               <input
                 type="file"
                 accept="image/jpeg,image/png,image/webp,application/pdf"
                 onChange={e => setFile(e.target.files?.[0] || null)}
                 className="w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-indigo-50 file:text-indigo-600 dark:file:bg-slate-800 dark:file:text-indigo-400"
               />
-              {editing && !file && (
-                <p className="text-[10px] text-slate-500 italic">Leave empty to keep existing file.</p>
-              )}
             </div>
 
-            <div className="space-y-1.5">
-              <label className="text-[11px] font-black uppercase text-slate-500 tracking-wider">Skills (Comma Separated)</label>
-              <input value={form.skills.join(', ')} onChange={e => change('skills', e.target.value.split(',').map(s => s.trim()).filter(Boolean))} className="w-full rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-3 text-sm text-slate-900 dark:text-white" placeholder="React, Node.js, AWS" />
+            <div className="space-y-1">
+              <label className="text-[10px] font-black uppercase text-slate-500 tracking-wider">
+                Skills (Comma Separated)
+              </label>
+              <input
+                value={form.skills.join(', ')}
+                onChange={e =>
+                  change(
+                    'skills',
+                    e.target.value
+                      .split(',')
+                      .map(s => s.trim())
+                      .filter(Boolean)
+                  )
+                }
+                className="w-full rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-2.5 text-xs text-slate-900 dark:text-white"
+                placeholder="Java, Object-Oriented Programming, Data Structures"
+              />
             </div>
 
-            <div className="space-y-1.5">
-              <label className="text-[11px] font-black uppercase text-slate-500 tracking-wider">Description</label>
-              <textarea rows={3} value={form.description} onChange={e => change('description', e.target.value)} className="w-full rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-3 text-sm text-slate-900 dark:text-white" placeholder="achievement summary..." />
+            <div className="space-y-1">
+              <label className="text-[10px] font-black uppercase text-slate-500 tracking-wider">Description</label>
+              <textarea
+                rows={3}
+                value={form.description}
+                onChange={e => change('description', e.target.value)}
+                className="w-full rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-2.5 text-xs text-slate-900 dark:text-white"
+                placeholder="Achievement summary..."
+              />
             </div>
 
-            <div className="flex gap-4 pt-2">
+            <div className="flex gap-4 pt-1">
               <label className="flex items-center gap-2 cursor-pointer group">
-                <input type="checkbox" checked={form.featured} onChange={e => change('featured', e.target.checked)} className="rounded border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-indigo-600" />
-                <span className="text-xs font-bold text-slate-600 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white transition-colors">Featured</span>
+                <input
+                  type="checkbox"
+                  checked={form.featured}
+                  onChange={e => change('featured', e.target.checked)}
+                  className="rounded border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-indigo-600"
+                />
+                <span className="text-xs font-bold text-slate-600 dark:text-slate-400">Featured</span>
               </label>
               <label className="flex items-center gap-2 cursor-pointer group">
-                <input type="checkbox" checked={form.published} onChange={e => change('published', e.target.checked)} className="rounded border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-indigo-600" />
-                <span className="text-xs font-bold text-slate-600 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white transition-colors">Published</span>
+                <input
+                  type="checkbox"
+                  checked={form.published}
+                  onChange={e => change('published', e.target.checked)}
+                  className="rounded border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-indigo-600"
+                />
+                <span className="text-xs font-bold text-slate-600 dark:text-slate-400">Published</span>
               </label>
             </div>
           </div>
 
-          <div className="flex gap-3 pt-6 border-t border-slate-200 dark:border-slate-800">
-            <button disabled={busy} className="flex-1 rounded-xl bg-indigo-600 hover:bg-indigo-700 py-3 text-sm font-black text-white shadow-lg shadow-indigo-600/20 flex justify-center items-center gap-2">
-              {busy ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
+          <div className="flex gap-3 pt-4 border-t border-slate-200 dark:border-slate-800">
+            <button
+              disabled={busy}
+              className="flex-1 rounded-xl bg-indigo-600 hover:bg-indigo-700 py-3 text-xs font-black text-white shadow-lg shadow-indigo-600/20 flex justify-center items-center gap-2"
+            >
+              {busy ? <Loader2 className="animate-spin" size={16} /> : <Save size={16} />}
               <span>{editing ? 'Update Certificate' : 'Save Certificate'}</span>
             </button>
             {editing && (
-              <button type="button" onClick={() => { setForm(blank()); setEditing(undefined); setFile(null); }} className="px-6 rounded-xl border border-slate-200 dark:border-slate-800 text-sm font-bold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white">Cancel</button>
+              <button
+                type="button"
+                onClick={() => {
+                  setForm(blank());
+                  setEditing(undefined);
+                  setFile(null);
+                }}
+                className="px-5 rounded-xl border border-slate-200 dark:border-slate-800 text-xs font-bold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+              >
+                Cancel
+              </button>
             )}
           </div>
         </form>
 
         {/* List Section */}
         <section className="space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <h2 className="text-xl font-black text-slate-900 dark:text-white">Certificates ({items.length})</h2>
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-              <input value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="Search certificates..." className="pl-10 pr-4 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-sm text-slate-900 dark:text-white w-full sm:w-64" />
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <h2 className="text-xl font-black text-slate-900 dark:text-white">
+              Certificates ({filteredItems.length} / {items.length})
+            </h2>
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <input
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  placeholder="Search title, issuer, ID..."
+                  className="pl-9 pr-4 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs text-slate-900 dark:text-white w-full sm:w-56"
+                />
+              </div>
+              <select
+                value={selectedCategory}
+                onChange={e => setSelectedCategory(e.target.value)}
+                className="py-2 px-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs text-slate-900 dark:text-white"
+              >
+                <option value="All">All Categories</option>
+                {CERTIFICATE_CATEGORIES.map(c => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
 
           <div className="grid gap-3">
             {filteredItems.map(item => {
-              const displayUrl = resolveCertificateUrl(item.fileUrl || item.sourceAsset || '');
+              const previewUrl = resolveCertificatePreviewImageUrl(item);
+              const originalUrl = resolveCertificateOriginalFileUrl(item);
+              const verifyUrl = item.credentialUrl || detectVerificationUrl(item) || '';
+
               return (
-                <article key={item.id} className="group rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 flex items-center justify-between gap-4 hover:border-indigo-500/50 transition-colors shadow-sm">
-                  <div className="flex items-center gap-4 min-w-0">
-                    <div className="w-14 h-14 rounded-xl bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 overflow-hidden flex-shrink-0 flex items-center justify-center">
-                      {item.fileType === 'pdf' ? (
-                        <FileText className="text-blue-400" size={24} />
+                <article
+                  key={item.id}
+                  className={`group rounded-2xl border p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-all shadow-xs ${
+                    item.displayOrder === 0
+                      ? 'border-indigo-500/60 bg-indigo-50/20 dark:bg-slate-900'
+                      : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-indigo-500/40'
+                  }`}
+                >
+                  <div className="flex items-start sm:items-center gap-4 min-w-0">
+                    <a
+                      href={originalUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="w-16 h-14 rounded-xl bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 overflow-hidden shrink-0 flex items-center justify-center"
+                      title="Open original file"
+                    >
+                      {previewUrl ? (
+                        <img src={previewUrl} alt={item.title} className="w-full h-full object-contain" />
                       ) : (
-                        <img src={displayUrl} alt="" className="w-full h-full object-cover" onError={e => (e.currentTarget.src = 'https://placehold.co/100x100?text=Error')} />
+                        <FileText className="text-indigo-500" size={22} />
                       )}
-                    </div>
-                    <div className="min-w-0">
-                      <h3 className="font-bold text-sm text-slate-900 dark:text-white truncate">{item.title}</h3>
-                      <div className="flex items-center gap-2 text-[10px] font-bold text-slate-500">
-                        <span className="truncate">{item.issuer}</span>
-                        <span className="w-1 h-1 rounded-full bg-slate-700" />
-                        <span className="text-indigo-400">{item.category}</span>
-                      </div>
-                      <div className="flex items-center gap-1.5 mt-1">
-                        {item.fileUrl?.includes('/') ? (
-                          <span className="px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 text-[8px] font-black uppercase tracking-tighter">Supabase</span>
-                        ) : (
-                          <span className="px-1.5 py-0.5 rounded bg-slate-500/10 text-slate-500 text-[8px] font-black uppercase tracking-tighter">Local</span>
+                    </a>
+                    <div className="min-w-0 space-y-1">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="text-[10px] font-mono font-bold text-indigo-600 dark:text-cyan-400">
+                          #{item.displayOrder ?? '—'}
+                        </span>
+                        {item.displayOrder === 0 && (
+                          <span className="text-[9px] font-black uppercase text-amber-600 dark:text-amber-400">
+                            ★ FIRST POSITION
+                          </span>
                         )}
-                        <code className="text-[9px] text-slate-600 truncate max-w-[150px]">{item.fileUrl || item.sourceAsset}</code>
+                        {item.grade && (
+                          <span className="text-[9px] font-black uppercase text-emerald-600 dark:text-emerald-400">
+                            · {item.grade} {item.score || ''}
+                          </span>
+                        )}
                       </div>
-                      {item.credentialUrl && (
-                        <div className="flex items-center gap-1.5 mt-1">
-                          <ShieldCheck size={10} className={item.verificationStatus === 'approved' ? 'text-emerald-500' : 'text-cyan-500'} />
-                          <a href={item.credentialUrl} target="_blank" rel="noreferrer" className={`text-[9px] hover:underline truncate max-w-[200px] ${item.verificationStatus === 'approved' ? 'text-emerald-500' : 'text-cyan-500'}`}>
-                            {item.credentialUrl}
+                      <h3 className="font-bold text-sm text-slate-900 dark:text-white truncate">{item.title}</h3>
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] font-bold text-slate-500">
+                        <span className="truncate">{item.issuer}</span>
+                        <span>·</span>
+                        <span className="text-indigo-500 dark:text-indigo-400">{item.category}</span>
+                        {item.credentialId && (
+                          <>
+                            <span>·</span>
+                            <span className="font-mono text-slate-600 dark:text-slate-300">ID: {item.credentialId}</span>
+                          </>
+                        )}
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-3 pt-0.5">
+                        {verifyUrl && (
+                          <a
+                            href={verifyUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 hover:underline"
+                          >
+                            <ShieldCheck size={12} />
+                            <span>Verify Link</span>
+                            <ExternalLink size={10} />
                           </a>
-                          {item.verificationStatus === 'approved' && <span className="text-[8px] font-black uppercase text-emerald-500 bg-emerald-500/10 px-1 rounded">Approved</span>}
-                        </div>
-                      )}
+                        )}
+                        <a
+                          href={originalUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1 text-[10px] font-bold text-indigo-600 dark:text-cyan-400 hover:underline"
+                        >
+                          <FileText size={12} />
+                          <span>Original File</span>
+                          <ExternalLink size={10} />
+                        </a>
+                      </div>
+
                       {item.suggestedCredentialUrl && (
-                        <div className="mt-2 p-2 rounded-lg bg-cyan-500/5 border border-cyan-500/20 space-y-1.5">
+                        <div className="mt-2 p-2.5 rounded-lg bg-cyan-500/5 border border-cyan-500/20 space-y-1.5">
                           <div className="flex items-center justify-between">
-                            <span className="text-[8px] font-black uppercase text-cyan-400 tracking-widest flex items-center gap-1">
-                              <Zap size={8} /> Suggested Link
+                            <span className="text-[9px] font-black uppercase text-cyan-600 dark:text-cyan-400 tracking-widest flex items-center gap-1">
+                              <Zap size={9} /> Suggested Link
                             </span>
                             <div className="flex gap-1">
-                              <button onClick={() => handleApproveLink(item)} className="p-1 rounded bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 transition-colors" title="Approve & Publish">
-                                <Check size={10} />
+                              <button
+                                type="button"
+                                onClick={() => handleApproveLink(item)}
+                                className="p-1 rounded bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/30 transition-colors"
+                                title="Approve & Publish"
+                              >
+                                <Check size={11} />
                               </button>
-                              <button onClick={() => handleRejectLink(item)} className="p-1 rounded bg-rose-500/20 text-rose-400 hover:bg-rose-500/30 transition-colors" title="Reject Suggestion">
-                                <XCircle size={10} />
+                              <button
+                                type="button"
+                                onClick={() => handleRejectLink(item)}
+                                className="p-1 rounded bg-rose-500/20 text-rose-600 dark:text-rose-400 hover:bg-rose-500/30 transition-colors"
+                                title="Reject Suggestion"
+                              >
+                                <XCircle size={11} />
                               </button>
                             </div>
                           </div>
-                          <a href={item.suggestedCredentialUrl} target="_blank" rel="noreferrer" className="text-[9px] text-slate-400 hover:text-slate-900 dark:hover:text-white truncate block">
+                          <a
+                            href={item.suggestedCredentialUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-[10px] text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white truncate block"
+                          >
                             {item.suggestedCredentialUrl}
                           </a>
                         </div>
                       )}
                     </div>
                   </div>
-                  <div className="flex items-center gap-1 sm:gap-2 opacity-100 sm:opacity-60 group-hover:opacity-100 transition-opacity shrink-0">
-                    <span className="hidden sm:inline text-[10px] font-mono text-slate-500 mr-1">#{item.displayOrder ?? '—'}</span>
-                    <button onClick={() => moveCertificate(item, -1)} disabled={orderedItems[0]?.id === item.id} title="Move up" className="p-2 rounded-xl text-slate-500 bg-slate-500/5 hover:bg-slate-500/10 disabled:opacity-25"><ArrowUp size={15} /></button>
-                    <button onClick={() => moveCertificate(item, 1)} disabled={orderedItems[orderedItems.length - 1]?.id === item.id} title="Move down" className="p-2 rounded-xl text-slate-500 bg-slate-500/5 hover:bg-slate-500/10 disabled:opacity-25"><ArrowDown size={15} /></button>
-                    <button onClick={() => saveCertificate({ ...item, published: !item.published }, item.id)} title={item.published ? 'Unpublish' : 'Publish'} className={`p-2 rounded-xl ${item.published ? 'text-emerald-400 bg-emerald-400/5' : 'text-amber-400 bg-amber-400/5'}`}>
+
+                  {/* Admin Item Controls */}
+                  <div className="flex flex-wrap items-center gap-1.5 shrink-0 self-end sm:self-center">
+                    {item.displayOrder !== 0 && (
+                      <button
+                        type="button"
+                        onClick={() => moveToFirst(item)}
+                        title="Pin to #1 First Position"
+                        className="p-2 rounded-xl text-amber-500 bg-amber-500/10 hover:bg-amber-500/20 cursor-pointer"
+                      >
+                        <Star size={15} />
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => moveCertificate(item, -1)}
+                      disabled={orderedItems[0]?.id === item.id}
+                      title="Move up"
+                      className="p-2 rounded-xl text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-25 cursor-pointer"
+                    >
+                      <ArrowUp size={15} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => moveCertificate(item, 1)}
+                      disabled={orderedItems[orderedItems.length - 1]?.id === item.id}
+                      title="Move down"
+                      className="p-2 rounded-xl text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-25 cursor-pointer"
+                    >
+                      <ArrowDown size={15} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => saveCertificate({ ...item, published: !item.published }, item.id)}
+                      title={item.published ? 'Unpublish' : 'Publish'}
+                      className={`p-2 rounded-xl cursor-pointer ${
+                        item.published ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/10' : 'text-amber-600 dark:text-amber-400 bg-amber-500/10'
+                      }`}
+                    >
                       {item.published ? <Eye size={16} /> : <EyeOff size={16} />}
                     </button>
-                    <button onClick={() => edit(item)} className="p-2 rounded-xl text-indigo-400 bg-indigo-400/5 hover:bg-indigo-400/10"><Edit2 size={16} /></button>
-                    <button onClick={() => setDeletingCert(item)} className="p-2 rounded-xl text-rose-400 bg-rose-400/5 hover:bg-rose-400/10"><Trash2 size={16} /></button>
+                    <button
+                      type="button"
+                      onClick={() => edit(item)}
+                      title="Edit Certificate"
+                      className="p-2 rounded-xl text-indigo-600 dark:text-indigo-400 bg-indigo-500/10 hover:bg-indigo-500/20 cursor-pointer"
+                    >
+                      <Edit2 size={16} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDeletingCert(item)}
+                      title="Delete Certificate"
+                      className="p-2 rounded-xl text-rose-600 dark:text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 cursor-pointer"
+                    >
+                      <Trash2 size={16} />
+                    </button>
                   </div>
                 </article>
               );
@@ -758,39 +1096,47 @@ export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
       {/* Diagnostic Modal */}
       <AnimatePresence>
         {diagnosticOpen && (
-          <div className="fixed inset-0 z-[100] bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4">
-            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }} className="bg-slate-900 border border-slate-800 rounded-3xl max-w-lg w-full p-8 space-y-6">
+          <div className="fixed inset-0 z-[100] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 20 }}
+              className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-lg w-full p-6 sm:p-8 space-y-6 shadow-2xl"
+            >
               <div className="flex justify-between items-start">
                 <div className="space-y-1">
-                  <h3 className="text-xl font-black text-white">Supabase Diagnostic</h3>
-                  <p className="text-xs text-slate-400">Verifying Storage proxy and Firestore persistence.</p>
+                  <h3 className="text-xl font-black text-slate-900 dark:text-white">Supabase + Firestore Diagnostic</h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Verifying Storage proxy and Firestore persistence.</p>
                 </div>
-                <button onClick={() => setDiagnosticOpen(false)} className="text-slate-500 hover:text-white font-bold text-xs">Dismiss</button>
+                <button
+                  type="button"
+                  onClick={() => setDiagnosticOpen(false)}
+                  className="text-slate-500 hover:text-slate-900 dark:hover:text-white font-bold text-xs cursor-pointer"
+                >
+                  Dismiss
+                </button>
               </div>
 
               {diagnosticRunning ? (
                 <div className="py-12 text-center space-y-4">
                   <Loader2 className="w-10 h-10 text-indigo-500 animate-spin mx-auto" />
-                  <p className="text-xs font-bold text-slate-300">Testing End-to-End Bridge...</p>
-                  <p className="text-[10px] text-slate-500 uppercase tracking-widest">Auth → Local Fetch → Supabase Proxy → Firestore</p>
+                  <p className="text-xs font-bold text-slate-600 dark:text-slate-300">Testing End-to-End Bridge...</p>
                 </div>
               ) : diagnosticResult ? (
                 <div className="space-y-4">
-                  <div className={`p-4 rounded-2xl flex items-start gap-3 ${diagnosticResult.success ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'}`}>
-                    {diagnosticResult.success ? <CheckCircle2 size={20} /> : <AlertCircle size={20} />}
+                  <div
+                    className={`p-4 rounded-2xl flex items-start gap-3 ${
+                      diagnosticResult.success
+                        ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20'
+                        : 'bg-rose-500/10 text-rose-700 dark:text-rose-400 border border-rose-500/20'
+                    }`}
+                  >
+                    {diagnosticResult.success ? <CheckCircle2 size={20} className="shrink-0" /> : <AlertCircle size={20} className="shrink-0" />}
                     <div>
-                      <p className="text-sm font-bold">{diagnosticResult.success ? 'System Operational' : 'Diagnostic Failure'}</p>
-                      <p className="text-xs opacity-80 mt-1">{diagnosticResult.details}</p>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3 text-[11px] font-mono">
-                    <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
-                      <span className="text-slate-500 block uppercase mb-1">Stage</span>
-                      <span className="text-white font-bold">{diagnosticResult.stage}</span>
-                    </div>
-                    <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
-                      <span className="text-slate-500 block uppercase mb-1">Supabase Path</span>
-                      <span className="text-white font-bold truncate block">{diagnosticResult.storagePath || '---'}</span>
+                      <p className="text-sm font-bold">
+                        {diagnosticResult.success ? 'System Operational' : 'Diagnostic Report'}
+                      </p>
+                      <p className="text-xs opacity-90 mt-1">{diagnosticResult.details}</p>
                     </div>
                   </div>
                 </div>
@@ -804,27 +1150,43 @@ export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
       <AnimatePresence>
         {deletingCert && (
           <div className="fixed inset-0 z-[100] bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
-            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className="bg-slate-900 border border-slate-800 rounded-3xl max-w-sm w-full p-8 text-center space-y-6">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-sm w-full p-6 sm:p-8 text-center space-y-6 shadow-2xl"
+            >
               <div className="w-16 h-16 rounded-3xl bg-rose-500/10 text-rose-500 flex items-center justify-center mx-auto">
                 <Trash2 size={32} />
               </div>
               <div className="space-y-2">
-                <h3 className="text-xl font-black text-white">Delete Certificate?</h3>
-                <p className="text-xs text-slate-400">Removing <span className="text-white font-bold">"{deletingCert.title}"</span> will delete the Firestore record and the file from Supabase Storage.</p>
+                <h3 className="text-xl font-black text-slate-900 dark:text-white">Delete Certificate?</h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Removing <span className="text-slate-900 dark:text-white font-bold">"{deletingCert.title}"</span> will delete the record from Firestore.
+                </p>
               </div>
               <div className="flex gap-3">
-                <button onClick={() => setDeletingCert(null)} className="flex-1 py-3 rounded-xl border border-slate-800 text-sm font-bold text-slate-400">Cancel</button>
-                <button onClick={confirmDelete} className="flex-1 py-3 rounded-xl bg-rose-600 text-white text-sm font-black">Delete Everywhere</button>
+                <button
+                  type="button"
+                  onClick={() => setDeletingCert(null)}
+                  className="flex-1 py-3 rounded-xl border border-slate-200 dark:border-slate-800 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={confirmDelete}
+                  className="flex-1 py-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-xs font-black text-white cursor-pointer"
+                >
+                  Delete
+                </button>
               </div>
             </motion.div>
           </div>
         )}
       </AnimatePresence>
 
-      <AIScanner 
-        isOpen={isAIScannerOpen}
-        onClose={() => setIsAIScannerOpen(false)}
-      />
+      <AIScanner isOpen={isAIScannerOpen} onClose={() => setIsAIScannerOpen(false)} />
     </div>
   );
 };

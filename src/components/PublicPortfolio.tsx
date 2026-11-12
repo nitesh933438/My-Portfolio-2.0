@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import { Navbar } from './Navbar';
 import { Hero } from './Hero';
 import { About } from './About';
@@ -20,6 +21,24 @@ import { Project } from '../data/portfolio';
 export const PublicPortfolio: React.FC<{ theme: any, setTheme: any }> = ({ theme, setTheme }) => {
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [resumeModalOpen, setResumeModalOpen] = useState(false);
+  const location = useLocation();
+
+  // Handle hash navigation (e.g. returning to #certifications or #projects)
+  useEffect(() => {
+    const rawHash = window.location.hash;
+    // Extract section if present after public route, e.g. #/certifications or #certifications
+    const match = rawHash.match(/#\/?([a-zA-Z0-9_-]+)$/);
+    const targetSection = match ? match[1] : '';
+
+    if (targetSection && targetSection !== 'admin' && !targetSection.startsWith('verify')) {
+      const el = document.getElementById(targetSection);
+      if (el) {
+        setTimeout(() => {
+          el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, 80);
+      }
+    }
+  }, [location.pathname]);
 
   return (
     <div className="relative min-h-screen bg-white dark:bg-slate-950 transition-colors duration-500 overflow-x-hidden">

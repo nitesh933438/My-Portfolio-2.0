@@ -89,16 +89,18 @@ export const About: React.FC<AboutProps> = ({ onOpenResume }) => {
               </div>
 
               <div className="pt-2 flex flex-col sm:flex-row gap-2.5">
-                <a
-                  href="#contact"
-                  className="flex-1 text-center py-3 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-indigo-600 dark:hover:bg-indigo-500 text-white font-semibold text-xs transition-colors active:scale-95 shadow-sm"
+                <button
+                  type="button"
+                  onClick={() => document.getElementById('contact')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                  className="flex-1 text-center py-3 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-indigo-600 dark:hover:bg-indigo-500 text-white font-semibold text-xs transition-colors active:scale-95 shadow-sm cursor-pointer"
                 >
                   Get in Touch
-                </a>
+                </button>
                 {onOpenResume && (
                   <button
+                    type="button"
                     onClick={onOpenResume}
-                    className="flex-1 text-center py-3 px-4 rounded-xl border border-slate-300 dark:border-slate-700 hover:border-indigo-500 dark:hover:border-indigo-500 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 font-semibold text-xs transition-colors active:scale-95 shadow-sm inline-flex items-center justify-center gap-2"
+                    className="flex-1 text-center py-3 px-4 rounded-xl border border-slate-300 dark:border-slate-700 hover:border-indigo-500 dark:hover:border-indigo-500 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 font-semibold text-xs transition-colors active:scale-95 shadow-sm inline-flex items-center justify-center gap-2 cursor-pointer"
                   >
                     <FileText className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
                     <span>View Resume</span>
