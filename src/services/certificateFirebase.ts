@@ -1,4 +1,4 @@
-import { collection, addDoc, deleteDoc, doc, onSnapshot, orderBy, query, setDoc, where, getDocs } from 'firebase/firestore';
+import { collection, addDoc, deleteDoc, doc, onSnapshot, orderBy, query, setDoc, where, getDocs, writeBatch } from 'firebase/firestore';
 import { User } from 'firebase/auth';
 import { db, auth, isUserAdmin } from './academicFirebase';
 import { uploadFileProxy, deleteFileProxy, getStorageUrl } from './supabaseStorage';
@@ -23,7 +23,12 @@ const isSupabaseStoragePath = (cleanPath: string): boolean => {
  */
 export const resolveCertificateUrl = (pathOrUrl: string): string => {
   if (!pathOrUrl) return '';
-  if (pathOrUrl.startsWith('http://') || pathOrUrl.startsWith('https://') || pathOrUrl.startsWith('data:')) {
+  if (
+    pathOrUrl.startsWith('http://') ||
+    pathOrUrl.startsWith('https://') ||
+    pathOrUrl.startsWith('data:') ||
+    pathOrUrl.startsWith('blob:')
+  ) {
     return pathOrUrl;
   }
 
@@ -72,7 +77,14 @@ export const resolveCertificatePreviewImageUrl = (cert: PortfolioCertificate): s
   const candidates = [cert.imageUrl, cert.sourceAsset, cert.fileUrl].filter(Boolean) as string[];
   for (const candidate of candidates) {
     const lower = candidate.toLowerCase();
-    if (lower.endsWith('.jpg') || lower.endsWith('.jpeg') || lower.endsWith('.png') || lower.endsWith('.webp')) {
+    if (
+      lower.startsWith('data:image/') ||
+      lower.startsWith('blob:') ||
+      lower.endsWith('.jpg') ||
+      lower.endsWith('.jpeg') ||
+      lower.endsWith('.png') ||
+      lower.endsWith('.webp')
+    ) {
       return resolveCertificateUrl(candidate);
     }
   }
@@ -288,21 +300,28 @@ export const saveCertificate = async (data: Omit<PortfolioCertificate, 'id'>, id
 
 /**
  * Automatically normalizes and persists sequential 0-based displayOrder (0, 1, 2... N-1)
- * for all certificates after any add, delete, or reorder operation.
+ * for all certificates in a single atomic Firestore writeBatch so UI stays instant.
  */
 export const reindexCertificatesInFirestore = async (orderedItems: PortfolioCertificate[]) => {
   if (!isUserAdmin(auth.currentUser)) return;
-  const normalized = orderedItems.map((item, idx) => ({ ...item, displayOrder: idx }));
-  const chunkSize = 8;
-  for (let i = 0; i < normalized.length; i += chunkSize) {
-    const chunk = normalized.slice(i, i + chunkSize);
-    await Promise.all(
-      chunk.map(item => {
-        const { id, ...data } = item;
-        return saveCertificate({ ...data, displayOrder: item.displayOrder }, id);
-      })
+  const batch = writeBatch(db);
+  const now = new Date().toISOString();
+
+  orderedItems.forEach((item, idx) => {
+    if (!item.id) return;
+    const { id, ...data } = item;
+    const cleanPayload = Object.fromEntries(
+      Object.entries({
+        ...data,
+        displayOrder: idx,
+        deleted: false,
+        updatedAt: now
+      }).filter(([_, v]) => v !== undefined)
     );
-  }
+    batch.set(doc(db, 'certifications', id), cleanPayload, { merge: true });
+  });
+
+  await batch.commit();
 };
 
 /**

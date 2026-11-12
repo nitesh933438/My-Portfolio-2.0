@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import { ExternalLink, Github, ArrowRight, Sparkles, Rocket } from 'lucide-react';
-import { Project } from '../data/portfolio';
+import { Project, PROJECTS } from '../data/portfolio';
 import { subscribeToProjects } from '../services/projectFirebase';
 import { ScrollReveal } from './ScrollReveal';
 import { resolveProjectImageUrl } from '../services/projectFirebase';
@@ -11,7 +11,7 @@ interface FeaturedProjectsProps {
 }
 
 export const FeaturedProjects: React.FC<FeaturedProjectsProps> = ({ onSelectProject }) => {
-  const [projects, setProjects] = useState<Project[]>([]);
+  const [projects, setProjects] = useState<Project[]>(PROJECTS);
   useEffect(() => subscribeToProjects(setProjects), []);
   const featuredList = projects.filter((p) => p.featured).slice(0, 6);
 
@@ -50,7 +50,9 @@ export const FeaturedProjects: React.FC<FeaturedProjectsProps> = ({ onSelectProj
                   <img
                     src={resolveProjectImageUrl(project.mainScreenshot)}
                     alt={project.title}
-                    className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-1000"
+                    loading="lazy"
+                    decoding="async"
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                     onError={(e) => {
                       (e.target as HTMLImageElement).style.opacity = '0.3';
                     }}

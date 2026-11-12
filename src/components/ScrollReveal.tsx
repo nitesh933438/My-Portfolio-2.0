@@ -17,11 +17,11 @@ export const ScrollReveal: React.FC<ScrollRevealProps> = ({
   const shouldReduceMotion = useReducedMotion();
   const getInitialProps = () => {
     switch (direction) {
-      case "up": return { y: 40, opacity: 0 };
-      case "down": return { y: -40, opacity: 0 };
-      case "left": return { x: 40, opacity: 0 };
-      case "right": return { x: -40, opacity: 0 };
-      default: return { y: 40, opacity: 0 };
+      case "up": return { y: 16, opacity: 0 };
+      case "down": return { y: -16, opacity: 0 };
+      case "left": return { x: 16, opacity: 0 };
+      case "right": return { x: -16, opacity: 0 };
+      default: return { y: 16, opacity: 0 };
     }
   };
 
@@ -33,9 +33,9 @@ export const ScrollReveal: React.FC<ScrollRevealProps> = ({
       }}
       initial={shouldReduceMotion ? false : 'hidden'}
       whileInView={shouldReduceMotion ? undefined : 'visible'}
-      transition={shouldReduceMotion ? { duration: 0 } : { duration: 0.5, delay, ease: [0.22, 1, 0.36, 1] }}
-      viewport={{ once: true, amount: 0.1 }}
-      className={width === "100%" ? "w-full" : "w-fit"}
+      transition={shouldReduceMotion ? { duration: 0 } : { duration: 0.28, delay: Math.min(delay, 0.12), ease: [0.22, 1, 0.36, 1] }}
+      viewport={{ once: true, amount: 0.05, margin: '0px 0px -20px 0px' }}
+      className={`${width === "100%" ? "w-full" : "w-fit"} will-change-transform`}
     >
       {children}
     </motion.div>

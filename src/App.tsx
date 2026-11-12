@@ -1,7 +1,6 @@
-import { useState, useEffect, FC, lazy, Suspense } from 'react';
+import { useState, useEffect, FC } from 'react';
 import { HashRouter, Routes, Route, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { LoadingScreen } from './components/LoadingScreen';
 import { PublicPortfolio } from './components/PublicPortfolio';
 import { PortfolioProvider } from './context/PortfolioContext';
 import { AIScannerProvider } from './context/AIScannerContext';
@@ -17,20 +16,19 @@ import {
 import { initializeProjectsInFirestore } from './services/projectFirebase';
 import { initializeCertificatesInFirestore } from './services/certificateFirebase';
 
-
-// Admin Components
+// Admin & Verification Components (Eagerly loaded for 0ms instant navigation)
 import { AdminAuthGuard } from './components/AdminAuthGuard';
 import { AdminLayout } from './components/AdminLayout';
-const AdminDashboardPage = lazy(() => import('./components/AdminDashboardPage').then(m => ({ default: m.AdminDashboardPage })));
-const CertificateAdminPage = lazy(() => import('./components/CertificateAdminPage').then(m => ({ default: m.CertificateAdminPage })));
-const ProjectsManager = lazy(() => import('./components/admin/ProjectsManager').then(m => ({ default: m.ProjectsManager })));
-const EducationManager = lazy(() => import('./components/admin/EducationManager').then(m => ({ default: m.EducationManager })));
-const MessagesManager = lazy(() => import('./components/admin/MessagesManager').then(m => ({ default: m.MessagesManager })));
-const SettingsManager = lazy(() => import('./components/admin/SettingsManager').then(m => ({ default: m.SettingsManager })));
-const AIAssistantPage = lazy(() => import('./components/admin/AIAssistantPage').then(m => ({ default: m.AIAssistantPage })));
-const SkillsManager = lazy(() => import('./components/admin/SkillsManager').then(m => ({ default: m.SkillsManager })));
-const ExperienceManager = lazy(() => import('./components/admin/ExperienceManager').then(m => ({ default: m.ExperienceManager })));
-const CertificateVerifyPage = lazy(() => import('./components/CertificateVerifyPage').then(m => ({ default: m.CertificateVerifyPage })));
+import { AdminDashboardPage } from './components/AdminDashboardPage';
+import { CertificateAdminPage } from './components/CertificateAdminPage';
+import { ProjectsManager } from './components/admin/ProjectsManager';
+import { EducationManager } from './components/admin/EducationManager';
+import { MessagesManager } from './components/admin/MessagesManager';
+import { SettingsManager } from './components/admin/SettingsManager';
+import { AIAssistantPage } from './components/admin/AIAssistantPage';
+import { SkillsManager } from './components/admin/SkillsManager';
+import { ExperienceManager } from './components/admin/ExperienceManager';
+import { CertificateVerifyPage } from './components/CertificateVerifyPage';
 import { SITE_CONFIG } from './data/portfolio';
 
 type ThemeMode = 'light' | 'dark' | 'system';
@@ -63,11 +61,11 @@ const AnimatedAppRoutes: FC<AnimatedAppRoutesProps> = ({ theme, setTheme, liveUn
         initial={{ opacity: 0 }}
         animate={{ 
           opacity: 1,
-          transition: { duration: 0.28, ease: [0.22, 1, 0.36, 1] }
+          transition: { duration: 0.15, ease: [0.22, 1, 0.36, 1] }
         }}
         exit={{ 
           opacity: 0,
-          transition: { duration: 0.16, ease: [0.22, 1, 0.36, 1] }
+          transition: { duration: 0.1, ease: [0.22, 1, 0.36, 1] }
         }}
         className={
           location.pathname.startsWith('/admin')
@@ -76,16 +74,8 @@ const AnimatedAppRoutes: FC<AnimatedAppRoutesProps> = ({ theme, setTheme, liveUn
         }
       >
         <Routes location={location}>
-          <Route path="/verify/:certId" element={
-            <Suspense fallback={<LoadingScreen />}>
-              <CertificateVerifyPage />
-            </Suspense>
-          } />
-          <Route path="/verify" element={
-            <Suspense fallback={<LoadingScreen />}>
-              <CertificateVerifyPage />
-            </Suspense>
-          } />
+          <Route path="/verify/:certId" element={<CertificateVerifyPage />} />
+          <Route path="/verify" element={<CertificateVerifyPage />} />
           <Route path="/*" element={<PublicPortfolio theme={theme} setTheme={setTheme} />} />
           <Route path="/admin" element={
             <AdminAuthGuard>
@@ -93,50 +83,18 @@ const AnimatedAppRoutes: FC<AnimatedAppRoutesProps> = ({ theme, setTheme, liveUn
             </AdminAuthGuard>
           }>
             <Route index element={
-              <Suspense fallback={<LoadingScreen />}>
-                <AdminDashboardPage theme={theme} setTheme={setTheme} onNavigateHome={() => window.location.href = '#/'} currentUniversity={liveUniversity} />
-              </Suspense>
+              <AdminDashboardPage theme={theme} setTheme={setTheme} onNavigateHome={() => window.location.href = '#/'} currentUniversity={liveUniversity} />
             } />
             <Route path="certificates" element={
-              <Suspense fallback={<LoadingScreen />}>
-                <CertificateAdminPage onBack={() => window.location.href = '#/admin'} />
-              </Suspense>
+              <CertificateAdminPage onBack={() => window.location.href = '#/admin'} />
             } />
-            <Route path="projects" element={
-              <Suspense fallback={<LoadingScreen />}>
-                <ProjectsManager />
-              </Suspense>
-            } />
-            <Route path="education" element={
-              <Suspense fallback={<LoadingScreen />}>
-                <EducationManager />
-              </Suspense>
-            } />
-            <Route path="messages" element={
-              <Suspense fallback={<LoadingScreen />}>
-                <MessagesManager />
-              </Suspense>
-            } />
-            <Route path="skills" element={
-              <Suspense fallback={<LoadingScreen />}>
-                <SkillsManager />
-              </Suspense>
-            } />
-            <Route path="experience" element={
-              <Suspense fallback={<LoadingScreen />}>
-                <ExperienceManager />
-              </Suspense>
-            } />
-            <Route path="settings" element={
-              <Suspense fallback={<LoadingScreen />}>
-                <SettingsManager />
-              </Suspense>
-            } />
-            <Route path="ai" element={
-              <Suspense fallback={<LoadingScreen />}>
-                <AIAssistantPage />
-              </Suspense>
-            } />
+            <Route path="projects" element={<ProjectsManager />} />
+            <Route path="education" element={<EducationManager />} />
+            <Route path="messages" element={<MessagesManager />} />
+            <Route path="skills" element={<SkillsManager />} />
+            <Route path="experience" element={<ExperienceManager />} />
+            <Route path="settings" element={<SettingsManager />} />
+            <Route path="ai" element={<AIAssistantPage />} />
           </Route>
         </Routes>
       </motion.div>
@@ -153,11 +111,6 @@ const App: FC = () => {
   const [liveSettings, setLiveSettings] = useState<SiteSettings>(SITE_CONFIG as SiteSettings);
 
   useEffect(() => {
-    initializeAcademicDataInFirestore();
-    initializeSiteSettingsInFirestore();
-    initializeProjectsInFirestore();
-    initializeCertificatesInFirestore();
-    
     const unsubUniversity = subscribeToUniversityRecord((data) => {
       setLiveUniversity(data);
     });
@@ -165,8 +118,17 @@ const App: FC = () => {
     const unsubSettings = subscribeToSiteSettings((data) => {
       setLiveSettings(data);
     });
+
+    // Defer background initialization checks so initial render & scrolling are 100% unblocked
+    const seedTimer = window.setTimeout(() => {
+      initializeAcademicDataInFirestore();
+      initializeSiteSettingsInFirestore();
+      initializeProjectsInFirestore();
+      initializeCertificatesInFirestore();
+    }, 1200);
     
     return () => {
+      window.clearTimeout(seedTimer);
       unsubUniversity();
       unsubSettings();
     };
@@ -186,8 +148,6 @@ const App: FC = () => {
     mediaQuery.addEventListener('change', listener);
     return () => mediaQuery.removeEventListener('change', listener);
   }, [theme]);
-
-
 
   return (
     <AIScannerProvider>

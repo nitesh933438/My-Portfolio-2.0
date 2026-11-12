@@ -33,7 +33,7 @@ import { auth } from '../../services/academicFirebase';
 import { useAdminToast } from './AdminToastContext';
 import { useAIScanner } from '../../context/AIScannerContext';
 import { ProjectScreenshotManager } from './ProjectScreenshotManager';
-import { apiUrl, readJsonResponse } from '../../services/api';
+import { generateProjectDescriptionSmart } from '../../services/api';
 
 const PROJECT_CATEGORIES: ProjectCategory[] = [
   'Full-Stack Development',
@@ -87,7 +87,9 @@ const buildProjectScreenshotGallery = (project: Project): ProjectScreenshot[] =>
 };
 
 export const ProjectsManager: React.FC = () => {
-  const [projects, setProjects] = useState<Project[]>([]);
+  const [projects, setProjects] = useState<Project[]>(() =>
+    PROJECTS.map((p, idx) => ({ ...p, displayOrder: idx + 1 }))
+  );
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [editingProject, setEditingProject] = useState<Project | null>(null);
@@ -364,27 +366,16 @@ export const ProjectsManager: React.FC = () => {
     }
     setAiGenerating(true);
     try {
-      const idToken = await auth.currentUser?.getIdToken();
-      if (!idToken) throw new Error('Unauthorized');
+      const idToken = (await auth.currentUser?.getIdToken()) || '';
 
-      const response = await fetch(apiUrl('/api/ai/generate-description'), {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${idToken}`
-        },
-        body: JSON.stringify({
-          type: 'project',
-          context: {
-            title: editingProject.title,
-            category: editingProject.category,
-            techStack: techStackInput.split(',').map(s => s.trim()).filter(Boolean)
-          }
-        })
+      const result = await generateProjectDescriptionSmart({
+        title: editingProject.title,
+        category: editingProject.category,
+        techStack: techStackInput.split(',').map(s => s.trim()).filter(Boolean),
+        idToken
       });
 
-      const result = await readJsonResponse<any>(response);
-      if (!response.ok || result.success === false) throw new Error(result.error || 'AI generation failed');
+      if (!result || result.success === false) throw new Error(result?.error || 'AI generation failed');
 
       setEditingProject({
         ...editingProject,
@@ -490,7 +481,9 @@ export const ProjectsManager: React.FC = () => {
                 <img
                   src={resolveProjectImageUrl(coverUrl)}
                   alt={project.title}
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                  loading="lazy"
+                  decoding="async"
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                   onError={(e) => { (e.target as HTMLImageElement).style.opacity = '0.2'; }}
                 />
                 <div className="absolute top-3 left-3 flex flex-wrap gap-1.5">

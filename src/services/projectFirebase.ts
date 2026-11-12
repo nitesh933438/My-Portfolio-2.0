@@ -1,4 +1,4 @@
-import { collection, addDoc, updateDoc, deleteDoc, doc, onSnapshot, query, orderBy, getDocs } from 'firebase/firestore';
+import { collection, addDoc, updateDoc, setDoc, deleteDoc, doc, onSnapshot, query, orderBy, getDocs, writeBatch } from 'firebase/firestore';
 import { db, auth, isUserAdmin } from './academicFirebase';
 import { Project, ProjectScreenshot, PROJECTS } from '../data/portfolio';
 import { getProjectScreenshotMetadata, isExcludedProjectScreenshot } from '../data/projectScreenshotCatalog';
@@ -223,7 +223,7 @@ export const saveProject = async (project: Omit<Project, 'id'>, id?: string): Pr
   }
 
   if (id) {
-    await updateDoc(doc(db, 'projects', id), payload);
+    await setDoc(doc(db, 'projects', id), payload, { merge: true });
     return id;
   } else {
     const docRef = await addDoc(projectsColRef, { ...payload, createdAt: new Date().toISOString() });
@@ -233,16 +233,23 @@ export const saveProject = async (project: Omit<Project, 'id'>, id?: string): Pr
 
 /**
  * Automatically normalizes and persists sequential 1-based displayOrder (1, 2, 3... N)
- * across all projects after any add, delete, or reorder operation.
+ * across all projects in a single atomic Firestore writeBatch.
  */
 export const reindexProjectsInFirestore = async (orderedProjects: Project[]) => {
   if (!isUserAdmin(auth.currentUser)) return;
-  const normalized = orderedProjects.map((p, idx) => ({ ...p, displayOrder: idx + 1 }));
-  await Promise.all(
-    normalized
-      .filter(p => Boolean(p.id))
-      .map(p => updateDoc(doc(db, 'projects', p.id), { displayOrder: p.displayOrder, updatedAt: new Date().toISOString() }))
-  );
+  const batch = writeBatch(db);
+  const now = new Date().toISOString();
+
+  orderedProjects.forEach((p, idx) => {
+    if (!p.id) return;
+    batch.set(
+      doc(db, 'projects', p.id),
+      { displayOrder: idx + 1, updatedAt: now },
+      { merge: true }
+    );
+  });
+
+  await batch.commit();
 };
 
 export const saveProjectScreenshots = async (projectId: string, screenshots: ProjectScreenshot[]) => {
@@ -250,12 +257,16 @@ export const saveProjectScreenshots = async (projectId: string, screenshots: Pro
 
   const synced = normalizeAndSyncScreenshots(screenshots);
 
-  await updateDoc(doc(db, 'projects', projectId), {
-    screenshotMetadata: synced.items,
-    mainScreenshot: synced.mainScreenshot,
-    additionalScreenshots: synced.additionalScreenshots,
-    updatedAt: new Date().toISOString()
-  });
+  await setDoc(
+    doc(db, 'projects', projectId),
+    {
+      screenshotMetadata: synced.items,
+      mainScreenshot: synced.mainScreenshot,
+      additionalScreenshots: synced.additionalScreenshots,
+      updatedAt: new Date().toISOString()
+    },
+    { merge: true }
+  );
 };
 
 /**

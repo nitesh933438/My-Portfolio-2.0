@@ -33,17 +33,30 @@ interface AdminLayoutProps {
 }
 
 export const AdminLayout: React.FC<AdminLayoutProps> = ({ theme, setTheme }) => {
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return window.innerWidth >= 1280;
+    }
+    return true;
+  });
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const mainScrollRef = useRef<HTMLElement | null>(null);
+  const mobileTabsRef = useRef<HTMLDivElement | null>(null);
   const navigate = useNavigate();
   const location = useLocation();
 
   useEffect(() => {
     setMobileMenuOpen(false);
     if (mainScrollRef.current) {
-      mainScrollRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+      mainScrollRef.current.scrollTo({ top: 0, behavior: 'auto' });
+    }
+    // Keep active mobile tab pill centered in horizontal strip
+    if (mobileTabsRef.current) {
+      const activeEl = mobileTabsRef.current.querySelector('[aria-current="page"]') as HTMLElement | null;
+      if (activeEl) {
+        activeEl.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+      }
     }
   }, [location.pathname]);
 
@@ -202,7 +215,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ theme, setTheme }) => 
       <div className="h-dvh w-full bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex overflow-hidden">
         {/* Desktop Sidebar: Fixed full viewport height with its own internal scroll */}
         <aside
-          className={`hidden lg:flex flex-col h-full shrink-0 transition-all duration-300 overflow-hidden z-20 ${
+          className={`hidden lg:flex flex-col h-full shrink-0 transition-all duration-200 overflow-hidden z-20 ${
             sidebarOpen ? 'w-64' : 'w-20'
           }`}
         >
@@ -236,7 +249,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ theme, setTheme }) => 
         {/* Right Side Column: Fixed Header + Independently Scrollable Main Viewport */}
         <div className="flex-1 flex flex-col h-full min-w-0 overflow-hidden">
           {/* Top Header */}
-          <header className="shrink-0 min-h-14 sm:min-h-16 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 px-3 sm:px-6 py-2 flex items-center justify-between gap-2 z-30">
+          <header className="shrink-0 min-h-14 sm:min-h-16 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 px-2.5 sm:px-6 py-2 flex items-center justify-between gap-2 z-30">
             <div className="flex items-center gap-2 sm:gap-3 min-w-0">
               <button
                 type="button"
@@ -244,26 +257,26 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ theme, setTheme }) => 
                 className="lg:hidden p-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 shrink-0 cursor-pointer"
                 aria-label="Open sidebar navigation"
               >
-                <Menu size={20} />
+                <Menu size={19} />
               </button>
               <div className="min-w-0">
                 <h1 className="text-sm sm:text-lg font-black text-slate-900 dark:text-white truncate">
                   {activeNavItem.label}
                 </h1>
-                <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider hidden sm:block">
+                <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider hidden sm:block truncate">
                   Real-Time Portfolio CMS • {theme.toUpperCase()} Mode
                 </p>
               </div>
             </div>
 
-            <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
+            <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
               <a
                 href="#/"
                 className="flex items-center gap-1.5 px-2.5 sm:px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-bold hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors whitespace-nowrap"
                 title="Open Public Portfolio"
               >
                 <ExternalLink size={14} className="text-indigo-600 dark:text-indigo-400 shrink-0" />
-                <span className="hidden md:inline">View Portfolio</span>
+                <span className="hidden md:inline">Portfolio</span>
               </a>
 
               <button
@@ -273,7 +286,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ theme, setTheme }) => 
                 title="Universal AI Scanner & Auto-Fill"
               >
                 <Sparkles size={14} className="shrink-0" />
-                <span className="hidden sm:inline">AI Scan</span>
+                <span className="hidden xs:inline sm:inline">AI Scan</span>
               </button>
 
               <button
@@ -282,29 +295,61 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ theme, setTheme }) => 
                 className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer"
                 title="Refresh Data"
               >
-                <RefreshCw size={16} />
+                <RefreshCw size={15} />
               </button>
 
+              {/* Segmented 3-Mode Theme Switcher on Tablet/Desktop (md+) */}
+              <div
+                role="group"
+                aria-label="Admin Theme Switcher"
+                className="hidden md:flex items-center p-1 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700/80"
+              >
+                {(['light', 'dark', 'system'] as const).map((mode) => {
+                  const active = theme === mode;
+                  return (
+                    <button
+                      key={mode}
+                      type="button"
+                      onClick={() => setTheme(mode)}
+                      title={`Switch to ${mode} mode`}
+                      className={`px-2 py-1 rounded-lg text-[10px] font-bold capitalize flex items-center gap-1 transition-all cursor-pointer ${
+                        active
+                          ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-cyan-400 shadow-2xs'
+                          : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                      }`}
+                    >
+                      {mode === 'light' && <Sun size={12} className="text-amber-500" />}
+                      {mode === 'dark' && <Moon size={12} className="text-indigo-400" />}
+                      {mode === 'system' && <Monitor size={12} className="text-cyan-500" />}
+                      <span className="hidden xl:inline">{mode}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Compact Cycle Theme Button on Mobile (< md) */}
               <button
                 type="button"
                 onClick={cycleTheme}
-                className="px-2.5 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors flex items-center gap-1.5 text-xs font-bold cursor-pointer"
-                title={`Theme Mode: ${theme.toUpperCase()} (Click to cycle Light / Dark / System)`}
+                className="md:hidden p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors flex items-center gap-1 text-xs font-bold cursor-pointer"
+                title={`Theme Mode: ${theme.toUpperCase()} (Tap to switch Light / Dark / System)`}
               >
                 {theme === 'dark' ? (
-                  <Moon size={16} className="text-indigo-400" />
+                  <Moon size={15} className="text-indigo-400" />
                 ) : theme === 'light' ? (
-                  <Sun size={16} className="text-amber-500" />
+                  <Sun size={15} className="text-amber-500" />
                 ) : (
-                  <Monitor size={16} className="text-cyan-500" />
+                  <Monitor size={15} className="text-cyan-500" />
                 )}
-                <span className="hidden xl:inline capitalize">{theme}</span>
               </button>
             </div>
           </header>
 
           {/* Mobile & Tablet Quick Navigation Strip (Scrolls horizontally, stays fixed above main content) */}
-          <div className="lg:hidden shrink-0 bg-white/90 dark:bg-slate-900/90 border-b border-slate-200 dark:border-slate-800 px-2.5 py-1.5 flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+          <div
+            ref={mobileTabsRef}
+            className="lg:hidden shrink-0 bg-white/95 dark:bg-slate-900/95 border-b border-slate-200 dark:border-slate-800 px-2.5 py-1.5 flex items-center gap-1.5 overflow-x-auto no-scrollbar"
+          >
             {navItems.map((item) => (
               <NavLink
                 key={item.path}
@@ -327,27 +372,11 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ theme, setTheme }) => 
           {/* Independently Scrollable Right Content Area */}
           <main
             ref={mainScrollRef}
-            className="flex-1 p-3 sm:p-5 lg:p-8 overflow-y-auto overflow-x-hidden overscroll-contain min-w-0 custom-scrollbar"
+            className="flex-1 p-3 sm:p-5 lg:p-7 xl:p-8 overflow-y-auto overflow-x-hidden overscroll-contain min-w-0 custom-scrollbar"
           >
-            <AnimatePresence mode="wait" initial={false}>
-              <motion.div
-                key={location.pathname}
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ 
-                  opacity: 1, 
-                  y: 0, 
-                  transition: { duration: 0.22, ease: [0.22, 1, 0.36, 1] } 
-                }}
-                exit={{ 
-                  opacity: 0, 
-                  y: -4, 
-                  transition: { duration: 0.14, ease: [0.22, 1, 0.36, 1] } 
-                }}
-                className="w-full pb-10"
-              >
-                <Outlet />
-              </motion.div>
-            </AnimatePresence>
+            <div className="w-full max-w-[1600px] mx-auto pb-12">
+              <Outlet />
+            </div>
           </main>
         </div>
 

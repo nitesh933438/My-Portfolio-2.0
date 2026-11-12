@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Briefcase, Plus, Pencil, Trash2, Save, X, Loader2, ArrowUp, ArrowDown, ChevronsUp } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Experience } from '../../data/portfolio';
+import { Experience, EXPERIENCE_DATA } from '../../data/portfolio';
 import { saveExperience, subscribeToExperience } from '../../services/portfolioContentFirebase';
 import { useAdminToast } from './AdminToastContext';
 import { useAIScanner } from '../../context/AIScannerContext';
@@ -17,8 +17,8 @@ const blankExperience = (): Experience => ({
 });
 
 export const ExperienceManager: React.FC = () => {
-  const [items, setItems] = useState<Experience[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [items, setItems] = useState<Experience[]>(EXPERIENCE_DATA);
+  const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [targetPosition, setTargetPosition] = useState<number>(1);

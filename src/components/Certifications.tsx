@@ -500,6 +500,7 @@ export const Certifications: React.FC = () => {
                             src={previewImgUrl}
                             alt={item.title}
                             loading="lazy"
+                            decoding="async"
                             referrerPolicy="no-referrer"
                             className="w-full h-full object-contain p-1 group-hover:scale-[1.03] transition-transform duration-300"
                           />

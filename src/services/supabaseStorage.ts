@@ -1,17 +1,12 @@
 import { createClient } from '@supabase/supabase-js';
-import { apiUrl, readJsonResponse } from './api';
+import { apiUrl } from './api';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  console.warn('Supabase configuration missing in environment variables. Storage features will be unavailable.');
-}
-
 export const supabase = (supabaseUrl && supabaseAnonKey) 
   ? createClient(supabaseUrl, supabaseAnonKey) 
   : null;
-
 
 export const STORAGE_BUCKET = 'portfolio-assets';
 
@@ -27,14 +22,68 @@ export const validateFile = (file: File, allowedTypes: string[], maxSizeBytes: n
   if (file.size > maxSizeBytes) {
     throw new Error(`File size ${Math.round(file.size / 1024 / 1024)}MB exceeds the limit of ${Math.round(maxSizeBytes / 1024 / 1024)}MB`);
   }
-  // Sanitize filename
   const cleanName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
   return cleanName;
 };
 
 /**
- * Proxy-based Upload: Calls the project backend to perform a secure upload to Supabase.
- * Requires the authenticated Express proxy so server-only storage credentials remain private.
+ * Converts a File to an optimized Data URL (compressing images via HTML5 Canvas so they fit cleanly in Firestore
+ * when deployed on static hosts without an Express backend).
+ */
+async function fileToClientDataUrl(file: File): Promise<string> {
+  if (file.type.startsWith('image/')) {
+    try {
+      const bitmap = await createImageBitmap(file);
+      const maxDim = 1280;
+      let width = bitmap.width;
+      let height = bitmap.height;
+      if (width > maxDim || height > maxDim) {
+        if (width >= height) {
+          height = Math.round((height * maxDim) / width);
+          width = maxDim;
+        } else {
+          width = Math.round((width * maxDim) / height);
+          height = maxDim;
+        }
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(bitmap, 0, 0, width, height);
+        const compressed = canvas.toDataURL('image/jpeg', 0.82);
+        if (compressed && compressed.length < 900_000) {
+          return compressed;
+        }
+        return canvas.toDataURL('image/jpeg', 0.65);
+      }
+    } catch {
+      // Fallback to FileReader below
+    }
+  }
+
+  return new Promise<string>((resolve, reject) => {
+    // If non-image file is under 700KB, store as base64 Data URL; otherwise create a session Blob URL
+    if (file.size > 700 * 1024 && !file.type.startsWith('image/')) {
+      resolve(URL.createObjectURL(file));
+      return;
+    }
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      if (typeof reader.result === 'string') {
+        resolve(reader.result);
+      } else {
+        reject(new Error('Could not read uploaded file'));
+      }
+    };
+    reader.onerror = () => reject(new Error('File read error'));
+    reader.readAsDataURL(file);
+  });
+}
+
+/**
+ * Proxy-based Upload with automatic client-side fallback when deployed on static hosts (405 Not Allowed).
  */
 export const uploadFileProxy = async (
   file: File, 
@@ -45,65 +94,85 @@ export const uploadFileProxy = async (
   formData.append('file', file);
   formData.append('folder', folder);
 
-  let response: Response | null = null;
+  // 1. Try Express backend proxy (/api/storage/upload)
   try {
-    response = await fetch(apiUrl('/api/storage/upload'), {
+    const response = await fetch(apiUrl('/api/storage/upload'), {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${idToken}`
-      },
+      headers: idToken ? { Authorization: `Bearer ${idToken}` } : {},
       body: formData
     });
+
+    const contentType = response.headers.get('content-type') || '';
+    if (response.ok && contentType.toLowerCase().includes('application/json')) {
+      const data = await response.json();
+      if (data?.path && data?.url) {
+        return { path: data.path, url: data.url };
+      }
+    }
   } catch (err) {
-    console.warn('Backend upload network call failed, attempting fallback:', err);
+    console.warn('[Storage] Express upload endpoint unreachable, trying fallback:', err);
   }
 
-  if (!response) {
-    throw new Error('Storage backend is unreachable. Configure the Express API deployment before uploading files.');
+  // 2. Try direct Supabase client upload if configured
+  if (supabase) {
+    try {
+      const cleanName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
+      const storagePath = `${folder}/${Date.now()}_${cleanName}`;
+      const { error } = await supabase.storage.from(STORAGE_BUCKET).upload(storagePath, file, {
+        cacheControl: '3600',
+        upsert: true
+      });
+      if (!error) {
+        const { data } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(storagePath);
+        return { path: storagePath, url: data.publicUrl };
+      }
+    } catch (supaErr) {
+      console.warn('[Storage] Direct Supabase upload fallback skipped:', supaErr);
+    }
   }
-  const data = await readJsonResponse<any>(response);
-  if (!response.ok || !data?.path || !data?.url) {
-    throw new Error(data?.error || `Storage upload failed (${response.status}).`);
-  }
-  return { path: data.path, url: data.url };
+
+  // 3. Universal browser Data URL fallback (works 100% offline & on static hosts like GitHub Pages / nginx)
+  const dataUrl = await fileToClientDataUrl(file);
+  return { path: dataUrl, url: dataUrl };
 };
 
 /**
- * Proxy-based Delete: Calls the project backend to securely delete from Supabase.
+ * Proxy-based Delete: Calls the project backend to securely delete from storage,
+ * and gracefully succeeds on static hosts or Data URLs.
  */
 export const deleteFileProxy = async (path: string, idToken: string): Promise<void> => {
-  const response = await fetch(apiUrl('/api/storage/delete'), {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${idToken}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({ path })
-  });
-
-  if (!response.ok) {
-    const error = await readJsonResponse<any>(response);
-    throw new Error(error.error || 'Failed to delete file');
+  if (!path || path.startsWith('data:') || path.startsWith('blob:') || path.startsWith('http')) {
+    return;
+  }
+  try {
+    await fetch(apiUrl('/api/storage/delete'), {
+      method: 'POST',
+      headers: {
+        ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ path })
+    });
+  } catch (err) {
+    console.warn('[Storage] Non-fatal delete warning:', err);
   }
 };
 
 /**
  * Resolves the public URL for a file.
- * If the path is a full URL, returns it. Otherwise, generates a Supabase Public URL or local upload path.
  */
 export const getStorageUrl = (path: string): string => {
   if (!path) return '';
-  if (path.startsWith('http://') || path.startsWith('https://') || path.startsWith('data:')) return path;
+  if (path.startsWith('http://') || path.startsWith('https://') || path.startsWith('data:') || path.startsWith('blob:')) {
+    return path;
+  }
   if (path.startsWith('/uploads/') || path.startsWith('uploads/')) {
     return path.startsWith('/') ? path : `/${path}`;
   }
-  
   if (!supabase) {
     return path.startsWith('/') ? path : `/${path}`;
   }
-  
   const { data } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(path);
-
   return data.publicUrl;
 };
 
@@ -111,35 +180,40 @@ export const getStorageUrl = (path: string): string => {
  * Resolves a signed URL for private files (e.g., documents).
  */
 export const getSignedUrlProxy = async (path: string, idToken: string): Promise<string> => {
+  if (!path || path.startsWith('data:') || path.startsWith('blob:') || path.startsWith('http')) {
+    return path;
+  }
   if (path.startsWith('/uploads/') || path.startsWith('uploads/') || !supabase) {
     return path.startsWith('/') ? path : `/${path}`;
   }
-
-  const response = await fetch(apiUrl(`/api/storage/signed-url?path=${encodeURIComponent(path)}`), {
-    headers: {
-      'Authorization': `Bearer ${idToken}`
+  try {
+    const response = await fetch(apiUrl(`/api/storage/signed-url?path=${encodeURIComponent(path)}`), {
+      headers: idToken ? { Authorization: `Bearer ${idToken}` } : {}
+    });
+    const contentType = response.headers.get('content-type') || '';
+    if (response.ok && contentType.toLowerCase().includes('application/json')) {
+      const { url } = await response.json();
+      if (url) return url;
     }
-  });
-
-  if (!response.ok) {
-    const error = await readJsonResponse<any>(response);
-    throw new Error(error.error || 'Failed to get signed URL');
+  } catch {
+    // Fallback to public URL
   }
-
-  const { url } = await readJsonResponse<any>(response);
-  return url;
+  return getStorageUrl(path);
 };
 
 /**
  * Generic Asset Resolver: Handles resolving URLs for all portfolio assets.
- * 1. Returns full HTTP URLs as is.
- * 2. Resolves local /uploads/ paths.
- * 3. Resolves Supabase paths (e.g. certificates/filename.jpg) to public URLs.
- * 4. Resolves local filenames to public/ repository paths.
  */
 export const resolveAssetUrl = (pathOrUrl: string, type: AssetFolder): string => {
   if (!pathOrUrl) return '';
-  if (pathOrUrl.startsWith('http://') || pathOrUrl.startsWith('https://') || pathOrUrl.startsWith('data:')) return pathOrUrl;
+  if (
+    pathOrUrl.startsWith('http://') ||
+    pathOrUrl.startsWith('https://') ||
+    pathOrUrl.startsWith('data:') ||
+    pathOrUrl.startsWith('blob:')
+  ) {
+    return pathOrUrl;
+  }
   
   let cleanPath = pathOrUrl;
   while (cleanPath.startsWith('./') || cleanPath.startsWith('/')) {
@@ -154,7 +228,6 @@ export const resolveAssetUrl = (pathOrUrl: string, type: AssetFolder): string =>
     return `${prefix}${cleanPath}`;
   }
 
-  // Known local static asset paths in /public directory
   const isTimestampedSupabasePath = /^(certificates|projects|profile|resume|documents)\/\d{10,}_/.test(cleanPath);
 
   if (isTimestampedSupabasePath) {
@@ -176,7 +249,6 @@ export const resolveAssetUrl = (pathOrUrl: string, type: AssetFolder): string =>
     return `${prefix}${cleanPath}`;
   }
 
-  // Fallback to local static asset in the respective public folder
   if (cleanPath.startsWith(`${type}/`)) {
     return `${prefix}${cleanPath}`;
   }

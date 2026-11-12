@@ -25,7 +25,7 @@ import {
 export const EducationManager: React.FC = () => {
   const [university, setUniversity] = useState<UniversityRecord>(ACADEMIC_DATA.university);
   const [schooling, setSchooling] = useState<SchoolRecord[]>(ACADEMIC_DATA.schooling);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<'university' | 'schooling'>('university');
 
   // Modal states for editing semester

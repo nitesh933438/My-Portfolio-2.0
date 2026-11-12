@@ -2,14 +2,16 @@ import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { LayoutDashboard, Award, BookOpen, Briefcase, Mail, Settings, TrendingUp, CheckCircle2, Clock, Sparkles, ArrowRight, ShieldCheck } from 'lucide-react';
 import { ACADEMIC_DATA } from '../../data/education';
-import { subscribeToCertificates, initializeCertificatesInFirestore } from '../../services/certificateFirebase';
+import { PROJECTS } from '../../data/portfolio';
+import { BUNDLED_CERTIFICATES } from '../../data/certificates';
+import { subscribeToCertificates } from '../../services/certificateFirebase';
 import { subscribeToProjects } from '../../services/projectFirebase';
 import { fetchAuditHistory, AuditRecordItem, db, subscribeToSchoolRecords } from '../../services/academicFirebase';
 import { collection, query, onSnapshot, orderBy, limit } from 'firebase/firestore';
 
 export const AdminOverview: React.FC = () => {
-  const [projectCount, setProjectCount] = useState<number>(0);
-  const [certCount, setCertCount] = useState<number>(0);
+  const [projectCount, setProjectCount] = useState<number>(PROJECTS.length);
+  const [certCount, setCertCount] = useState<number>(BUNDLED_CERTIFICATES.length);
   const [educationCount, setEducationCount] = useState<number>(ACADEMIC_DATA.schooling.length + 1);
   const [messageCount, setMessageCount] = useState<number>(0);
   const [unreadCount, setUnreadCount] = useState<number>(0);
@@ -17,8 +19,6 @@ export const AdminOverview: React.FC = () => {
   const [recentMessages, setRecentMessages] = useState<any[]>([]);
 
   useEffect(() => {
-    // Auto-initialize certificates if empty
-    initializeCertificatesInFirestore();
 
     // 1. Projects subscription
     const unsubProj = subscribeToProjects((items) => {

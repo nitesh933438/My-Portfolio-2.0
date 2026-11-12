@@ -28,6 +28,7 @@ import {
   ADMIN_EMAIL, 
   publishSemesterResult 
 } from '../services/academicFirebase';
+import { extractMarksheetSmart } from '../services/api';
 import { signInWithPopup, signOut, onAuthStateChanged, User } from 'firebase/auth';
 import { SemesterResult, UniversityRecord } from '../data/education';
 
@@ -118,20 +119,15 @@ export const AcademicAdminDashboard: React.FC<AcademicAdminDashboardProps> = ({
     setExtractionError(null);
 
     try {
-      const response = await fetch('/api/academic/extract-marksheet', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          fileBase64,
-          mimeType: selectedFile.type,
-          fileName: selectedFile.name,
-        }),
+      const result = await extractMarksheetSmart({
+        file: selectedFile,
+        fileBase64,
+        mimeType: selectedFile.type,
+        fileName: selectedFile.name,
       });
 
-      const result = await response.json();
-
-      if (!result.success) {
-        throw new Error(result.error || 'Extraction failed');
+      if (!result || !result.success) {
+        throw new Error(result?.error || 'Extraction failed');
       }
 
       const extracted = result.extractedData;

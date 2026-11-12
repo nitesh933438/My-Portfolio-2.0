@@ -28,9 +28,6 @@ export const Education: React.FC = () => {
   const [showAllSemesters, setShowAllSemesters] = useState(false);
 
   useEffect(() => {
-    // Initialize Firestore data on first run
-    initializeAcademicDataInFirestore();
-
     // Subscribe to live Firestore updates
     const unsubscribeUniversity = subscribeToUniversityRecord((liveData) => setUniversity(liveData));
     const unsubscribeSchools = subscribeToSchoolRecords(setSchooling);

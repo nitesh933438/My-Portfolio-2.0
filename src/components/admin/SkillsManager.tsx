@@ -1,13 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { Plus, Trash2, Save, Loader2, Sparkles, ArrowUp, ArrowDown, ChevronsUp } from 'lucide-react';
-import { SkillCategory, ICONS } from '../../data/portfolio';
+import { SkillCategory, SKILLS_DATA, ICONS } from '../../data/portfolio';
 import { saveSkills, subscribeToSkills } from '../../services/portfolioContentFirebase';
 import { useAdminToast } from './AdminToastContext';
 import { useAIScanner } from '../../context/AIScannerContext';
 
 export const SkillsManager: React.FC = () => {
-  const [items, setItems] = useState<SkillCategory[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [items, setItems] = useState<SkillCategory[]>(SKILLS_DATA);
+  const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const { showToast } = useAdminToast();
   const { pendingResult, setPendingResult } = useAIScanner();

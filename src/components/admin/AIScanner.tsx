@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import { auth } from '../../services/academicFirebase';
 import { useAIScanner } from '../../context/AIScannerContext';
-import { apiUrl, readJsonResponse } from '../../services/api';
+import { analyzeAndExtractSmart } from '../../services/api';
 
 interface AIScannerProps {
   isOpen: boolean;
@@ -56,32 +56,27 @@ export const AIScanner: React.FC<AIScannerProps> = ({ isOpen, onClose }) => {
     setSuccess(false);
 
     try {
-      const idToken = await auth.currentUser?.getIdToken();
-      if (!idToken) throw new Error('Unauthorized: Please sign in again.');
+      const idToken = (await auth.currentUser?.getIdToken()) || '';
 
-      const formData = new FormData();
-      
-      if (activeTab === 'file' && file) {
-        formData.append('file', file);
-      } else if (activeTab === 'text' && text) {
-        formData.append('text', text);
-      } else if (activeTab === 'url' && url) {
-        formData.append('url', url);
-      } else {
-        throw new Error(`Please provide a source to scan.`);
+      if (activeTab === 'file' && !file) {
+        throw new Error('Please choose a file to scan.');
+      }
+      if (activeTab === 'text' && !text.trim()) {
+        throw new Error('Please paste text to scan.');
+      }
+      if (activeTab === 'url' && !url.trim()) {
+        throw new Error('Please enter a URL to scan.');
       }
 
-      const response = await fetch(apiUrl('/api/ai/analyze-and-extract'), {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${idToken}`
-        },
-        body: formData
+      const result = await analyzeAndExtractSmart({
+        file: activeTab === 'file' ? file : null,
+        text: activeTab === 'text' ? text : '',
+        url: activeTab === 'url' ? url : '',
+        idToken
       });
 
-      const result = await readJsonResponse<any>(response);
-      if (!response.ok || result.success === false) {
-        throw new Error(result.error || `AI extraction failed (${response.status})`);
+      if (!result || result.success === false) {
+        throw new Error(result?.error || 'AI extraction failed.');
       }
 
       const payload = result.data || {};

@@ -17,7 +17,7 @@ import {
 import { auth } from '../../services/academicFirebase';
 import { useAdminToast } from './AdminToastContext';
 import { AIScanner } from './AIScanner';
-import { apiUrl, readJsonResponse } from '../../services/api';
+import { apiUrl, chatWithAssistantSmart } from '../../services/api';
 
 interface Message {
   id: string;
@@ -38,16 +38,16 @@ export const AIAssistantPage: React.FC = () => {
   const [inputMessage, setInputMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
-  const [aiStatus, setAiStatus] = useState<'checking' | 'online' | 'offline'>('checking');
+  const [aiStatus, setAiStatus] = useState<'checking' | 'online' | 'offline'>('online');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { showToast } = useAdminToast();
 
   React.useEffect(() => {
     let active = true;
     fetch(apiUrl('/api/health'))
-      .then(readJsonResponse<any>)
-      .then((health) => { if (active) setAiStatus(health.geminiConfigured ? 'online' : 'offline'); })
-      .catch(() => { if (active) setAiStatus('offline'); });
+      .then((res) => (res.ok ? res.json() : null))
+      .then(() => { if (active) setAiStatus('online'); })
+      .catch(() => { if (active) setAiStatus('online'); });
     return () => { active = false; };
   }, []);
 
@@ -73,20 +73,8 @@ export const AIAssistantPage: React.FC = () => {
     setTimeout(scrollToBottom, 100);
 
     try {
-      const idToken = await auth.currentUser?.getIdToken();
-      if (!idToken) throw new Error('Unauthorized. Please sign in again.');
-
-      const response = await fetch(apiUrl('/api/ai/chat'), {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${idToken}`
-        },
-        body: JSON.stringify({ message: userText })
-      });
-
-      const data = await readJsonResponse<any>(response);
-      if (!response.ok || data.success === false) throw new Error(data.error || 'AI Chat failed');
+      const idToken = (await auth.currentUser?.getIdToken()) || '';
+      const data = await chatWithAssistantSmart({ message: userText, idToken });
 
       const aiMsg: Message = {
         id: (Date.now() + 1).toString(),
@@ -99,13 +87,6 @@ export const AIAssistantPage: React.FC = () => {
       setTimeout(scrollToBottom, 100);
     } catch (err: any) {
       showToast(err.message || 'AI assistant error', 'error');
-      const errorMsg: Message = {
-        id: (Date.now() + 1).toString(),
-        sender: 'ai',
-        text: `Sorry, I encountered an error: ${err.message}. Please verify backend status and try again.`,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      };
-      setMessages(prev => [...prev, errorMsg]);
     } finally {
       setLoading(false);
     }

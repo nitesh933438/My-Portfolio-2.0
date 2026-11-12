@@ -16,7 +16,7 @@ interface ContactMessage {
 
 export const MessagesManager: React.FC = () => {
   const [messages, setMessages] = useState<ContactMessage[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const { showToast } = useAdminToast();
 
   useEffect(() => {

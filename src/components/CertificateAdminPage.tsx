@@ -84,8 +84,10 @@ const blank = (nextOrder = 0): Omit<PortfolioCertificate, 'id' | 'createdAt' | '
 
 export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
   const [user, setUser] = useState<User | null>(null);
-  const [items, setItems] = useState<PortfolioCertificate[]>([]);
-  const [form, setForm] = useState(blank());
+  const [items, setItems] = useState<PortfolioCertificate[]>(() =>
+    BUNDLED_CERTIFICATES.map((c, idx) => ({ ...c, displayOrder: idx }))
+  );
+  const [form, setForm] = useState(() => blank(BUNDLED_CERTIFICATES.length));
   const [editing, setEditing] = useState<string | undefined>();
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
@@ -1019,7 +1021,13 @@ export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
                       title="Open original file"
                     >
                       {previewUrl ? (
-                        <img src={previewUrl} alt={item.title} className="w-full h-full object-contain" />
+                        <img
+                          src={previewUrl}
+                          alt={item.title}
+                          loading="lazy"
+                          decoding="async"
+                          className="w-full h-full object-contain"
+                        />
                       ) : (
                         <FileText className="text-indigo-500" size={22} />
                       )}

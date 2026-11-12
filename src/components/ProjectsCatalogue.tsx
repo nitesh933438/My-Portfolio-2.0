@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, FC } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Search, ExternalLink, Github, ArrowRight, FolderGit2, XCircle, LayoutGrid, Clock, Rocket, Beaker, Archive } from 'lucide-react';
-import { Project, ProjectCategory, ProjectStatus } from '../data/portfolio';
+import { Project, ProjectCategory, ProjectStatus, PROJECTS } from '../data/portfolio';
 import { subscribeToProjects, resolveProjectImageUrl } from '../services/projectFirebase';
 
 interface ProjectsCatalogueProps {
@@ -9,7 +9,7 @@ interface ProjectsCatalogueProps {
 }
 
 export const ProjectsCatalogue: FC<ProjectsCatalogueProps> = ({ onSelectProject }) => {
-  const [projects, setProjects] = useState<Project[]>([]);
+  const [projects, setProjects] = useState<Project[]>(PROJECTS);
   useEffect(() => subscribeToProjects(setProjects), []);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<ProjectCategory | 'All Projects'>('All Projects');
@@ -62,21 +62,18 @@ export const ProjectsCatalogue: FC<ProjectsCatalogueProps> = ({ onSelectProject 
     }
   };
 
-  const ProjectCard = ({ project }: { project: Project }) => (
-    <motion.div
-      layout
-      initial={{ opacity: 0, scale: 0.95 }}
-      animate={{ opacity: 1, scale: 1 }}
-      exit={{ opacity: 0, scale: 0.95 }}
-      transition={{ duration: 0.3 }}
-      className="group flex flex-col bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-[2rem] overflow-hidden shadow-sm hover:shadow-2xl transition-all duration-500"
+  const renderProjectCard = (project: Project) => (
+    <div
+      key={project.id}
+      className="group flex flex-col bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-[2rem] overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300"
     >
       <div className="relative aspect-video overflow-hidden cursor-pointer" onClick={() => onSelectProject(project)}>
         <img
           src={resolveProjectImageUrl(project.mainScreenshot)}
           alt={project.title}
           loading="lazy"
-          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+          decoding="async"
+          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
           onError={(e) => {
             (e.target as HTMLImageElement).style.opacity = '0.3';
           }}
@@ -157,7 +154,7 @@ export const ProjectsCatalogue: FC<ProjectsCatalogueProps> = ({ onSelectProject 
           )}
         </div>
       </div>
-    </motion.div>
+    </div>
   );
 
   return (
@@ -266,11 +263,7 @@ export const ProjectsCatalogue: FC<ProjectsCatalogueProps> = ({ onSelectProject 
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 lg:gap-10">
-              <AnimatePresence mode="popLayout">
-                {completedProjects.map((project) => (
-                  <ProjectCard key={project.id} project={project} />
-                ))}
-              </AnimatePresence>
+              {completedProjects.map((project) => renderProjectCard(project))}
             </div>
 
             {completedProjects.length === 0 && (
@@ -291,11 +284,7 @@ export const ProjectsCatalogue: FC<ProjectsCatalogueProps> = ({ onSelectProject 
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 lg:gap-10">
-                <AnimatePresence mode="popLayout">
-                  {upcomingProjects.map((project) => (
-                    <ProjectCard key={project.id} project={project} />
-                  ))}
-                </AnimatePresence>
+                {upcomingProjects.map((project) => renderProjectCard(project))}
               </div>
             </div>
           )}

@@ -3,6 +3,7 @@
 
 @layer base {
   :root {
+    color-scheme: light;
     /* Fluid Typography - Automatic scaling between 320px and 1920px */
     --text-xs: clamp(0.7rem, 0.65rem + 0.25vw, 0.75rem);
     --text-sm: clamp(0.8rem, 0.75rem + 0.25vw, 0.875rem);
@@ -11,21 +12,41 @@
     --text-xl: clamp(1.125rem, 1rem + 0.6vw, 1.25rem);
     --text-2xl: clamp(1.25rem, 1.1rem + 0.75vw, 1.5rem);
     --text-3xl: clamp(1.5rem, 1.25rem + 1vw, 1.875rem);
-    --text-4xl: clamp(1.875rem, 1.5rem + 1.5vw, 2.25rem);
-    --text-5xl: clamp(2.25rem, 1.75rem + 2.5vw, 3rem);
-    --text-6xl: clamp(3rem, 2.25rem + 3.75vw, 3.75rem);
-    --text-7xl: clamp(3.75rem, 2.75rem + 5vw, 4.5rem);
+    --text-4xl: clamp(1.75rem, 1.4rem + 1.5vw, 2.25rem);
+    --text-5xl: clamp(2rem, 1.5rem + 2.5vw, 3rem);
+    --text-6xl: clamp(2.5rem, 1.9rem + 3.5vw, 3.75rem);
+    --text-7xl: clamp(3rem, 2.2rem + 4.5vw, 4.5rem);
     
     /* Fluid Spacing */
-    --section-py: clamp(4rem, 2rem + 10vw, 8rem);
-    --container-px: clamp(1rem, 0.5rem + 2.5vw, 2rem);
+    --section-py: clamp(3.25rem, 2rem + 7vw, 7.5rem);
+    --container-px: clamp(0.875rem, 0.5rem + 2.5vw, 2rem);
+  }
+
+  .dark {
+    color-scheme: dark;
+  }
+
+  html {
+    scroll-behavior: smooth;
+    scroll-padding-top: 80px;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
   }
 
   body {
     @apply font-sans antialiased bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100;
     overflow-x: hidden;
     width: 100%;
+    min-width: 320px;
     font-size: var(--text-base);
+  }
+
+  button,
+  a,
+  input,
+  select,
+  textarea {
+    touch-action: manipulation;
   }
 
   input,
@@ -36,6 +57,15 @@
 }
 
 @layer utilities {
+  .custom-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(148, 163, 184, 0.35) transparent;
+  }
+
+  .dark .custom-scrollbar {
+    scrollbar-color: rgba(51, 65, 85, 0.6) transparent;
+  }
+
   .custom-scrollbar::-webkit-scrollbar {
     width: 6px;
     height: 6px;
@@ -46,17 +76,19 @@
   }
   
   .custom-scrollbar::-webkit-scrollbar-thumb {
-    @apply bg-slate-200 dark:bg-slate-800 rounded-full hover:bg-indigo-500 transition-colors;
+    @apply bg-slate-300/80 dark:bg-slate-800 rounded-full hover:bg-indigo-500 transition-colors;
   }
 
-  .scrollbar-hide::-webkit-scrollbar {
+  .scrollbar-hide,
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .scrollbar-hide::-webkit-scrollbar,
+  .no-scrollbar::-webkit-scrollbar {
     display: none;
   }
-}
-
-html {
-  scroll-behavior: smooth;
-  scroll-padding-top: 80px;
 }
 
 ::selection {
