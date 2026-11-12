@@ -17,8 +17,8 @@ export const Footer: React.FC<FooterProps> = ({ onOpenResume }) => {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Secret Admin Hotkey: Ctrl+Shift+A or Cmd+Shift+A
-      if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'a' || e.key === 'A')) {
+      // Secret Admin Hotkey: Ctrl+Shift+Z or Cmd+Shift+Z (also supports Ctrl+Shift+A)
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'z' || e.key === 'Z' || e.key === 'a' || e.key === 'A')) {
         e.preventDefault();
         window.location.href = '#/admin';
       }

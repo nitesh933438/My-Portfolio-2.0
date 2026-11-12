@@ -26,7 +26,8 @@ import {
   Check,
   XCircle,
   Sparkles,
-  Star
+  Star,
+  ChevronsUp
 } from 'lucide-react';
 import { AIScanner } from './admin/AIScanner';
 import { useAIScanner } from '../context/AIScannerContext';
@@ -36,6 +37,7 @@ import {
   markBundledCertificatesImported,
   removeCertificate,
   saveCertificate,
+  reindexCertificatesInFirestore,
   subscribeToCertificates,
   testSingleCertificateDiagnostic,
   resolveCertificateUrl,
@@ -51,7 +53,7 @@ interface Props {
   onBack: () => void;
 }
 
-const blank = (): Omit<PortfolioCertificate, 'id' | 'createdAt' | 'updatedAt'> => ({
+const blank = (nextOrder = 0): Omit<PortfolioCertificate, 'id' | 'createdAt' | 'updatedAt'> => ({
   title: '',
   issuer: '',
   category: CERTIFICATE_CATEGORIES[0],
@@ -77,7 +79,7 @@ const blank = (): Omit<PortfolioCertificate, 'id' | 'createdAt' | 'updatedAt'> =
   skills: [],
   featured: false,
   published: true,
-  displayOrder: 100
+  displayOrder: nextOrder
 });
 
 export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
@@ -210,8 +212,11 @@ export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
       setItems([]);
       return;
     }
-    return subscribeToCertificates(setItems, true);
-  }, [user]);
+    return subscribeToCertificates(loaded => {
+      setItems(loaded);
+      setForm(prev => (!editing && !prev.title ? { ...prev, displayOrder: loaded.length } : prev));
+    }, true);
+  }, [user, editing]);
 
   const showToast = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
     setToast({ message, type });
@@ -385,18 +390,38 @@ export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
         throw new Error('Please upload a file or specify a source asset / image URL.');
       }
 
-      await saveCertificate(
-        {
-          ...form,
-          imageUrl: imageUrl || resolveCertificateUrl(form.sourceAsset || ''),
-          fileUrl: fileUrl || form.sourceAsset || imageUrl || '',
-          fileType: file ? (file.type === 'application/pdf' ? 'pdf' : 'image') : form.fileType
-        },
-        editing
-      );
+      const payload = {
+        ...form,
+        imageUrl: imageUrl || resolveCertificateUrl(form.sourceAsset || ''),
+        fileUrl: fileUrl || form.sourceAsset || imageUrl || '',
+        fileType: file ? (file.type === 'application/pdf' ? 'pdf' : 'image') : form.fileType
+      };
 
-      showToast(editing ? 'Certificate updated.' : 'Certificate saved.', 'success');
-      setForm(blank());
+      const savedId = await saveCertificate(payload, editing);
+
+      // Automatically insert at requested displayOrder and re-sequence all serial numbers (0, 1, 2... N-1)
+      const currentOrdered = [...items].sort((a, b) => (a.displayOrder ?? 9999) - (b.displayOrder ?? 9999));
+      const withoutSaved = currentOrdered.filter(c => c.id !== savedId);
+      const targetIndex = Math.max(0, Math.min(withoutSaved.length, Number(form.displayOrder) ?? withoutSaved.length));
+      const savedRecord: PortfolioCertificate = {
+        ...(currentOrdered.find(c => c.id === savedId) || {}),
+        ...payload,
+        id: savedId,
+        displayOrder: targetIndex
+      };
+
+      withoutSaved.splice(targetIndex, 0, savedRecord);
+      const reindexed = withoutSaved.map((c, idx) => ({ ...c, displayOrder: idx }));
+      setItems(reindexed);
+      await reindexCertificatesInFirestore(reindexed);
+
+      showToast(
+        editing
+          ? `Certificate updated at Serial #${String(targetIndex + 1).padStart(2, '0')}.`
+          : `Certificate added at Serial #${String(targetIndex + 1).padStart(2, '0')}.`,
+        'success'
+      );
+      setForm(blank(reindexed.length));
       setEditing(undefined);
       setFile(null);
     } catch (err: any) {
@@ -408,12 +433,48 @@ export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
 
   const confirmDelete = async () => {
     if (!deletingCert) return;
+    const target = deletingCert;
+    const prevOrdered = [...items].sort((a, b) => (a.displayOrder ?? 9999) - (b.displayOrder ?? 9999));
+    const remaining = prevOrdered
+      .filter(c => c.id !== target.id)
+      .map((c, idx) => ({ ...c, displayOrder: idx }));
+
+    // Optimistic UI update with recalculated serial numbers
+    setItems(remaining);
+    setDeletingCert(null);
+
     try {
-      await removeCertificate(deletingCert);
-      showToast('Record and storage asset removed.', 'success');
-      setDeletingCert(null);
+      await removeCertificate(target, remaining);
+      showToast('Certificate deleted and all serial numbers automatically updated.', 'success');
     } catch (err: any) {
+      setItems(prevOrdered);
       showToast(err.message || 'Delete failed.', 'error');
+    }
+  };
+
+  const toggleFeatured = async (item: PortfolioCertificate) => {
+    const newFeatured = !item.featured;
+    setItems(prev => prev.map(c => c.id === item.id ? { ...c, featured: newFeatured } : c));
+    try {
+      const { id, ...data } = item;
+      await saveCertificate({ ...data, featured: newFeatured }, id);
+      showToast(newFeatured ? `"${item.title}" marked as Featured ⭐` : `"${item.title}" unfeatured.`, 'success');
+    } catch (err: any) {
+      setItems(prev => prev.map(c => c.id === item.id ? { ...c, featured: item.featured } : c));
+      showToast(err.message || 'Could not update featured status.', 'error');
+    }
+  };
+
+  const togglePublished = async (item: PortfolioCertificate) => {
+    const newPub = !item.published;
+    setItems(prev => prev.map(c => c.id === item.id ? { ...c, published: newPub } : c));
+    try {
+      const { id, ...data } = item;
+      await saveCertificate({ ...data, published: newPub }, id);
+      showToast(newPub ? `"${item.title}" is now visible.` : `"${item.title}" hidden from public view.`, 'success');
+    } catch (err: any) {
+      setItems(prev => prev.map(c => c.id === item.id ? { ...c, published: item.published } : c));
+      showToast(err.message || 'Could not update visibility.', 'error');
     }
   };
 
@@ -422,28 +483,51 @@ export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
     const index = ordered.findIndex(entry => entry.id === item.id);
     const targetIndex = index + direction;
     if (index < 0 || targetIndex < 0 || targetIndex >= ordered.length) return;
-    const next = [...ordered];
-    [next[index], next[targetIndex]] = [next[targetIndex], next[index]];
+
+    const list = [...ordered];
+    const [moved] = list.splice(index, 1);
+    list.splice(targetIndex, 0, moved);
+    const reindexed = list.map((c, idx) => ({ ...c, displayOrder: idx }));
+
+    // Optimistic UI update for immediate response
+    setItems(reindexed);
+
     try {
-      await Promise.all(
-        next.map((entry, position) => {
-          const { id, ...data } = entry;
-          return saveCertificate({ ...data, displayOrder: position }, id);
-        })
+      const a = reindexed[index];
+      const b = reindexed[targetIndex];
+      const { id: aId, ...aData } = a;
+      const { id: bId, ...bData } = b;
+      await Promise.all([
+        saveCertificate({ ...aData, displayOrder: a.displayOrder }, aId),
+        saveCertificate({ ...bData, displayOrder: b.displayOrder }, bId)
+      ]);
+      showToast(
+        `Moved "${item.title}" to Serial #${String(targetIndex + 1).padStart(2, '0')}.`,
+        'success'
       );
-      showToast('Certificate order updated.', 'success');
     } catch (err: any) {
+      setItems(ordered);
       showToast(err.message || 'Could not update certificate order.', 'error');
     }
   };
 
   const moveToFirst = async (item: PortfolioCertificate) => {
+    const ordered = [...items].sort((a, b) => (a.displayOrder ?? 9999) - (b.displayOrder ?? 9999));
+    const index = ordered.findIndex(entry => entry.id === item.id);
+    if (index <= 0) return;
+
+    const remaining = ordered.filter(c => c.id !== item.id);
+    const next = [item, ...remaining].map((c, idx) => ({ ...c, displayOrder: idx }));
+
+    // Optimistic UI update
+    setItems(next);
+
     try {
-      const { id, ...data } = item;
-      await saveCertificate({ ...data, displayOrder: 0, featured: true }, id);
-      showToast(`"${item.title}" pinned to #1 first position!`, 'success');
+      await reindexCertificatesInFirestore(next);
+      showToast(`"${item.title}" moved to #01 Start position and all serial numbers updated!`, 'success');
     } catch (err: any) {
-      showToast(err.message || 'Could not pin certificate.', 'error');
+      setItems(ordered);
+      showToast(err.message || 'Could not pin certificate to start.', 'error');
     }
   };
 
@@ -582,7 +666,7 @@ export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
         {/* Form */}
         <form
           onSubmit={submit}
-          className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 sm:p-7 space-y-5 h-fit xl:sticky xl:top-20 shadow-sm"
+          className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 sm:p-7 space-y-5 h-fit xl:sticky xl:top-2 xl:max-h-[calc(100dvh-6.5rem)] xl:overflow-y-auto xl:overscroll-contain custom-scrollbar shadow-sm"
         >
           <div className="flex items-center justify-between">
             <h2 className="text-xl font-black text-slate-900 dark:text-white">
@@ -664,14 +748,15 @@ export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
                 />
               </div>
               <div className="space-y-1">
-                <label className="text-[10px] font-black uppercase text-slate-500 tracking-wider">Display Order</label>
+                <label className="text-[10px] font-black uppercase text-slate-500 tracking-wider">Serial # (Position)</label>
                 <input
                   type="number"
-                  min="0"
+                  min="1"
+                  max={Math.max(1, items.length + (editing ? 0 : 1))}
                   step="1"
-                  value={form.displayOrder}
-                  onChange={e => change('displayOrder', Math.max(0, Number(e.target.value) || 0))}
-                  className="w-full rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-2.5 text-xs text-slate-900 dark:text-white"
+                  value={(form.displayOrder ?? items.length) + 1}
+                  onChange={e => change('displayOrder', Math.max(0, (Number(e.target.value) || 1) - 1))}
+                  className="w-full rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-2.5 text-xs font-mono font-bold text-slate-900 dark:text-white"
                 />
               </div>
             </div>
@@ -909,16 +994,18 @@ export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
           </div>
 
           <div className="grid gap-3">
-            {filteredItems.map(item => {
+            {filteredItems.map((item) => {
               const previewUrl = resolveCertificatePreviewImageUrl(item);
               const originalUrl = resolveCertificateOriginalFileUrl(item);
               const verifyUrl = item.credentialUrl || detectVerificationUrl(item) || '';
+              const trueIndex = orderedItems.findIndex(c => c.id === item.id);
+              const serialNumber = trueIndex >= 0 ? trueIndex + 1 : (item.displayOrder ?? 0) + 1;
 
               return (
                 <article
                   key={item.id}
                   className={`group rounded-2xl border p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-all shadow-xs ${
-                    item.displayOrder === 0
+                    serialNumber === 1
                       ? 'border-indigo-500/60 bg-indigo-50/20 dark:bg-slate-900'
                       : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-indigo-500/40'
                   }`}
@@ -939,12 +1026,17 @@ export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
                     </a>
                     <div className="min-w-0 space-y-1">
                       <div className="flex flex-wrap items-center gap-1.5">
-                        <span className="text-[10px] font-mono font-bold text-indigo-600 dark:text-cyan-400">
-                          #{item.displayOrder ?? '—'}
+                        <span className="text-[10px] font-mono font-black text-indigo-600 dark:text-cyan-400 px-1.5 py-0.5 rounded-md bg-indigo-500/10 dark:bg-indigo-500/20 border border-indigo-500/20 tabular-nums">
+                          #{String(serialNumber).padStart(2, '0')}
                         </span>
-                        {item.displayOrder === 0 && (
-                          <span className="text-[9px] font-black uppercase text-amber-600 dark:text-amber-400">
-                            ★ FIRST POSITION
+                        {item.featured && (
+                          <span className="text-[9px] font-black uppercase text-amber-600 dark:text-amber-400 flex items-center gap-0.5 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">
+                            ★ FEATURED
+                          </span>
+                        )}
+                        {orderedItems[0]?.id === item.id && (
+                          <span className="text-[9px] font-black uppercase text-indigo-600 dark:text-cyan-400 bg-indigo-500/10 px-1.5 py-0.5 rounded border border-indigo-500/20">
+                            TOP #1 START
                           </span>
                         )}
                         {item.grade && (
@@ -1031,43 +1123,66 @@ export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
 
                   {/* Admin Item Controls */}
                   <div className="flex flex-wrap items-center gap-1.5 shrink-0 self-end sm:self-center">
-                    {item.displayOrder !== 0 && (
+                    {/* 1. Star / Featured Toggle Button */}
+                    <button
+                      type="button"
+                      onClick={() => toggleFeatured(item)}
+                      title={item.featured ? 'Featured Certificate (Click to remove star)' : 'Star as Featured Certificate'}
+                      className={`p-2 rounded-xl transition-all cursor-pointer ${
+                        item.featured
+                          ? 'text-amber-500 bg-amber-500/20 hover:bg-amber-500/30 ring-1 ring-amber-500/40 shadow-xs'
+                          : 'text-slate-400 hover:text-amber-500 bg-slate-100 dark:bg-slate-800 hover:bg-amber-500/10'
+                      }`}
+                    >
+                      <Star size={15} className={item.featured ? 'fill-amber-400 text-amber-500' : ''} />
+                    </button>
+
+                    {/* 2. Move to Start / Top (#1 Position) Button */}
+                    {orderedItems[0]?.id !== item.id && (
                       <button
                         type="button"
                         onClick={() => moveToFirst(item)}
-                        title="Pin to #1 First Position"
-                        className="p-2 rounded-xl text-amber-500 bg-amber-500/10 hover:bg-amber-500/20 cursor-pointer"
+                        title="Move to Start (#1 Top Position)"
+                        className="p-2 rounded-xl text-indigo-600 dark:text-cyan-400 bg-indigo-500/10 hover:bg-indigo-500/20 cursor-pointer transition-all"
                       >
-                        <Star size={15} />
+                        <ChevronsUp size={15} />
                       </button>
                     )}
+
+                    {/* 3. Move Up (Idhar) */}
                     <button
                       type="button"
                       onClick={() => moveCertificate(item, -1)}
                       disabled={orderedItems[0]?.id === item.id}
-                      title="Move up"
-                      className="p-2 rounded-xl text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-25 cursor-pointer"
+                      title="Move up one position"
+                      className="p-2 rounded-xl text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-25 cursor-pointer transition-all"
                     >
                       <ArrowUp size={15} />
                     </button>
+
+                    {/* 4. Move Down (Udhar) */}
                     <button
                       type="button"
                       onClick={() => moveCertificate(item, 1)}
                       disabled={orderedItems[orderedItems.length - 1]?.id === item.id}
-                      title="Move down"
-                      className="p-2 rounded-xl text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-25 cursor-pointer"
+                      title="Move down one position"
+                      className="p-2 rounded-xl text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-25 cursor-pointer transition-all"
                     >
                       <ArrowDown size={15} />
                     </button>
+
+                    {/* 5. Publish / Visibility Toggle */}
                     <button
                       type="button"
-                      onClick={() => saveCertificate({ ...item, published: !item.published }, item.id)}
-                      title={item.published ? 'Unpublish' : 'Publish'}
-                      className={`p-2 rounded-xl cursor-pointer ${
-                        item.published ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/10' : 'text-amber-600 dark:text-amber-400 bg-amber-500/10'
+                      onClick={() => togglePublished(item)}
+                      title={item.published !== false ? 'Published (Click to hide from public)' : 'Hidden (Click to publish)'}
+                      className={`p-2 rounded-xl cursor-pointer transition-all ${
+                        item.published !== false
+                          ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20'
+                          : 'text-amber-600 dark:text-amber-400 bg-amber-500/10 hover:bg-amber-500/20'
                       }`}
                     >
-                      {item.published ? <Eye size={16} /> : <EyeOff size={16} />}
+                      {item.published !== false ? <Eye size={16} /> : <EyeOff size={16} />}
                     </button>
                     <button
                       type="button"

@@ -13,6 +13,7 @@ export const certificatesRef = collection(db, 'certifications');
  * (which always has the format `certificates/1730000000000_filename.ext`).
  */
 const isSupabaseStoragePath = (cleanPath: string): boolean => {
+  if (cleanPath.startsWith('uploads/')) return false;
   return /^(certificates|projects|profile|resume|documents)\/\d{10,}_/.test(cleanPath);
 };
 
@@ -34,6 +35,10 @@ export const resolveCertificateUrl = (pathOrUrl: string): string => {
 
   const baseUrl = import.meta.env.BASE_URL || '/';
   const prefix = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
+
+  if (cleanPath.startsWith('uploads/')) {
+    return `${prefix}${cleanPath}`;
+  }
 
   if (isSupabaseStoragePath(cleanPath)) {
     return getStorageUrl(cleanPath);
@@ -98,9 +103,10 @@ export const mergeWithBundledCertificates = (
   adminMode = false
 ): PortfolioCertificate[] => {
   if (!remoteItems || remoteItems.length === 0) {
-    return BUNDLED_CERTIFICATES.filter(c => adminMode || c.published).sort(
-      (a, b) => (a.displayOrder ?? 9999) - (b.displayOrder ?? 9999)
-    );
+    return BUNDLED_CERTIFICATES
+      .filter(c => adminMode || c.published)
+      .sort((a, b) => (a.displayOrder ?? 9999) - (b.displayOrder ?? 9999))
+      .map((c, idx) => ({ ...c, displayOrder: idx }));
   }
 
   const normalize = (s?: string) => (s || '').trim().toLowerCase();
@@ -118,6 +124,9 @@ export const mergeWithBundledCertificates = (
 
     if (match) {
       usedRemoteIds.add(match.id);
+      if ((match as any).deleted === true) {
+        continue;
+      }
       const isNptelJava = bundled.id === 'nptel-programming-in-java-2026';
       const isGenericDesc =
         !match.description ||
@@ -173,8 +182,8 @@ export const mergeWithBundledCertificates = (
         totalCandidates: match.totalCandidates || bundled.totalCandidates,
         coordinator: match.coordinator || bundled.coordinator,
         skills: match.skills && match.skills.length > 0 ? match.skills : bundled.skills,
-        featured: isNptelJava ? true : match.featured ?? bundled.featured,
-        displayOrder: isNptelJava ? 0 : (bundled.displayOrder !== undefined ? bundled.displayOrder : match.displayOrder ?? 9999)
+        featured: match.featured !== undefined ? match.featured : (isNptelJava ? true : bundled.featured),
+        displayOrder: match.displayOrder !== undefined ? match.displayOrder : (isNptelJava ? 0 : (bundled.displayOrder ?? 9999))
       };
       merged.push(enriched);
     } else {
@@ -184,7 +193,7 @@ export const mergeWithBundledCertificates = (
 
   // Append any custom admin-added certificates not in BUNDLED_CERTIFICATES
   for (const remote of remoteItems) {
-    if (!usedRemoteIds.has(remote.id)) {
+    if (!usedRemoteIds.has(remote.id) && (remote as any).deleted !== true) {
       const autoUrl = remote.credentialUrl || detectVerificationUrl(remote) || '';
       merged.push({
         ...remote,
@@ -196,7 +205,8 @@ export const mergeWithBundledCertificates = (
 
   return merged
     .filter(c => adminMode || c.published !== false)
-    .sort((a, b) => (a.displayOrder ?? 9999) - (b.displayOrder ?? 9999));
+    .sort((a, b) => (a.displayOrder ?? 9999) - (b.displayOrder ?? 9999))
+    .map((c, idx) => ({ ...c, displayOrder: idx }));
 };
 
 export const initializeCertificatesInFirestore = async () => {
@@ -204,10 +214,12 @@ export const initializeCertificatesInFirestore = async () => {
     const snap = await getDocs(certificatesRef);
     if (snap.empty) {
       if (!isUserAdmin(auth.currentUser)) return;
-      for (const cert of BUNDLED_CERTIFICATES) {
+      for (let i = 0; i < BUNDLED_CERTIFICATES.length; i++) {
+        const cert = BUNDLED_CERTIFICATES[i];
         const { id, ...data } = cert;
         await setDoc(doc(db, 'certifications', id), {
           ...data,
+          displayOrder: i,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
         });
@@ -216,14 +228,18 @@ export const initializeCertificatesInFirestore = async () => {
       return;
     }
 
-    // If admin is logged in, automatically ensure the NPTEL #1 certificate is synced with the full original image & details
+    // If admin is logged in and NPTEL Java certificate is missing from Firestore, seed it once
     if (isUserAdmin(auth.currentUser)) {
       const nptelCert = BUNDLED_CERTIFICATES[0];
-      const { id, ...data } = nptelCert;
-      await setDoc(doc(db, 'certifications', id), {
-        ...data,
-        updatedAt: new Date().toISOString()
-      }, { merge: true });
+      const exists = snap.docs.some(d => d.id === nptelCert.id);
+      if (!exists) {
+        const { id, ...data } = nptelCert;
+        await setDoc(doc(db, 'certifications', id), {
+          ...data,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        }, { merge: true });
+      }
     }
   } catch (err) {
     console.warn('Could not auto-seed certificates:', err);
@@ -231,7 +247,7 @@ export const initializeCertificatesInFirestore = async () => {
 };
 
 export const subscribeToCertificates = (callback: (items: PortfolioCertificate[]) => void, admin = false) => {
-  const base = admin ? query(certificatesRef, orderBy('displayOrder', 'asc')) : query(certificatesRef, where('published', '==', true));
+  const base = admin ? query(certificatesRef) : query(certificatesRef, where('published', '==', true));
   return onSnapshot(
     base,
     snap => {
@@ -256,6 +272,7 @@ export const saveCertificate = async (data: Omit<PortfolioCertificate, 'id'>, id
   const cleanPayload = Object.fromEntries(
     Object.entries({
       ...data,
+      deleted: false,
       updatedAt: new Date().toISOString()
     }).filter(([_, v]) => v !== undefined)
   );
@@ -270,23 +287,62 @@ export const saveCertificate = async (data: Omit<PortfolioCertificate, 'id'>, id
 };
 
 /**
- * Removes a certificate from Firestore and its associated file from Supabase if applicable.
+ * Automatically normalizes and persists sequential 0-based displayOrder (0, 1, 2... N-1)
+ * for all certificates after any add, delete, or reorder operation.
  */
-export const removeCertificate = async (item: PortfolioCertificate) => {
+export const reindexCertificatesInFirestore = async (orderedItems: PortfolioCertificate[]) => {
+  if (!isUserAdmin(auth.currentUser)) return;
+  const normalized = orderedItems.map((item, idx) => ({ ...item, displayOrder: idx }));
+  const chunkSize = 8;
+  for (let i = 0; i < normalized.length; i += chunkSize) {
+    const chunk = normalized.slice(i, i + chunkSize);
+    await Promise.all(
+      chunk.map(item => {
+        const { id, ...data } = item;
+        return saveCertificate({ ...data, displayOrder: item.displayOrder }, id);
+      })
+    );
+  }
+};
+
+/**
+ * Removes a certificate from Firestore and its associated file from storage if applicable,
+ * then automatically re-indexes remaining certificates so serial numbers stay contiguous.
+ */
+export const removeCertificate = async (
+  item: PortfolioCertificate,
+  remainingOrdered?: PortfolioCertificate[]
+) => {
   if (!isUserAdmin(auth.currentUser)) {
     throw new Error('Admin access required. Please sign in with an authorized administrator account.');
   }
 
-  if (item.fileUrl && isSupabaseStoragePath(item.fileUrl)) {
+  if (
+    item.fileUrl &&
+    (isSupabaseStoragePath(item.fileUrl) || item.fileUrl.startsWith('/uploads/') || item.fileUrl.startsWith('uploads/'))
+  ) {
     try {
       const idToken = await auth.currentUser?.getIdToken();
       if (idToken) await deleteFileProxy(item.fileUrl, idToken);
     } catch (e) {
-      console.warn('Could not delete Supabase asset:', e);
+      console.warn('Could not delete certificate asset:', e);
     }
   }
 
-  await deleteDoc(doc(db, 'certifications', item.id));
+  const isBundled = BUNDLED_CERTIFICATES.some(b => b.id === item.id);
+  if (isBundled) {
+    await setDoc(
+      doc(db, 'certifications', item.id),
+      { deleted: true, published: false, updatedAt: new Date().toISOString() },
+      { merge: true }
+    );
+  } else {
+    await deleteDoc(doc(db, 'certifications', item.id));
+  }
+
+  if (remainingOrdered && remainingOrdered.length > 0) {
+    await reindexCertificatesInFirestore(remainingOrdered);
+  }
 };
 
 export interface ImportDiagnostic {

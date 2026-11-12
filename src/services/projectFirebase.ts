@@ -17,6 +17,10 @@ export const resolveProjectImageUrl = (pathOrUrl: string): string => {
   const baseUrl = import.meta.env.BASE_URL || '/';
   const prefix = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
 
+  if (cleanPath.startsWith('uploads/')) {
+    return `${prefix}${cleanPath}`;
+  }
+
   if (cleanPath.startsWith('images/') || cleanPath.startsWith('assets/')) {
     return `${prefix}${cleanPath}`;
   }
@@ -30,37 +34,79 @@ export const resolveProjectImageUrl = (pathOrUrl: string): string => {
 
 export const projectsColRef = collection(db, 'projects');
 
+const syncScreenshotTitlePrefix = (rawTitle: string, orderNum: number): string => {
+  const clean = (rawTitle || '').replace(/^\d+\s*[–-]\s*/, '').trim();
+  const prefix = String(orderNum).padStart(2, '0');
+  return clean ? `${prefix} – ${clean}` : `${prefix} – Screenshot`;
+};
+
 export const mergeWithBundledProjects = (firestoreProjects: Project[]): Project[] => {
-  return firestoreProjects.map((fp) => {
+  const mergedList = firestoreProjects.map((fp) => {
     const bundled = PROJECTS.find(
       (bp) => bp.slug === fp.slug || bp.id === fp.id || bp.title.toLowerCase() === fp.title?.toLowerCase()
     );
 
     if (!bundled) {
+      if (fp.screenshotMetadata && fp.screenshotMetadata.length > 0) {
+        const synced = normalizeAndSyncScreenshots(fp.screenshotMetadata);
+        return {
+          ...fp,
+          screenshotMetadata: synced.items,
+          mainScreenshot: synced.mainScreenshot || fp.mainScreenshot,
+          additionalScreenshots: synced.additionalScreenshots
+        };
+      }
       return fp;
     }
 
     const projectKey = bundled.slug || bundled.id;
+
+    // If screenshotMetadata is already stored in Firestore, respect the admin's custom order, cover, & deletions
+    if (fp.screenshotMetadata && fp.screenshotMetadata.length > 0) {
+      const filteredMeta = fp.screenshotMetadata
+        .filter((m) => Boolean(m.url) && !isExcludedProjectScreenshot(m.url))
+        .sort((a, b) => (a.displayOrder ?? 999) - (b.displayOrder ?? 999))
+        .map((m, idx) => {
+          const info = getProjectScreenshotMetadata(projectKey, idx, m.url);
+          const rawTitle =
+            m.title && !m.title.includes('Application Screenshot')
+              ? m.title
+              : info.title;
+          return {
+            ...m,
+            displayOrder: idx + 1,
+            title: syncScreenshotTitlePrefix(rawTitle, idx + 1),
+            category: m.category || info.category,
+            caption:
+              m.caption && !m.caption.includes('workflow screenshot view')
+                ? m.caption
+                : info.caption,
+            altText: m.altText || syncScreenshotTitlePrefix(rawTitle, idx + 1),
+            published: m.published !== false,
+          };
+        });
+
+      const synced = normalizeAndSyncScreenshots(filteredMeta);
+      return {
+        ...bundled,
+        ...fp,
+        slug: fp.slug || bundled.slug,
+        mainScreenshot: synced.mainScreenshot || fp.mainScreenshot || bundled.mainScreenshot,
+        additionalScreenshots: synced.additionalScreenshots,
+        screenshotMetadata: synced.items,
+      };
+    }
+
+    // Legacy fallback when screenshotMetadata has not been initialized yet
     const currentAdd = (fp.additionalScreenshots || []).filter((url) => !isExcludedProjectScreenshot(url));
     const bundledAdd = (bundled.additionalScreenshots || []).filter((url) => url !== bundled.mainScreenshot);
-
-    // Always prefer the official bundled Poster Cover unless admin uploaded a custom external/Supabase cover
     const isCustomExternalCover =
       fp.mainScreenshot &&
       !isExcludedProjectScreenshot(fp.mainScreenshot) &&
       !fp.mainScreenshot.includes('/images/projects/') &&
       !fp.mainScreenshot.includes('/images/banners/');
     const mergedMain = isCustomExternalCover ? fp.mainScreenshot : (bundled.mainScreenshot || fp.mainScreenshot);
-    const mainChanged = fp.mainScreenshot !== mergedMain;
 
-    // Check if any bundled screenshot is missing or if excluded screenshot was present or order changed
-    const hasExcluded = (fp.additionalScreenshots || []).some((url) => isExcludedProjectScreenshot(url));
-    const missingBundled = bundledAdd.some((bUrl) => !currentAdd.includes(bUrl));
-    const orderChanged =
-      bundledAdd.length > 0 &&
-      (currentAdd.length !== bundledAdd.length || currentAdd[0] !== bundledAdd[0]);
-
-    // Preserve any custom Supabase uploaded screenshots added by admin while keeping bundled screenshots in canonical order
     const customUploaded = currentAdd.filter(
       (url) =>
         url !== mergedMain &&
@@ -72,67 +118,28 @@ export const mergeWithBundledProjects = (firestoreProjects: Project[]): Project[
       (url) => url !== mergedMain
     );
 
-    // Full ordered list: #01 is ALWAYS mergedMain (Poster Cover), followed by #02..#N mergedAdditional
-    const fullOrderedUrls = Array.from(new Set([mergedMain, ...mergedAdditional].filter(Boolean)));
-
-    let mergedMetadata = fp.screenshotMetadata;
-    if (mergedMetadata && mergedMetadata.length > 0) {
-      const filteredMeta = mergedMetadata.filter((m) => !isExcludedProjectScreenshot(m.url));
-      const metaByUrl = new Map<string, ProjectScreenshot>();
-      filteredMeta.forEach((m) => {
-        if (!metaByUrl.has(m.url)) {
-          metaByUrl.set(m.url, m);
-        }
-      });
-
-      mergedMetadata = fullOrderedUrls.map((url, idx) => {
-        const existing = metaByUrl.get(url);
-        const info = getProjectScreenshotMetadata(projectKey, idx, url);
-        return {
-          id: existing?.id || `scr_sync_${idx}_${Math.random().toString(36).substring(2, 7)}`,
-          url,
-          title: info.title,
-          category: info.category,
-          caption:
-            existing?.caption && !existing.caption.includes('workflow screenshot view')
-              ? existing.caption
-              : info.caption,
-          altText: existing?.altText || info.title,
-          displayOrder: idx + 1,
-          published: existing ? existing.published !== false : true,
-          isCover: idx === 0,
-        };
-      });
-    }
-
-    const updatedProject: Project = {
+    return {
       ...bundled,
       ...fp,
-      slug: bundled.slug,
+      slug: fp.slug || bundled.slug,
       mainScreenshot: mergedMain,
       additionalScreenshots: mergedAdditional,
-      screenshotMetadata: mergedMetadata,
     };
-
-    if ((mainChanged || hasExcluded || missingBundled || orderChanged) && isUserAdmin(auth.currentUser) && fp.id) {
-      updateDoc(doc(db, 'projects', fp.id), {
-        mainScreenshot: mergedMain,
-        additionalScreenshots: mergedAdditional,
-        ...(mergedMetadata ? { screenshotMetadata: mergedMetadata } : {}),
-      }).catch(() => {});
-    }
-
-    return updatedProject;
   });
+
+  return mergedList
+    .sort((a, b) => (a.displayOrder ?? 9999) - (b.displayOrder ?? 9999))
+    .map((p, idx) => ({ ...p, displayOrder: idx + 1 }));
 };
 
 export const initializeProjectsInFirestore = async () => {
   try {
     const querySnapshot = await getDocs(projectsColRef);
     if (querySnapshot.empty) {
-      for (const proj of PROJECTS) {
+      for (let i = 0; i < PROJECTS.length; i++) {
+        const proj = PROJECTS[i];
         const { id, ...data } = proj;
-        await addDoc(projectsColRef, data);
+        await addDoc(projectsColRef, { ...data, displayOrder: i + 1 });
       }
       console.log('Initialized default projects in Firestore');
     }
@@ -146,18 +153,19 @@ export const subscribeToProjects = (callback: (projects: Project[]) => void) => 
   return onSnapshot(q, (snapshot) => {
     const projects = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project));
     if (projects.length === 0) {
-      callback(PROJECTS);
+      callback(PROJECTS.map((p, idx) => ({ ...p, displayOrder: idx + 1 })));
     } else {
       callback(mergeWithBundledProjects(projects));
     }
   }, (err) => {
     console.warn('Projects listener offline fallback:', err.message);
-    callback(PROJECTS);
+    callback(PROJECTS.map((p, idx) => ({ ...p, displayOrder: idx + 1 })));
   });
 };
 
 /**
- * Recalculates sequential display orders (1, 2, 3...) and syncs main & additional screenshots.
+ * Recalculates sequential display orders (1, 2, 3...) and syncs main & additional screenshots
+ * along with their 01, 02, 03 title prefixes.
  */
 export const normalizeAndSyncScreenshots = (screenshots: ProjectScreenshot[]) => {
   if (!screenshots || screenshots.length === 0) {
@@ -168,10 +176,11 @@ export const normalizeAndSyncScreenshots = (screenshots: ProjectScreenshot[]) =>
     };
   }
 
-  // Preserve identity while re-assigning sequential 1-based display orders
+  // Preserve identity while re-assigning sequential 1-based display orders and synced title numbers
   const items = screenshots.map((item, idx) => ({
     ...item,
     displayOrder: idx + 1,
+    title: syncScreenshotTitlePrefix(item.title, idx + 1),
     published: item.published !== false
   }));
 
@@ -201,11 +210,11 @@ export const normalizeAndSyncScreenshots = (screenshots: ProjectScreenshot[]) =>
   };
 };
 
-export const saveProject = async (project: Omit<Project, 'id'>, id?: string) => {
+export const saveProject = async (project: Omit<Project, 'id'>, id?: string): Promise<string> => {
   if (!isUserAdmin(auth.currentUser)) throw new Error('Unauthorized');
   
   // If screenshotMetadata is present, sync mainScreenshot & additionalScreenshots
-  let payload: any = { ...project };
+  let payload: any = { ...project, updatedAt: new Date().toISOString() };
   if (project.screenshotMetadata && project.screenshotMetadata.length > 0) {
     const synced = normalizeAndSyncScreenshots(project.screenshotMetadata);
     payload.screenshotMetadata = synced.items;
@@ -215,9 +224,25 @@ export const saveProject = async (project: Omit<Project, 'id'>, id?: string) => 
 
   if (id) {
     await updateDoc(doc(db, 'projects', id), payload);
+    return id;
   } else {
-    await addDoc(projectsColRef, payload);
+    const docRef = await addDoc(projectsColRef, { ...payload, createdAt: new Date().toISOString() });
+    return docRef.id;
   }
+};
+
+/**
+ * Automatically normalizes and persists sequential 1-based displayOrder (1, 2, 3... N)
+ * across all projects after any add, delete, or reorder operation.
+ */
+export const reindexProjectsInFirestore = async (orderedProjects: Project[]) => {
+  if (!isUserAdmin(auth.currentUser)) return;
+  const normalized = orderedProjects.map((p, idx) => ({ ...p, displayOrder: idx + 1 }));
+  await Promise.all(
+    normalized
+      .filter(p => Boolean(p.id))
+      .map(p => updateDoc(doc(db, 'projects', p.id), { displayOrder: p.displayOrder, updatedAt: new Date().toISOString() }))
+  );
 };
 
 export const saveProjectScreenshots = async (projectId: string, screenshots: ProjectScreenshot[]) => {
@@ -250,11 +275,20 @@ export const isScreenshotUrlInUse = (url: string, currentProjectId: string, allP
   return false;
 };
 
-export const deleteProject = async (projectId: string, assetPaths: string[], allProjects: Project[] = []) => {
+export const deleteProject = async (
+  projectId: string,
+  assetPaths: string[],
+  allProjects: Project[] = [],
+  remainingOrdered?: Project[]
+) => {
   if (!isUserAdmin(auth.currentUser)) throw new Error('Unauthorized');
 
   // Delete the Firestore record first. If this fails, leave all media untouched.
   await deleteDoc(doc(db, 'projects', projectId));
+
+  if (remainingOrdered && remainingOrdered.length > 0) {
+    await reindexProjectsInFirestore(remainingOrdered);
+  }
 
   const idToken = await auth.currentUser?.getIdToken();
   if (!idToken) return;
@@ -269,7 +303,7 @@ export const deleteProject = async (projectId: string, assetPaths: string[], all
       await deleteFileProxy(assetPath, idToken);
     } catch (error) {
       // A failed media cleanup must not undo the successful metadata deletion.
-      console.warn('Project deleted, but an unused Supabase asset could not be removed:', assetPath, error);
+      console.warn('Project deleted, but an unused asset could not be removed:', assetPath, error);
     }
   }
 };

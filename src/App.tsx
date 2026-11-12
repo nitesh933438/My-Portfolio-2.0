@@ -60,18 +60,20 @@ const AnimatedAppRoutes: FC<AnimatedAppRoutesProps> = ({ theme, setTheme, liveUn
     <AnimatePresence mode="wait" initial={false}>
       <motion.div
         key={routeTransitionKey}
-        initial={{ opacity: 0, y: 8 }}
+        initial={{ opacity: 0 }}
         animate={{ 
-          opacity: 1, 
-          y: 0,
-          transition: { duration: 0.32, ease: [0.22, 1, 0.36, 1] }
+          opacity: 1,
+          transition: { duration: 0.28, ease: [0.22, 1, 0.36, 1] }
         }}
         exit={{ 
-          opacity: 0, 
-          y: -6,
-          transition: { duration: 0.18, ease: [0.22, 1, 0.36, 1] }
+          opacity: 0,
+          transition: { duration: 0.16, ease: [0.22, 1, 0.36, 1] }
         }}
-        className="w-full min-h-screen"
+        className={
+          location.pathname.startsWith('/admin')
+            ? 'w-full h-dvh overflow-hidden'
+            : 'w-full min-h-screen'
+        }
       >
         <Routes location={location}>
           <Route path="/verify/:certId" element={

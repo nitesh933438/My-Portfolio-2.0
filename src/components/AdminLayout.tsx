@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -36,23 +36,24 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ theme, setTheme }) => 
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
+  const mainScrollRef = useRef<HTMLElement | null>(null);
   const navigate = useNavigate();
   const location = useLocation();
 
   useEffect(() => {
     setMobileMenuOpen(false);
+    if (mainScrollRef.current) {
+      mainScrollRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+    }
   }, [location.pathname]);
 
   useEffect(() => {
     if (!mobileMenuOpen) return;
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
     const onEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') setMobileMenuOpen(false);
     };
     document.addEventListener('keydown', onEscape);
     return () => {
-      document.body.style.overflow = prevOverflow;
       document.removeEventListener('keydown', onEscape);
     };
   }, [mobileMenuOpen]);
@@ -84,8 +85,9 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ theme, setTheme }) => 
   ) || navItems[0];
 
   const SidebarContent = ({ isMobile = false }: { isMobile?: boolean }) => (
-    <div className="flex flex-col h-full bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-100">
-      <div className="p-4 flex items-center justify-between border-b border-slate-200 dark:border-slate-800 shrink-0">
+    <div className="flex flex-col h-full w-full overflow-hidden bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-100 select-none">
+      {/* Top Brand Header (Fixed inside Sidebar) */}
+      <div className="p-4 flex items-center justify-between border-b border-slate-200 dark:border-slate-800 shrink-0 min-h-16">
         {(sidebarOpen || isMobile) && (
           <div className="flex items-center gap-2.5 min-w-0">
             <NKLogo className="w-8 h-8 shrink-0" size={32} showGlow={true} />
@@ -103,7 +105,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ theme, setTheme }) => 
           <button
             type="button"
             onClick={() => setMobileMenuOpen(false)}
-            className="p-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            className="p-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
             aria-label="Close navigation menu"
           >
             <X size={20} />
@@ -112,7 +114,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ theme, setTheme }) => 
           <button
             type="button"
             onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="p-2 rounded-xl text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors mx-auto"
+            className="p-2 rounded-xl text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors mx-auto cursor-pointer"
             title={sidebarOpen ? 'Collapse Sidebar' : 'Expand Sidebar'}
           >
             <ChevronLeft className={`w-5 h-5 transition-transform ${!sidebarOpen ? 'rotate-180' : ''}`} />
@@ -120,15 +122,17 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ theme, setTheme }) => 
         )}
       </div>
 
-      <nav className="flex-1 p-3 space-y-1.5 overflow-y-auto custom-scrollbar">
+      {/* Independent Scrollable Nav List */}
+      <nav className="flex-1 p-3 space-y-1.5 overflow-y-auto overscroll-contain custom-scrollbar">
         {navItems.map((item) => (
           <NavLink
             key={item.path}
             to={item.path}
             end={item.exact}
             onClick={() => setMobileMenuOpen(false)}
+            title={!sidebarOpen && !isMobile ? item.label : undefined}
             className={({ isActive }) => `
-              flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-bold text-xs transition-all
+              flex items-center ${!sidebarOpen && !isMobile ? 'justify-center' : ''} gap-3 px-3.5 py-2.5 rounded-xl font-bold text-xs transition-all
               ${isActive 
                 ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20' 
                 : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white'
@@ -169,6 +173,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ theme, setTheme }) => 
         </div>
       )}
 
+      {/* Bottom Sign Out & Portfolio Link (Fixed inside Sidebar) */}
       <div className="p-3 border-t border-slate-200 dark:border-slate-800 space-y-1.5 shrink-0">
         {isMobile && (
           <a
@@ -182,7 +187,8 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ theme, setTheme }) => 
         <button
           type="button"
           onClick={handleSignOut}
-          className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-bold text-xs text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-all cursor-pointer"
+          title={!sidebarOpen && !isMobile ? 'Sign Out' : undefined}
+          className={`w-full flex items-center ${!sidebarOpen && !isMobile ? 'justify-center' : ''} gap-3 px-3.5 py-2.5 rounded-xl font-bold text-xs text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-all cursor-pointer`}
         >
           <LogOut className="w-5 h-5 shrink-0" />
           {(sidebarOpen || isMobile) && <span>Sign Out</span>}
@@ -193,33 +199,49 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ theme, setTheme }) => 
 
   return (
     <AdminToastProvider>
-      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex overflow-x-hidden">
-        {/* Desktop Sidebar */}
-        <aside className={`hidden lg:block transition-all duration-300 shrink-0 ${sidebarOpen ? 'w-64' : 'w-20'}`}>
-          <div className="sticky top-0 h-screen">
-            <SidebarContent isMobile={false} />
-          </div>
+      <div className="h-dvh w-full bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex overflow-hidden">
+        {/* Desktop Sidebar: Fixed full viewport height with its own internal scroll */}
+        <aside
+          className={`hidden lg:flex flex-col h-full shrink-0 transition-all duration-300 overflow-hidden z-20 ${
+            sidebarOpen ? 'w-64' : 'w-20'
+          }`}
+        >
+          <SidebarContent isMobile={false} />
         </aside>
 
-        {/* Mobile Sidebar Overlay */}
-        {mobileMenuOpen && (
-          <div className="fixed inset-0 z-50 lg:hidden flex">
-            <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm" onClick={() => setMobileMenuOpen(false)} />
-            <aside className="relative w-72 max-w-[85vw] h-full z-10 shadow-2xl">
-              <SidebarContent isMobile={true} />
-            </aside>
-          </div>
-        )}
+        {/* Mobile & Tablet Sidebar Drawer Overlay */}
+        <AnimatePresence>
+          {mobileMenuOpen && (
+            <div className="fixed inset-0 z-50 lg:hidden flex">
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm"
+                onClick={() => setMobileMenuOpen(false)}
+              />
+              <motion.aside
+                initial={{ x: '-100%' }}
+                animate={{ x: 0 }}
+                exit={{ x: '-100%' }}
+                transition={{ type: 'spring', damping: 28, stiffness: 300 }}
+                className="relative w-72 max-w-[85vw] h-full z-10 shadow-2xl overflow-hidden"
+              >
+                <SidebarContent isMobile={true} />
+              </motion.aside>
+            </div>
+          )}
+        </AnimatePresence>
 
-        {/* Main Content */}
-        <div className="flex-1 flex flex-col min-w-0">
+        {/* Right Side Column: Fixed Header + Independently Scrollable Main Viewport */}
+        <div className="flex-1 flex flex-col h-full min-w-0 overflow-hidden">
           {/* Top Header */}
-          <header className="min-h-16 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 px-3 sm:px-6 py-2.5 flex items-center justify-between gap-2 sticky top-0 z-30">
+          <header className="shrink-0 min-h-14 sm:min-h-16 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 px-3 sm:px-6 py-2 flex items-center justify-between gap-2 z-30">
             <div className="flex items-center gap-2 sm:gap-3 min-w-0">
               <button
                 type="button"
                 onClick={() => setMobileMenuOpen(true)}
-                className="lg:hidden p-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 shrink-0"
+                className="lg:hidden p-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 shrink-0 cursor-pointer"
                 aria-label="Open sidebar navigation"
               >
                 <Menu size={20} />
@@ -237,7 +259,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ theme, setTheme }) => 
             <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
               <a
                 href="#/"
-                className="flex items-center gap-1.5 px-2.5 sm:px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-bold hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                className="flex items-center gap-1.5 px-2.5 sm:px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-bold hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors whitespace-nowrap"
                 title="Open Public Portfolio"
               >
                 <ExternalLink size={14} className="text-indigo-600 dark:text-indigo-400 shrink-0" />
@@ -247,7 +269,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ theme, setTheme }) => 
               <button
                 type="button"
                 onClick={() => setIsScannerOpen(true)}
-                className="flex items-center gap-1.5 px-2.5 sm:px-3.5 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white text-xs font-bold shadow-md shadow-indigo-600/20 hover:scale-[1.02] transition-all cursor-pointer"
+                className="flex items-center gap-1.5 px-2.5 sm:px-3.5 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white text-xs font-bold shadow-md shadow-indigo-600/20 hover:scale-[1.02] transition-all cursor-pointer whitespace-nowrap"
                 title="Universal AI Scanner & Auto-Fill"
               >
                 <Sparkles size={14} className="shrink-0" />
@@ -281,25 +303,47 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ theme, setTheme }) => 
             </div>
           </header>
 
-          {/* Main Area */}
-          <main className="flex-1 p-3 sm:p-6 lg:p-8 overflow-y-auto min-w-0">
+          {/* Mobile & Tablet Quick Navigation Strip (Scrolls horizontally, stays fixed above main content) */}
+          <div className="lg:hidden shrink-0 bg-white/90 dark:bg-slate-900/90 border-b border-slate-200 dark:border-slate-800 px-2.5 py-1.5 flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+            {navItems.map((item) => (
+              <NavLink
+                key={item.path}
+                to={item.path}
+                end={item.exact}
+                className={({ isActive }) => `
+                  flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold text-[11px] whitespace-nowrap shrink-0 transition-all
+                  ${isActive
+                    ? 'bg-indigo-600 text-white shadow-xs'
+                    : 'bg-slate-100 dark:bg-slate-800/80 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                  }
+                `}
+              >
+                <item.icon className="w-3.5 h-3.5 shrink-0" />
+                <span>{item.label}</span>
+              </NavLink>
+            ))}
+          </div>
+
+          {/* Independently Scrollable Right Content Area */}
+          <main
+            ref={mainScrollRef}
+            className="flex-1 p-3 sm:p-5 lg:p-8 overflow-y-auto overflow-x-hidden overscroll-contain min-w-0 custom-scrollbar"
+          >
             <AnimatePresence mode="wait" initial={false}>
               <motion.div
                 key={location.pathname}
-                initial={{ opacity: 0, y: 8, filter: 'blur(3px)' }}
+                initial={{ opacity: 0, y: 6 }}
                 animate={{ 
                   opacity: 1, 
                   y: 0, 
-                  filter: 'blur(0px)',
-                  transition: { duration: 0.28, ease: [0.22, 1, 0.36, 1] } 
+                  transition: { duration: 0.22, ease: [0.22, 1, 0.36, 1] } 
                 }}
                 exit={{ 
                   opacity: 0, 
-                  y: -6, 
-                  filter: 'blur(2px)',
-                  transition: { duration: 0.16, ease: [0.22, 1, 0.36, 1] } 
+                  y: -4, 
+                  transition: { duration: 0.14, ease: [0.22, 1, 0.36, 1] } 
                 }}
-                className="w-full"
+                className="w-full pb-10"
               >
                 <Outlet />
               </motion.div>

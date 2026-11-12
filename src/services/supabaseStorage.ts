@@ -89,15 +89,17 @@ export const deleteFileProxy = async (path: string, idToken: string): Promise<vo
 
 /**
  * Resolves the public URL for a file.
- * If the path is a full URL, returns it. Otherwise, generates a Supabase Public URL.
+ * If the path is a full URL, returns it. Otherwise, generates a Supabase Public URL or local upload path.
  */
 export const getStorageUrl = (path: string): string => {
   if (!path) return '';
-  if (path.startsWith('http')) return path;
+  if (path.startsWith('http://') || path.startsWith('https://') || path.startsWith('data:')) return path;
+  if (path.startsWith('/uploads/') || path.startsWith('uploads/')) {
+    return path.startsWith('/') ? path : `/${path}`;
+  }
   
   if (!supabase) {
-    console.warn('Supabase storage not configured. Returning raw path.');
-    return path;
+    return path.startsWith('/') ? path : `/${path}`;
   }
   
   const { data } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(path);
@@ -109,6 +111,10 @@ export const getStorageUrl = (path: string): string => {
  * Resolves a signed URL for private files (e.g., documents).
  */
 export const getSignedUrlProxy = async (path: string, idToken: string): Promise<string> => {
+  if (path.startsWith('/uploads/') || path.startsWith('uploads/') || !supabase) {
+    return path.startsWith('/') ? path : `/${path}`;
+  }
+
   const response = await fetch(apiUrl(`/api/storage/signed-url?path=${encodeURIComponent(path)}`), {
     headers: {
       'Authorization': `Bearer ${idToken}`
@@ -127,8 +133,9 @@ export const getSignedUrlProxy = async (path: string, idToken: string): Promise<
 /**
  * Generic Asset Resolver: Handles resolving URLs for all portfolio assets.
  * 1. Returns full HTTP URLs as is.
- * 2. Resolves Supabase paths (e.g. certificates/filename.jpg) to public URLs.
- * 3. Resolves local filenames to public/ repository paths.
+ * 2. Resolves local /uploads/ paths.
+ * 3. Resolves Supabase paths (e.g. certificates/filename.jpg) to public URLs.
+ * 4. Resolves local filenames to public/ repository paths.
  */
 export const resolveAssetUrl = (pathOrUrl: string, type: AssetFolder): string => {
   if (!pathOrUrl) return '';
@@ -142,6 +149,10 @@ export const resolveAssetUrl = (pathOrUrl: string, type: AssetFolder): string =>
 
   const baseUrl = import.meta.env.BASE_URL || '/';
   const prefix = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
+
+  if (cleanPath.startsWith('uploads/')) {
+    return `${prefix}${cleanPath}`;
+  }
 
   // Known local static asset paths in /public directory
   const isTimestampedSupabasePath = /^(certificates|projects|profile|resume|documents)\/\d{10,}_/.test(cleanPath);

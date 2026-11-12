@@ -172,18 +172,28 @@ export const ProjectScreenshotManager: React.FC<ProjectScreenshotManagerProps> =
 
   if (!isOpen || !project) return null;
 
-  // Re-calculate sequential numbers (1, 2, 3... N)
+  // Re-calculate sequential numbers (1, 2, 3... N) and sync title prefix (01 – ..., 02 – ...)
   const resequence = (list: ProjectScreenshot[]): ProjectScreenshot[] => {
-    return list.map((item, idx) => ({
-      ...item,
-      displayOrder: idx + 1
-    }));
+    return list.map((item, idx) => {
+      const orderNum = idx + 1;
+      const cleanTitle = (item.title || '').replace(/^\d+\s*[–-]\s*/, '').trim();
+      const prefix = String(orderNum).padStart(2, '0');
+      return {
+        ...item,
+        displayOrder: orderNum,
+        title: cleanTitle ? `${prefix} – ${cleanTitle}` : `${prefix} – Screenshot`
+      };
+    });
   };
 
-  // Helper to mark changes
+  // Helper to mark changes and auto-persist sequential order to Firestore
   const updateList = (newList: ProjectScreenshot[]) => {
-    setScreenshots(resequence(newList));
+    const resequenced = resequence(newList);
+    setScreenshots(resequenced);
     setHasUnsavedChanges(true);
+    saveProjectScreenshots(project.id, resequenced)
+      .then(() => setHasUnsavedChanges(false))
+      .catch(err => console.warn('Auto-save screenshot order note:', err));
   };
 
   // 1. UPLOAD MULTIPLE SCREENSHOTS
@@ -300,6 +310,12 @@ export const ProjectScreenshotManager: React.FC<ProjectScreenshotManagerProps> =
 
   const handleDragEnd = () => {
     setDraggedIndex(null);
+    saveProjectScreenshots(project.id, screenshots)
+      .then(() => {
+        setHasUnsavedChanges(false);
+        showToast('Screenshot order & serial numbers updated automatically!', 'success');
+      })
+      .catch(err => console.warn('Drag auto-save note:', err));
   };
 
   // ACCESSIBLE MOVE CONTROLS

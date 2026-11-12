@@ -251,7 +251,7 @@ http://localhost:3000
 - **Public Concealment**: No visible "Admin" buttons exist on the navbar or mobile menu to protect administrative privacy.
 - **How to Open the Admin Console**:
   1. **Direct URL**: Navigate to `/#/admin` in your browser.
-  2. **Keyboard Shortcut**: Press `Ctrl + Shift + A` (Windows/Linux) or `Cmd + Shift + A` (macOS).
+  2. **Keyboard Shortcut**: Press `Ctrl + Shift + Z` (Windows/Linux) or `Cmd + Shift + Z` (macOS). Also supports `Ctrl + Shift + A`.
   3. **Discreet Footer Dot**: Click the subtle separator bullet (`•`) beside the copyright notice in the footer.
 - **Role-Based Access Control (RBAC)**:
   - Users sign in using the official Google Sign-In prompt.
@@ -312,7 +312,7 @@ Because this application includes server-side AI endpoints and Supabase storage 
 
 | Shortcut | Action | Scope |
 | :--- | :--- | :--- |
-| `Ctrl + Shift + A` / `Cmd + Shift + A` | Open Secret Admin CMS | Anywhere |
+| `Ctrl + Shift + Z` / `Cmd + Shift + Z` | Open Secret Admin CMS (also `Ctrl + Shift + A`) | Anywhere |
 | `Esc` | Close any active modal (Resume, Certificate, Marksheet) | Modal Open |
 | `Alt + Home` | Return to top of portfolio | Anywhere |
 

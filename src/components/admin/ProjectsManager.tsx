@@ -14,13 +14,17 @@ import {
   Sparkles,
   Grid,
   RefreshCw,
-  Star
+  Star,
+  ArrowUp,
+  ArrowDown,
+  ChevronsUp
 } from 'lucide-react';
 import { Project, ProjectCategory, ProjectStatus, ProjectScreenshot, PROJECTS } from '../../data/portfolio';
 import { 
   subscribeToProjects, 
   saveProject, 
   deleteProject, 
+  reindexProjectsInFirestore,
   resolveProjectImageUrl
 } from '../../services/projectFirebase';
 import { getProjectScreenshotMetadata, isExcludedProjectScreenshot } from '../../data/projectScreenshotCatalog';
@@ -140,7 +144,9 @@ export const ProjectsManager: React.FC = () => {
     }
   }, [pendingResult, projects.length, showToast, setPendingResult]);
 
-  const filteredProjects = projects.filter(p => {
+  const orderedProjects = [...projects].sort((a, b) => (a.displayOrder ?? 9999) - (b.displayOrder ?? 9999));
+
+  const filteredProjects = orderedProjects.filter(p => {
     const matchesSearch = p.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
                           p.shortDescription.toLowerCase().includes(searchQuery.toLowerCase()) ||
                           p.techStack.some(t => t.toLowerCase().includes(searchQuery.toLowerCase()));
@@ -196,16 +202,38 @@ export const ProjectsManager: React.FC = () => {
         .replace(/^-|-$/g, '');
 
       const { id, ...projectPayload } = editingProject;
-      await saveProject(
-        {
-          ...projectPayload,
-          slug: normalizedSlug,
-          techStack: parsedTech.length > 0 ? parsedTech : ['React', 'TypeScript'],
-          keyFeatures: parsedFeatures
-        },
-        id || undefined
+      const cleanData = {
+        ...projectPayload,
+        slug: normalizedSlug,
+        techStack: parsedTech.length > 0 ? parsedTech : ['React', 'TypeScript'],
+        keyFeatures: parsedFeatures
+      };
+
+      const savedId = await saveProject(cleanData, id || undefined);
+
+      // Automatically insert at requested displayOrder and re-sequence all serial numbers (1, 2, 3... N)
+      const withoutSaved = orderedProjects.filter(p => p.id !== savedId);
+      const targetIndex = Math.max(
+        0,
+        Math.min(withoutSaved.length, (Number(editingProject.displayOrder) || withoutSaved.length + 1) - 1)
       );
-      showToast('Project saved successfully!', 'success');
+      const savedRecord: Project = {
+        ...(orderedProjects.find(p => p.id === savedId) || {}),
+        ...cleanData,
+        id: savedId,
+        displayOrder: targetIndex + 1
+      };
+      withoutSaved.splice(targetIndex, 0, savedRecord);
+      const reindexed = withoutSaved.map((p, idx) => ({ ...p, displayOrder: idx + 1 }));
+      setProjects(reindexed);
+      await reindexProjectsInFirestore(reindexed);
+
+      showToast(
+        id
+          ? `Project updated at Serial #${String(targetIndex + 1).padStart(2, '0')}!`
+          : `Project added at Serial #${String(targetIndex + 1).padStart(2, '0')}!`,
+        'success'
+      );
       setEditingProject(null);
     } catch (err: any) {
       showToast(err.message || 'Failed to save project', 'error');
@@ -214,11 +242,68 @@ export const ProjectsManager: React.FC = () => {
     }
   };
 
+  const handleToggleFeatured = async (project: Project) => {
+    const nextFeatured = !project.featured;
+    setProjects(prev => prev.map(p => (p.id === project.id ? { ...p, featured: nextFeatured } : p)));
+    try {
+      const { id, ...data } = project;
+      await saveProject({ ...data, featured: nextFeatured }, id);
+      showToast(
+        nextFeatured ? `"${project.title}" marked as Featured ⭐` : `"${project.title}" unfeatured.`,
+        'success'
+      );
+    } catch (err: any) {
+      setProjects(prev => prev.map(p => (p.id === project.id ? { ...p, featured: project.featured } : p)));
+      showToast(err.message || 'Could not update featured status', 'error');
+    }
+  };
+
+  const handleMoveProject = async (project: Project, direction: -1 | 1) => {
+    const index = orderedProjects.findIndex(p => p.id === project.id);
+    const targetIndex = index + direction;
+    if (index < 0 || targetIndex < 0 || targetIndex >= orderedProjects.length) return;
+
+    const list = [...orderedProjects];
+    const [moved] = list.splice(index, 1);
+    list.splice(targetIndex, 0, moved);
+    const reindexed = list.map((p, idx) => ({ ...p, displayOrder: idx + 1 }));
+
+    setProjects(reindexed);
+    try {
+      await reindexProjectsInFirestore(reindexed);
+      showToast(
+        `Moved "${project.title}" to Serial #${String(targetIndex + 1).padStart(2, '0')}.`,
+        'success'
+      );
+    } catch (err: any) {
+      setProjects(orderedProjects);
+      showToast(err.message || 'Failed to reorder project', 'error');
+    }
+  };
+
+  const handleMoveProjectToFirst = async (project: Project) => {
+    const index = orderedProjects.findIndex(p => p.id === project.id);
+    if (index <= 0) return;
+
+    const remaining = orderedProjects.filter(p => p.id !== project.id);
+    const reindexed = [project, ...remaining].map((p, idx) => ({ ...p, displayOrder: idx + 1 }));
+
+    setProjects(reindexed);
+    try {
+      await reindexProjectsInFirestore(reindexed);
+      showToast(`"${project.title}" moved to #01 Start position and all serial numbers updated!`, 'success');
+    } catch (err: any) {
+      setProjects(orderedProjects);
+      showToast(err.message || 'Failed to move project to top', 'error');
+    }
+  };
+
   const handleSyncDefaultProjects = async () => {
     if (syncingDefaults) return;
     setSyncingDefaults(true);
     try {
-      for (const defaultProj of PROJECTS) {
+      for (let i = 0; i < PROJECTS.length; i++) {
+        const defaultProj = PROJECTS[i];
         const existing = projects.find(
           p => p.slug === defaultProj.slug || p.id === defaultProj.id || p.title.toLowerCase() === defaultProj.title.toLowerCase()
         );
@@ -227,6 +312,7 @@ export const ProjectsManager: React.FC = () => {
         await saveProject(
           {
             ...payload,
+            displayOrder: existing?.displayOrder || i + 1,
             mainScreenshot: normalizedGallery[0]?.url || defaultProj.mainScreenshot,
             additionalScreenshots: normalizedGallery.slice(1).map(s => s.url),
             screenshotMetadata: normalizedGallery
@@ -245,18 +331,26 @@ export const ProjectsManager: React.FC = () => {
   const confirmDeleteProject = async () => {
     if (!deletingProject) return;
     setDeleting(true);
+    const target = deletingProject;
+    const prevOrdered = [...orderedProjects];
+    const remaining = prevOrdered
+      .filter(p => p.id !== target.id)
+      .map((p, idx) => ({ ...p, displayOrder: idx + 1 }));
+
     try {
-      const allItems = buildProjectScreenshotGallery(deletingProject);
+      const allItems = buildProjectScreenshotGallery(target);
       const assetPaths = [
-        deletingProject.mainScreenshot,
-        ...(deletingProject.additionalScreenshots || []),
+        target.mainScreenshot,
+        ...(target.additionalScreenshots || []),
         ...allItems.map(s => s.url)
       ].filter(Boolean);
 
-      await deleteProject(deletingProject.id, assetPaths, projects);
-      showToast(`Project "${deletingProject.title}" deleted successfully`, 'success');
+      setProjects(remaining);
+      await deleteProject(target.id, assetPaths, projects, remaining);
+      showToast(`Project "${target.title}" deleted and serial numbers updated automatically!`, 'success');
       setDeletingProject(null);
     } catch (err: any) {
+      setProjects(prevOrdered);
       showToast(err.message || 'Failed to delete project', 'error');
     } finally {
       setDeleting(false);
@@ -380,9 +474,18 @@ export const ProjectsManager: React.FC = () => {
         {filteredProjects.map((project) => {
           const normalizedScreenshots = buildProjectScreenshotGallery(project);
           const coverUrl = normalizedScreenshots.find(s => s.isCover)?.url || normalizedScreenshots[0]?.url || project.mainScreenshot;
+          const trueIndex = orderedProjects.findIndex(p => p.id === project.id);
+          const serialNumber = trueIndex >= 0 ? trueIndex + 1 : (project.displayOrder || 1);
 
           return (
-            <div key={project.id} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all flex flex-col">
+            <div
+              key={project.id}
+              className={`bg-white dark:bg-slate-900 border rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all flex flex-col ${
+                serialNumber === 1
+                  ? 'border-indigo-500/60 ring-1 ring-indigo-500/20'
+                  : 'border-slate-200 dark:border-slate-800'
+              }`}
+            >
               <div className="aspect-video bg-slate-950 relative overflow-hidden group">
                 <img
                   src={resolveProjectImageUrl(coverUrl)}
@@ -415,8 +518,8 @@ export const ProjectsManager: React.FC = () => {
               <div className="p-4 sm:p-5 flex-1 flex flex-col space-y-3">
                 <div className="flex items-start justify-between gap-2">
                   <h3 className="font-bold text-base text-slate-900 dark:text-white line-clamp-1">{project.title}</h3>
-                  <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 shrink-0">
-                    #{project.displayOrder}
+                  <span className="text-[11px] font-mono font-black px-2 py-0.5 rounded-md bg-indigo-500/10 dark:bg-indigo-500/20 text-indigo-600 dark:text-cyan-400 border border-indigo-500/20 shrink-0 tabular-nums">
+                    #{String(serialNumber).padStart(2, '0')}
                   </span>
                 </div>
                 <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 flex-1">{project.shortDescription}</p>
@@ -435,7 +538,55 @@ export const ProjectsManager: React.FC = () => {
                 </div>
 
                 <div className="pt-4 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex items-center gap-1">
+                    {/* Star / Featured Toggle */}
+                    <button
+                      type="button"
+                      onClick={() => handleToggleFeatured(project)}
+                      title={project.featured ? 'Featured Project (Click to unstar)' : 'Mark as Featured Project'}
+                      className={`p-2 rounded-lg transition-all cursor-pointer ${
+                        project.featured
+                          ? 'text-amber-500 bg-amber-500/20 hover:bg-amber-500/30 ring-1 ring-amber-500/40'
+                          : 'text-slate-400 hover:text-amber-500 bg-slate-100 dark:bg-slate-800'
+                      }`}
+                    >
+                      <Star className={`w-3.5 h-3.5 ${project.featured ? 'fill-amber-400 text-amber-500' : ''}`} />
+                    </button>
+
+                    {/* Move to Top (#01) */}
+                    {serialNumber > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => handleMoveProjectToFirst(project)}
+                        title="Move to #01 Start Position"
+                        className="p-2 rounded-lg bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-cyan-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 transition-colors cursor-pointer"
+                      >
+                        <ChevronsUp className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+
+                    {/* Move Up */}
+                    <button
+                      type="button"
+                      onClick={() => handleMoveProject(project, -1)}
+                      disabled={serialNumber <= 1}
+                      title="Move Up"
+                      className="p-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-30 transition-colors cursor-pointer"
+                    >
+                      <ArrowUp className="w-3.5 h-3.5" />
+                    </button>
+
+                    {/* Move Down */}
+                    <button
+                      type="button"
+                      onClick={() => handleMoveProject(project, 1)}
+                      disabled={serialNumber >= orderedProjects.length}
+                      title="Move Down"
+                      className="p-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-30 transition-colors cursor-pointer"
+                    >
+                      <ArrowDown className="w-3.5 h-3.5" />
+                    </button>
+
                     {project.githubUrl && (
                       <a
                         href={project.githubUrl}
@@ -444,7 +595,7 @@ export const ProjectsManager: React.FC = () => {
                         className="p-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
                         title="GitHub Repository"
                       >
-                        <Github className="w-4 h-4" />
+                        <Github className="w-3.5 h-3.5" />
                       </a>
                     )}
                     {project.liveDemoUrl && (
@@ -455,10 +606,11 @@ export const ProjectsManager: React.FC = () => {
                         className="p-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
                         title="Live Demo"
                       >
-                        <ExternalLink className="w-4 h-4" />
+                        <ExternalLink className="w-3.5 h-3.5" />
                       </a>
                     )}
                   </div>
+
                   <div className="flex flex-wrap items-center gap-1.5 ml-auto">
                     <button
                       type="button"
