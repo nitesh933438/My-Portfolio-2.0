@@ -273,9 +273,9 @@ my-portfolio-2.0/
 *Full-Stack MERN & AI Developer • B.Tech CSE at Arka Jain University*  
 📍 Rohtas, Bihar, India  
 
-- **Portfolio**: [Live Web Application](https://nitesh933438.github.io/My-Portfolio-2.0/)
+- **Portfolio**: [nitesh933438.github.io](https://nitesh933438.github.io/My-Portfolio-2.0/)
 - **GitHub**: [github.com/nitesh933438](https://github.com/nitesh933438)
-- **LinkedIn**: [linkedin.com/in/nitesh-kumar-8a65693a2](https://www.linkedin.com/in/nitesh933438/)
+- **LinkedIn**: [linkedin.com/in/nitesh933438](https://www.linkedin.com/in/nitesh933438/)
 - **Email**: [nitesh933438@gmail.com](mailto:nitesh933438@gmail.com)
 
 ---
