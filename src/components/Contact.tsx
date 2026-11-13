@@ -26,13 +26,16 @@ export const Contact: React.FC = () => {
     }
   };
 
-  const whatsappLink = SOCIAL_LINKS.find(s => s.platform === 'WhatsApp');
-  const githubLink = SOCIAL_LINKS.find(s => s.platform === 'GitHub');
-  const linkedinLink = SOCIAL_LINKS.find(s => s.platform === 'LinkedIn');
-  const instagramLink = SOCIAL_LINKS.find(s => s.platform === 'Instagram');
+  const githubUrl = settings.github || SOCIAL_LINKS.find(s => s.platform === 'GitHub')?.url || '';
+  const linkedinUrl = settings.linkedin || SOCIAL_LINKS.find(s => s.platform === 'LinkedIn')?.url || '';
+  const instagramUrl = settings.instagram || SOCIAL_LINKS.find(s => s.platform === 'Instagram')?.url || '';
+  const githubLink = githubUrl ? { url: githubUrl } : null;
+  const linkedinLink = linkedinUrl ? { url: linkedinUrl } : null;
+  const instagramLink = instagramUrl ? { url: instagramUrl } : null;
 
   // Use encoded prefilled message for WhatsApp
-  const whatsappUrl = `https://wa.me/${settings.whatsapp.replace(/\+/g, '')}?text=${encodeURIComponent(settings.whatsappPrefilledMessage || "Hello Nitesh! I visited your portfolio and I'm interested in discussing a project with you.")}`;
+  const whatsappDigits = (settings.whatsapp || '').replace(/[^0-9]/g, '') || '919334387983';
+  const whatsappUrl = `https://wa.me/${whatsappDigits}?text=${encodeURIComponent(settings.whatsappPrefilledMessage || "Hello Nitesh! I visited your portfolio and I'm interested in discussing a project with you.")}`;
 
   // Use encoded prefilled subject and body for Email
   const emailUrl = `mailto:${settings.email}?subject=${encodeURIComponent(settings.emailPrefilledSubject || "Project Inquiry – Portfolio Contact")}&body=${encodeURIComponent(settings.emailPrefilledBody || "Hello Nitesh,\n\nI visited your portfolio and I'm interested in discussing a project with you.\n\nBest regards,")}`;

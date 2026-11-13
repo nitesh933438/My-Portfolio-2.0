@@ -5,16 +5,29 @@ import { PublicPortfolio } from './components/PublicPortfolio';
 import { PortfolioProvider } from './context/PortfolioContext';
 import { AIScannerProvider } from './context/AIScannerContext';
 
-import { ACADEMIC_DATA, UniversityRecord } from './data/education';
+import { ACADEMIC_DATA, UniversityRecord, SchoolRecord } from './data/education';
 import { 
   subscribeToUniversityRecord, 
+  subscribeToSchoolRecords,
   initializeAcademicDataInFirestore,
   subscribeToSiteSettings,
   initializeSiteSettingsInFirestore,
   SiteSettings
 } from './services/academicFirebase';
-import { initializeProjectsInFirestore } from './services/projectFirebase';
-import { initializeCertificatesInFirestore } from './services/certificateFirebase';
+import { initializeProjectsInFirestore, subscribeToProjects } from './services/projectFirebase';
+import { initializeCertificatesInFirestore, subscribeToCertificates } from './services/certificateFirebase';
+import { subscribeToSkills, subscribeToExperience } from './services/portfolioContentFirebase';
+import {
+  SITE_CONFIG,
+  PROJECTS,
+  SKILLS_DATA,
+  EXPERIENCE_DATA,
+  Project,
+  SkillCategory,
+  Experience,
+} from './data/portfolio';
+import { BUNDLED_CERTIFICATES } from './data/certificates';
+import type { PortfolioCertificate } from './types/certificate';
 
 // Admin & Verification Components (Eagerly loaded for 0ms instant navigation)
 import { AdminAuthGuard } from './components/AdminAuthGuard';
@@ -29,7 +42,7 @@ import { AIAssistantPage } from './components/admin/AIAssistantPage';
 import { SkillsManager } from './components/admin/SkillsManager';
 import { ExperienceManager } from './components/admin/ExperienceManager';
 import { CertificateVerifyPage } from './components/CertificateVerifyPage';
-import { SITE_CONFIG } from './data/portfolio';
+import { ResumePage } from './components/ResumePage';
 
 type ThemeMode = 'light' | 'dark' | 'system';
 
@@ -52,6 +65,8 @@ const AnimatedAppRoutes: FC<AnimatedAppRoutesProps> = ({ theme, setTheme, liveUn
     ? 'admin-root'
     : location.pathname.startsWith('/verify')
     ? location.pathname
+    : location.pathname === '/resume'
+    ? 'resume-page'
     : 'public-portfolio';
 
   return (
@@ -74,6 +89,7 @@ const AnimatedAppRoutes: FC<AnimatedAppRoutesProps> = ({ theme, setTheme, liveUn
         }
       >
         <Routes location={location}>
+          <Route path="/resume" element={<ResumePage />} />
           <Route path="/verify/:certId" element={<CertificateVerifyPage />} />
           <Route path="/verify" element={<CertificateVerifyPage />} />
           <Route path="/*" element={<PublicPortfolio theme={theme} setTheme={setTheme} />} />
@@ -108,16 +124,23 @@ const App: FC = () => {
   });
 
   const [liveUniversity, setLiveUniversity] = useState<UniversityRecord>(ACADEMIC_DATA.university);
+  const [liveSchooling, setLiveSchooling] = useState<SchoolRecord[]>(ACADEMIC_DATA.schooling);
   const [liveSettings, setLiveSettings] = useState<SiteSettings>(SITE_CONFIG as SiteSettings);
+  const [liveProjects, setLiveProjects] = useState<Project[]>(PROJECTS);
+  const [liveCertificates, setLiveCertificates] = useState<PortfolioCertificate[]>(
+    BUNDLED_CERTIFICATES.filter((c) => c.published !== false)
+  );
+  const [liveSkills, setLiveSkills] = useState<SkillCategory[]>(SKILLS_DATA);
+  const [liveExperience, setLiveExperience] = useState<Experience[]>(EXPERIENCE_DATA);
 
   useEffect(() => {
-    const unsubUniversity = subscribeToUniversityRecord((data) => {
-      setLiveUniversity(data);
-    });
-    
-    const unsubSettings = subscribeToSiteSettings((data) => {
-      setLiveSettings(data);
-    });
+    const unsubUniversity = subscribeToUniversityRecord(setLiveUniversity);
+    const unsubSchooling = subscribeToSchoolRecords(setLiveSchooling);
+    const unsubSettings = subscribeToSiteSettings(setLiveSettings);
+    const unsubProjects = subscribeToProjects(setLiveProjects);
+    const unsubCertificates = subscribeToCertificates(setLiveCertificates, false);
+    const unsubSkills = subscribeToSkills(setLiveSkills);
+    const unsubExperience = subscribeToExperience(setLiveExperience);
 
     // Defer background initialization checks so initial render & scrolling are 100% unblocked
     const seedTimer = window.setTimeout(() => {
@@ -130,9 +153,20 @@ const App: FC = () => {
     return () => {
       window.clearTimeout(seedTimer);
       unsubUniversity();
+      unsubSchooling();
       unsubSettings();
+      unsubProjects();
+      unsubCertificates();
+      unsubSkills();
+      unsubExperience();
     };
   }, []);
+
+  useEffect(() => {
+    if (liveSettings?.name) {
+      document.title = liveSettings.name;
+    }
+  }, [liveSettings?.name]);
 
   useEffect(() => {
     localStorage.setItem('nitesh_portfolio_theme', theme);
@@ -151,7 +185,15 @@ const App: FC = () => {
 
   return (
     <AIScannerProvider>
-      <PortfolioProvider settings={liveSettings}>
+      <PortfolioProvider
+        settings={liveSettings}
+        university={liveUniversity}
+        schooling={liveSchooling}
+        projects={liveProjects}
+        certificates={liveCertificates}
+        skills={liveSkills}
+        experience={liveExperience}
+      >
         <HashRouter>
           <AnimatedAppRoutes 
             theme={theme} 

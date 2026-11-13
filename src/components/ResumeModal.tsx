@@ -25,16 +25,9 @@ import {
   Eye,
   Loader2
 } from 'lucide-react';
-import { 
-  PROJECTS, 
-  SKILLS_DATA, 
-  EXPERIENCE_DATA, 
-  SOCIAL_LINKS 
-} from '../data/portfolio';
-import { BUNDLED_CERTIFICATES } from '../data/certificates';
+import { SOCIAL_LINKS } from '../data/portfolio';
 import { usePortfolio } from '../context/PortfolioContext';
-import { ACADEMIC_DATA } from '../data/education';
-import { resolveAssetUrl } from '../services/supabaseStorage';
+import { useResolvedResume } from '../utils/resumeAsset';
 
 interface ResumeModalProps {
   isOpen: boolean;
@@ -42,7 +35,7 @@ interface ResumeModalProps {
 }
 
 export const ResumeModal: React.FC<ResumeModalProps> = ({ isOpen, onClose }) => {
-  const { settings } = usePortfolio();
+  const { settings, university, schooling, projects, certificates, skills, experience } = usePortfolio();
   const [copiedEmail, setCopiedEmail] = useState(false);
   const [activeTab, setActiveTab] = useState<'document' | 'interactive'>('document');
   const [zoomLevel, setZoomLevel] = useState<number>(1);
@@ -52,11 +45,11 @@ export const ResumeModal: React.FC<ResumeModalProps> = ({ isOpen, onClose }) => 
   const [printing, setPrinting] = useState(false);
   const atsResumeRef = useRef<HTMLDivElement>(null);
 
-  const officialPdfUrl = resolveAssetUrl(
-    settings.resumeUrl || '/assets/aistudio/Nitesh_Kumar_-_Resume_8ce55380.pdf',
-    'resume'
-  );
-  const officialResumePageImg = '/assets/nitesh_resume_page.png';
+  const {
+    pdfUrl: officialPdfUrl,
+    fallbackPdfUrl,
+    resumeImageUrl: officialResumePageImg,
+  } = useResolvedResume(settings.resumeUrl);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -95,7 +88,10 @@ export const ResumeModal: React.FC<ResumeModalProps> = ({ isOpen, onClose }) => 
     if (downloading) return;
     setDownloading(true);
     try {
-      const response = await fetch(officialPdfUrl);
+      let response = await fetch(officialPdfUrl);
+      if (!response.ok && officialPdfUrl !== fallbackPdfUrl) {
+        response = await fetch(fallbackPdfUrl);
+      }
       if (!response.ok) throw new Error('Failed to fetch PDF');
       const blob = await response.blob();
       const blobUrl = URL.createObjectURL(blob);
@@ -111,7 +107,7 @@ export const ResumeModal: React.FC<ResumeModalProps> = ({ isOpen, onClose }) => 
     } catch {
       // Direct fallback download if cross-origin blob fetch is restricted
       const link = document.createElement('a');
-      link.href = officialPdfUrl;
+      link.href = fallbackPdfUrl;
       link.download = 'Nitesh_Kumar_Resume.pdf';
       link.target = '_blank';
       link.rel = 'noopener noreferrer';
@@ -152,7 +148,7 @@ export const ResumeModal: React.FC<ResumeModalProps> = ({ isOpen, onClose }) => 
       }
 
       if (activeTab === 'document') {
-        const imgSrc = new URL(officialResumePageImg, window.location.origin).href;
+        const imgSrc = officialResumePageImg;
         doc.open();
         doc.write(`
           <!DOCTYPE html>
@@ -257,12 +253,22 @@ export const ResumeModal: React.FC<ResumeModalProps> = ({ isOpen, onClose }) => 
   const handleZoomOut = () => setZoomLevel(prev => Math.max(prev - 0.2, 0.6));
   const handleResetZoom = () => setZoomLevel(1);
 
-  const githubLink = SOCIAL_LINKS.find(s => s.platform === 'GitHub')?.url || settings.github || 'https://github.com/nitesh933438';
-  const linkedinLink = SOCIAL_LINKS.find(s => s.platform === 'LinkedIn')?.url || settings.linkedin || 'https://www.linkedin.com/in/nitesh-kumar-8a65693a2';
+  const githubLink = settings.github || SOCIAL_LINKS.find(s => s.platform === 'GitHub')?.url || 'https://github.com/nitesh933438';
+  const linkedinLink = settings.linkedin || SOCIAL_LINKS.find(s => s.platform === 'LinkedIn')?.url || 'https://www.linkedin.com/in/nitesh933438/';
 
-  const university = ACADEMIC_DATA.university;
-  const class12 = ACADEMIC_DATA.schooling.find(s => s.id === 'bseb-12th');
-  const class10 = ACADEMIC_DATA.schooling.find(s => s.id === 'bseb-10th');
+  const class12 = schooling.find(s => s.id === 'bseb-12th' || String(s.standard).includes('12'));
+  const class10 = schooling.find(s => s.id === 'bseb-10th' || String(s.standard).includes('10'));
+  const declaredSemesters = university.semesters
+    .filter((s) => s.isDeclared && typeof s.sgpa === 'number')
+    .sort((a, b) => a.semesterNumber - b.semesterNumber);
+  const semSummary = declaredSemesters.length
+    ? declaredSemesters.map((s) => `Sem ${s.semesterNumber}: ${s.sgpa?.toFixed(2)}`).join(' | ') + ' / 10.0'
+    : 'Results Scheduled';
+  const featuredProjectsList = projects.filter((p) => p.status !== 'Archived').slice(0, 6);
+  const featuredCertificatesList = (certificates.some((c) => c.featured)
+    ? certificates.filter((c) => c.featured)
+    : certificates
+  ).slice(0, 8);
 
   return (
     <AnimatePresence>
@@ -553,6 +559,16 @@ export const ResumeModal: React.FC<ResumeModalProps> = ({ isOpen, onClose }) => 
                     <ExternalLink className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
                     <span>Open PDF in New Tab</span>
                   </a>
+
+                  <a
+                    href="#/resume"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-700 text-xs font-bold transition-all active:scale-95"
+                  >
+                    <Eye className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                    <span>Open Full Page</span>
+                  </a>
                 </div>
               </div>
             )}
@@ -574,7 +590,7 @@ export const ResumeModal: React.FC<ResumeModalProps> = ({ isOpen, onClose }) => 
                       {settings.title}
                     </p>
                     <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 font-medium">
-                      B.Tech in Computer Science & Engineering • Arka Jain University (2025 – 2029)
+                      {university.degree} in {university.branch} • {university.institution} ({university.session})
                     </p>
                   </div>
 
@@ -639,7 +655,7 @@ export const ResumeModal: React.FC<ResumeModalProps> = ({ isOpen, onClose }) => 
                         <div className="text-right">
                           <span className="text-xs font-bold text-slate-700 dark:text-slate-300 block">{university.session}</span>
                           <span className="text-[11px] font-extrabold text-emerald-600 dark:text-emerald-400">
-                            Sem 1 SGPA: 7.91 | Sem 2 SGPA: 9.23 / 10.0
+                            {semSummary}
                           </span>
                         </div>
                       </div>
@@ -695,7 +711,7 @@ export const ResumeModal: React.FC<ResumeModalProps> = ({ isOpen, onClose }) => 
                     <span>Technical Skills & Stack</span>
                   </h2>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
-                    {SKILLS_DATA.map((group) => (
+                    {skills.map((group) => (
                       <div key={group.category} className="flex flex-col sm:flex-row sm:items-baseline gap-1 sm:gap-2">
                         <span className="font-bold text-slate-900 dark:text-white shrink-0 min-w-[145px]">
                           {group.category}:
@@ -714,7 +730,7 @@ export const ResumeModal: React.FC<ResumeModalProps> = ({ isOpen, onClose }) => 
                     <Briefcase className="w-3.5 h-3.5" />
                     <span>Development Experience</span>
                   </h2>
-                  {EXPERIENCE_DATA.map((exp, idx) => (
+                  {experience.map((exp, idx) => (
                     <div key={idx} className="space-y-1.5">
                       <div className="flex flex-wrap items-baseline justify-between gap-2">
                         <div>
@@ -736,10 +752,10 @@ export const ResumeModal: React.FC<ResumeModalProps> = ({ isOpen, onClose }) => 
                 <section className="space-y-3">
                   <h2 className="text-xs font-black uppercase tracking-[0.2em] text-indigo-600 dark:text-indigo-400 flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-1.5">
                     <Code2 className="w-3.5 h-3.5" />
-                    <span>Featured Engineering Projects ({PROJECTS.length} Total)</span>
+                    <span>Featured Engineering Projects ({projects.length} Total)</span>
                   </h2>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    {PROJECTS.slice(0, 6).map((proj) => (
+                    {featuredProjectsList.map((proj) => (
                       <div key={proj.id} className="p-3 rounded-xl border border-slate-200/80 dark:border-slate-800/80 bg-slate-50/60 dark:bg-slate-950/40 flex flex-col justify-between">
                         <div>
                           <div className="flex items-start justify-between gap-2">
@@ -773,10 +789,10 @@ export const ResumeModal: React.FC<ResumeModalProps> = ({ isOpen, onClose }) => 
                 <section className="space-y-2.5">
                   <h2 className="text-xs font-black uppercase tracking-[0.2em] text-indigo-600 dark:text-indigo-400 flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-1.5">
                     <Award className="w-3.5 h-3.5" />
-                    <span>Key Certifications & Recognitions ({BUNDLED_CERTIFICATES.length}+ Verified Credentials)</span>
+                    <span>Key Certifications & Recognitions ({certificates.length}+ Verified Credentials)</span>
                   </h2>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                    {BUNDLED_CERTIFICATES.filter(c => c.featured).slice(0, 8).map((cert) => (
+                    {featuredCertificatesList.map((cert) => (
                       <div key={cert.id} className="flex items-start gap-2">
                         <span className="w-1.5 h-1.5 rounded-full bg-indigo-600 dark:bg-indigo-400 mt-1.5 shrink-0" />
                         <div>
@@ -822,7 +838,17 @@ export const ResumeModal: React.FC<ResumeModalProps> = ({ isOpen, onClose }) => 
                 rel="noopener noreferrer"
                 className="font-bold text-indigo-600 dark:text-indigo-400 hover:underline inline-flex items-center gap-1"
               >
-                <span>Open Raw PDF</span>
+                <span>Open PDF</span>
+                <ExternalLink className="w-3 h-3" />
+              </a>
+              <span>•</span>
+              <a
+                href="#/resume"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-bold text-slate-700 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 hover:underline inline-flex items-center gap-1"
+              >
+                <span>New Tab View</span>
                 <ExternalLink className="w-3 h-3" />
               </a>
             </div>

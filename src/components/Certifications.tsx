@@ -61,7 +61,7 @@ export const Certifications: React.FC = () => {
 
   useEffect(() => {
     return subscribeToPublicCertificates(mergedItems => {
-      setItems(mergedItems.length ? mergedItems : BUNDLED_CERTIFICATES);
+      setItems(mergedItems);
     });
   }, []);
 

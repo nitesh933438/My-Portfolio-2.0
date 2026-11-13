@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { Plus, Trash2, Save, Loader2, Sparkles, ArrowUp, ArrowDown, ChevronsUp } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { Plus, Trash2, Save, Loader2, Sparkles, ArrowUp, ArrowDown, ChevronsUp, CheckCircle2 } from 'lucide-react';
 import { SkillCategory, SKILLS_DATA, ICONS } from '../../data/portfolio';
 import { saveSkills, subscribeToSkills } from '../../services/portfolioContentFirebase';
 import { useAdminToast } from './AdminToastContext';
@@ -9,6 +9,10 @@ export const SkillsManager: React.FC = () => {
   const [items, setItems] = useState<SkillCategory[]>(SKILLS_DATA);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'synced'>('idle');
+  const dirtyRef = useRef(false);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const latestItemsRef = useRef<SkillCategory[]>(SKILLS_DATA);
   const { showToast } = useAdminToast();
   const { pendingResult, setPendingResult } = useAIScanner();
 
@@ -27,13 +31,44 @@ export const SkillsManager: React.FC = () => {
       }))
       .filter((item) => item.category);
 
+  const scheduleAutoSave = (nextItems: SkillCategory[]) => {
+    latestItemsRef.current = nextItems;
+    dirtyRef.current = true;
+    setSyncStatus('syncing');
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(async () => {
+      try {
+        const cleaned = cleanCategories(latestItemsRef.current);
+        await saveSkills(cleaned);
+        dirtyRef.current = false;
+        setSyncStatus('synced');
+      } catch (error: any) {
+        dirtyRef.current = false;
+        setSyncStatus('idle');
+        showToast(error.message || 'Auto-sync failed.', 'error');
+      }
+    }, 800);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    };
+  }, []);
+
   const persistSkills = async (nextItems: SkillCategory[], message?: string) => {
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    dirtyRef.current = false;
+    latestItemsRef.current = nextItems;
     setItems(nextItems);
+    setSyncStatus('syncing');
     try {
       const cleaned = cleanCategories(nextItems);
       await saveSkills(cleaned);
+      setSyncStatus('synced');
       if (message) showToast(message, 'success');
     } catch (error: any) {
+      setSyncStatus('idle');
       showToast(error.message || 'Could not save skills.', 'error');
     }
   };
@@ -56,9 +91,11 @@ export const SkillsManager: React.FC = () => {
       };
       setItems((current) => {
         const next = [...current, draft];
+        latestItemsRef.current = next;
         saveSkills(cleanCategories(next)).catch(() => {});
         return next;
       });
+      setSyncStatus('synced');
       showToast('AI skills added and serial numbers synced automatically!', 'success');
     } else {
       showToast('AI did not find a usable skills list.', 'error');
@@ -66,22 +103,38 @@ export const SkillsManager: React.FC = () => {
     setPendingResult(null);
   }, [pendingResult, setPendingResult, showToast]);
 
-  useEffect(() => subscribeToSkills((data) => { setItems(data); setLoading(false); }), []);
+  useEffect(
+    () =>
+      subscribeToSkills((data) => {
+        if (!dirtyRef.current) {
+          latestItemsRef.current = data;
+          setItems(data);
+        }
+        setLoading(false);
+      }),
+    []
+  );
 
   const updateCategory = (index: number, patch: Partial<SkillCategory>) =>
-    setItems((current) => current.map((item, i) => (i === index ? { ...item, ...patch } : item)));
+    setItems((current) => {
+      const next = current.map((item, i) => (i === index ? { ...item, ...patch } : item));
+      scheduleAutoSave(next);
+      return next;
+    });
 
   const updateSkill = (categoryIndex: number, skillIndex: number, patch: { name?: string; level?: number }) =>
-    setItems((current) =>
-      current.map((item, i) =>
+    setItems((current) => {
+      const next = current.map((item, i) =>
         i === categoryIndex
           ? {
               ...item,
               skills: item.skills.map((skill, j) => (j === skillIndex ? { ...skill, ...patch } : skill)),
             }
           : item
-      )
-    );
+      );
+      scheduleAutoSave(next);
+      return next;
+    });
 
   const moveCategory = async (index: number, direction: 'up' | 'down' | 'top') => {
     const next = [...items];
@@ -124,12 +177,17 @@ export const SkillsManager: React.FC = () => {
   };
 
   const save = async () => {
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    dirtyRef.current = false;
     setSaving(true);
+    setSyncStatus('syncing');
     try {
       const cleaned = cleanCategories(items);
       await saveSkills(cleaned);
+      setSyncStatus('synced');
       showToast('Skills updated and synced to the public portfolio.', 'success');
     } catch (error: any) {
+      setSyncStatus('idle');
       showToast(error.message || 'Could not save skills.', 'error');
     } finally {
       setSaving(false);
@@ -142,21 +200,37 @@ export const SkillsManager: React.FC = () => {
     <div className="mx-auto max-w-6xl space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-black text-slate-900 dark:text-white">
-            Skills Manager ({items.length})
-          </h1>
+          <div className="flex flex-wrap items-center gap-2.5">
+            <h1 className="text-2xl font-black text-slate-900 dark:text-white">
+              Skills Manager ({items.length})
+            </h1>
+            {syncStatus === 'syncing' && (
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/10 px-2.5 py-1 text-[11px] font-bold text-amber-600 dark:text-amber-400">
+                <Loader2 size={12} className="animate-spin" /> Auto-syncing…
+              </span>
+            )}
+            {syncStatus === 'synced' && (
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2.5 py-1 text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
+                <CheckCircle2 size={12} /> Synced Live
+              </span>
+            )}
+          </div>
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            Manage skill groups and proficiency levels. Serial numbers (#01, #02...) adjust automatically on add, delete, or reorder.
+            Manage skill groups and proficiency levels. Edits auto-sync to your live portfolio and serial numbers (#01, #02...) adjust automatically.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
             onClick={() =>
-              setItems((current) => [
-                ...current,
-                { category: `New Category #${current.length + 1}`, iconName: 'Code2', skills: [{ name: 'New Skill', level: 80 }] },
-              ])
+              setItems((current) => {
+                const next: SkillCategory[] = [
+                  ...current,
+                  { category: `New Category #${current.length + 1}`, iconName: 'Code2' as const, skills: [{ name: 'New Skill', level: 80 }] },
+                ];
+                scheduleAutoSave(next);
+                return next;
+              })
             }
             className="inline-flex items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 px-4 py-3 text-xs font-bold cursor-pointer"
           >

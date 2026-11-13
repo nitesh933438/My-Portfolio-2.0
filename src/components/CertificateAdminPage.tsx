@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { onAuthStateChanged, signInWithPopup, signOut, User } from 'firebase/auth';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -34,7 +34,9 @@ import { useAIScanner } from '../context/AIScannerContext';
 import { auth, googleProvider, isUserAdmin } from '../services/academicFirebase';
 import { bulkScanCertificates, detectVerificationUrl, isIndividualVerificationUrl } from '../services/verificationDetection';
 import {
+  cleanupDuplicateCertificatesInFirestore,
   markBundledCertificatesImported,
+  matchesSameCertificate,
   removeCertificate,
   saveCertificate,
   reindexCertificatesInFirestore,
@@ -209,11 +211,26 @@ export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
     return () => unsubAuth();
   }, []);
 
+  const hasAutoDedupedRef = useRef(false);
+
   useEffect(() => {
     if (!user || !isUserAdmin(user)) {
       setItems([]);
+      hasAutoDedupedRef.current = false;
       return;
     }
+
+    if (!hasAutoDedupedRef.current) {
+      hasAutoDedupedRef.current = true;
+      cleanupDuplicateCertificatesInFirestore()
+        .then(({ duplicatesRemoved }) => {
+          if (duplicatesRemoved > 0) {
+            showToast(`Cleaned up ${duplicatesRemoved} duplicate certificate records from database.`, 'success');
+          }
+        })
+        .catch(() => {});
+    }
+
     return subscribeToCertificates(loaded => {
       setItems(loaded);
       setForm(prev => (!editing && !prev.title ? { ...prev, displayOrder: loaded.length } : prev));
@@ -303,12 +320,7 @@ export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
 
         await Promise.all(
           batch.map(async item => {
-            const duplicate = items.find(
-              x =>
-                x.id === item.id ||
-                (x.sourceAsset && item.sourceAsset && x.sourceAsset === item.sourceAsset) ||
-                (x.title.toLowerCase() === item.title.toLowerCase() && x.issuer.toLowerCase() === item.issuer.toLowerCase())
-            );
+            const duplicate = items.find(x => matchesSameCertificate(x, item));
 
             try {
               const { id, createdAt, updatedAt, ...payload } = item;
@@ -399,7 +411,10 @@ export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
         fileType: file ? (file.type === 'application/pdf' ? 'pdf' : 'image') : form.fileType
       };
 
-      const savedId = await saveCertificate(payload, editing);
+      const existingMatch = !editing
+        ? items.find(c => matchesSameCertificate(c, payload))
+        : undefined;
+      const savedId = await saveCertificate(payload, editing || existingMatch?.id);
 
       // Automatically insert at requested displayOrder and re-sequence all serial numbers (0, 1, 2... N-1)
       const currentOrdered = [...items].sort((a, b) => (a.displayOrder ?? 9999) - (b.displayOrder ?? 9999));

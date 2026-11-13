@@ -5,6 +5,7 @@ import {
   doc, 
   setDoc, 
   getDoc, 
+  getDocFromServer,
   onSnapshot, 
   collection, 
   addDoc, 
@@ -37,6 +38,18 @@ try {
 } catch (err: any) {
   console.warn('Firestore persistence not enabled:', err.code);
 }
+
+// Validate live connection to Firestore on boot without blocking UI
+export async function validateFirestoreConnection() {
+  try {
+    await getDocFromServer(doc(db, 'test', 'connection'));
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('the client is offline')) {
+      console.warn('Firestore client appears offline. Using cached/bundled state until reconnected.');
+    }
+  }
+}
+validateFirestoreConnection();
 
 export const ADMIN_EMAIL = 'nitesh933438@gmail.com';
 export const ADMIN_EMAILS = ['nitesh933438@gmail.com', 'niteshkumarbaliyakothi@gmail.com'];
@@ -143,6 +156,30 @@ export const fetchAuditHistory = async (): Promise<AuditRecordItem[]> => {
   } catch (err) {
     console.warn('Could not fetch audit history:', err);
     return [];
+  }
+};
+
+export const subscribeToAuditHistory = (callback: (items: AuditRecordItem[]) => void) => {
+  try {
+    const auditColRef = collection(db, 'academic_audit');
+    const q = query(auditColRef, orderBy('approvedAt', 'desc'), limit(20));
+    return onSnapshot(
+      q,
+      (snap) => {
+        callback(
+          snap.docs.map((d) => ({
+            id: d.id,
+            ...d.data(),
+          })) as AuditRecordItem[]
+        );
+      },
+      (err) => {
+        console.warn('Audit history listener fallback:', err.message);
+      }
+    );
+  } catch (err) {
+    console.warn('Could not subscribe to audit history:', err);
+    return () => {};
   }
 };
 
@@ -318,7 +355,11 @@ export const initializeSiteSettingsInFirestore = async () => {
       console.log('Initialized site settings in Firestore');
     } else {
       const data = existingSnap.data();
-      if (!data.resumeUrl || data.resumeUrl.includes('nitesh_kumar_resume.pdf') || data.resumeUrl.includes('Resume_8ce55380.pdf')) {
+      if (
+        !data.resumeUrl ||
+        data.resumeUrl.startsWith('blob:') ||
+        data.resumeUrl.includes('nitesh_kumar_resume.pdf')
+      ) {
         await setDoc(configDocRef, {
           ...data,
           resumeUrl: '/assets/aistudio/Nitesh_Kumar_-_Resume_8ce55380.pdf',

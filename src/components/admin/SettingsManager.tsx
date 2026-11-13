@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { db, auth, isUserAdmin } from '../../services/academicFirebase';
+import { doc, setDoc } from 'firebase/firestore';
+import { db, auth, isUserAdmin, subscribeToSiteSettings } from '../../services/academicFirebase';
 import { SITE_CONFIG, SOCIAL_LINKS } from '../../data/portfolio';
 
 import { 
@@ -44,12 +44,55 @@ export const SettingsManager: React.FC = () => {
     instagram: SOCIAL_LINKS.find(s => s.platform === 'Instagram')?.url || '',
   });
   const [saving, setSaving] = useState(false);
+  const [syncState, setSyncState] = useState<'synced' | 'syncing' | 'unsaved'>('synced');
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [uploadingResume, setUploadingResume] = useState(false);
   const [pendingResumeFile, setPendingResumeFile] = useState<File | null>(null);
   const [isAIScannerOpen, setIsAIScannerOpen] = useState(false);
+  const dirtyRef = useRef(false);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const latestFormRef = useRef(form);
   const { showToast } = useAdminToast();
   const { pendingResult, setPendingResult } = useAIScanner();
+
+  const isFormValidForAutoSave = (candidate: typeof form) =>
+    Boolean(
+      candidate.name.trim() &&
+      candidate.title.trim() &&
+      candidate.email.trim() &&
+      candidate.whatsapp.trim() &&
+      candidate.location.trim() &&
+      candidate.bio.trim()
+    );
+
+  const scheduleAutoSave = (nextForm: typeof form) => {
+    latestFormRef.current = nextForm;
+    dirtyRef.current = true;
+    setSyncState('unsaved');
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    if (!isUserAdmin(auth.currentUser) || !isFormValidForAutoSave(nextForm)) return;
+
+    setSyncState('syncing');
+    saveTimerRef.current = setTimeout(async () => {
+      try {
+        await setDoc(doc(db, 'site_metadata', 'portfolio_config'), {
+          ...latestFormRef.current,
+          updatedAt: new Date().toISOString(),
+        }, { merge: true });
+        dirtyRef.current = false;
+        setSyncState('synced');
+      } catch (err) {
+        console.warn('Auto-save settings deferred:', err);
+        setSyncState('unsaved');
+      }
+    }, 900);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     if (pendingResult && (pendingResult.detectedModule === 'settings' || pendingResult.detectedModule === 'profile')) {
@@ -64,39 +107,47 @@ export const SettingsManager: React.FC = () => {
   const handleAIExtractedData = (result: any) => {
     if (!result || !result.data) return;
     const data = result.data;
-    setForm(prev => ({
-      ...prev,
-      name: data.name || prev.name,
-      title: data.title || prev.title,
-      email: data.email || prev.email,
-      whatsapp: data.whatsapp || prev.whatsapp,
-      location: data.location || prev.location,
-      bio: data.bio || prev.bio,
-      github: data.github || prev.github,
-      linkedin: data.linkedin || prev.linkedin,
-    }));
-    showToast('AI successfully extracted profile details. Please review.', 'success');
+    setForm(prev => {
+      const next = {
+        ...prev,
+        name: data.name || prev.name,
+        title: data.title || prev.title,
+        email: data.email || prev.email,
+        whatsapp: data.whatsapp || prev.whatsapp,
+        location: data.location || prev.location,
+        bio: data.bio || prev.bio,
+        github: data.github || prev.github,
+        linkedin: data.linkedin || prev.linkedin,
+      };
+      scheduleAutoSave(next);
+      return next;
+    });
+    showToast('AI extracted profile details and synced them automatically!', 'success');
   };
   
   const photoInputRef = useRef<HTMLInputElement>(null);
   const resumeInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    const loadSettings = async () => {
-      try {
-        const snap = await getDoc(doc(db, 'site_metadata', 'portfolio_config'));
-        if (snap.exists()) {
-          setForm(prev => ({ ...prev, ...snap.data() }));
-        }
-      } catch (e) {
-        console.warn('Could not load site metadata:', e);
+    const unsubscribe = subscribeToSiteSettings((live) => {
+      if (!dirtyRef.current) {
+        setForm(prev => {
+          const merged = { ...prev, ...live };
+          latestFormRef.current = merged;
+          return merged;
+        });
+        setSyncState('synced');
       }
-    };
-    loadSettings();
+    });
+    return () => unsubscribe();
   }, []);
 
   const handleChange = (key: string, val: string) => {
-    setForm(prev => ({ ...prev, [key]: val }));
+    setForm(prev => {
+      const next = { ...prev, [key]: val };
+      scheduleAutoSave(next);
+      return next;
+    });
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, type: 'profile' | 'resume') => {
@@ -123,18 +174,24 @@ export const SettingsManager: React.FC = () => {
       validateFile(file, allowedTypes, maxSize);
 
       const idToken = await auth.currentUser.getIdToken();
-      
-      // If there's an existing Supabase file, we might want to delete it first
-      // But for simplicity and to avoid accidental deletions of shared assets, we just upload new ones
-      
       const { path } = await uploadFileProxy(file, type, idToken);
+      const fieldKey = isPhoto ? 'profilePhoto' : 'resumeUrl';
+
+      setForm(prev => {
+        const next = { ...prev, [fieldKey]: path };
+        latestFormRef.current = next;
+        return next;
+      });
+
+      if (isUserAdmin(auth.currentUser)) {
+        await setDoc(doc(db, 'site_metadata', 'portfolio_config'), {
+          [fieldKey]: path,
+          updatedAt: new Date().toISOString(),
+        }, { merge: true });
+        if (!dirtyRef.current) setSyncState('synced');
+      }
       
-      setForm(prev => ({ 
-        ...prev, 
-        [isPhoto ? 'profilePhoto' : 'resumeUrl']: path 
-      }));
-      
-      showToast(`${isPhoto ? 'Photo' : 'Resume'} uploaded successfully!`, 'success');
+      showToast(`${isPhoto ? 'Photo' : 'Resume'} uploaded and synced live!`, 'success');
     } catch (err: any) {
       showToast(`Upload failed: ${err.message}`, 'error');
     } finally {
@@ -149,7 +206,9 @@ export const SettingsManager: React.FC = () => {
       showToast('Admin access required.', 'error');
       return;
     }
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     setSaving(true);
+    setSyncState('syncing');
     try {
       let settingsToSave = { ...form };
       if (pendingResumeFile) {
@@ -162,10 +221,14 @@ export const SettingsManager: React.FC = () => {
         ...settingsToSave,
         updatedAt: new Date().toISOString(),
       }, { merge: true });
+      dirtyRef.current = false;
+      latestFormRef.current = settingsToSave;
       setForm(settingsToSave);
       setPendingResumeFile(null);
+      setSyncState('synced');
       showToast('Portfolio settings saved successfully!', 'success');
     } catch (err: any) {
+      setSyncState('unsaved');
       showToast(`Error saving settings: ${err.message}`, 'error');
     } finally {
       setSaving(false);
@@ -175,8 +238,25 @@ export const SettingsManager: React.FC = () => {
   return (
     <div className="space-y-6 max-w-4xl">
       <div>
-        <h1 className="text-2xl font-black text-slate-900 dark:text-white">Portfolio Settings & Profile</h1>
-        <p className="text-sm text-slate-500 dark:text-slate-400">Update global portfolio profile information, assets, and contact details.</p>
+        <div className="flex flex-wrap items-center gap-2.5">
+          <h1 className="text-2xl font-black text-slate-900 dark:text-white">Portfolio Settings & Profile</h1>
+          {syncState === 'syncing' && (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/10 px-2.5 py-1 text-[11px] font-bold text-amber-600 dark:text-amber-400">
+              <Loader2 size={12} className="animate-spin" /> Auto-syncing…
+            </span>
+          )}
+          {syncState === 'synced' && (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2.5 py-1 text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
+              <CheckCircle2 size={12} /> Synced Live
+            </span>
+          )}
+          {syncState === 'unsaved' && (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-500/10 px-2.5 py-1 text-[11px] font-bold text-slate-600 dark:text-slate-400">
+              Unsaved edits
+            </span>
+          )}
+        </div>
+        <p className="text-sm text-slate-500 dark:text-slate-400">Update global portfolio profile information, assets, and contact details. Changes sync live across your site.</p>
       </div>
 
       {/* AI Trigger */}

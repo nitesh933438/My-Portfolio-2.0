@@ -64,9 +64,13 @@ async function fileToClientDataUrl(file: File): Promise<string> {
   }
 
   return new Promise<string>((resolve, reject) => {
-    // If non-image file is under 700KB, store as base64 Data URL; otherwise create a session Blob URL
+    // Reject non-image files over 700KB on static hosts instead of storing ephemeral blob: URLs that break in new tabs/reloads
     if (file.size > 700 * 1024 && !file.type.startsWith('image/')) {
-      resolve(URL.createObjectURL(file));
+      reject(
+        new Error(
+          'PDF size exceeds 700KB limit for static hosting fallback. Please compress the PDF under 700KB or upload with the backend/Supabase active.'
+        )
+      );
       return;
     }
     const reader = new FileReader();

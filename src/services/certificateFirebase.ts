@@ -1,4 +1,4 @@
-import { collection, addDoc, deleteDoc, doc, onSnapshot, orderBy, query, setDoc, where, getDocs, writeBatch } from 'firebase/firestore';
+import { collection, addDoc, deleteDoc, doc, getDoc, onSnapshot, orderBy, query, setDoc, where, getDocs, writeBatch } from 'firebase/firestore';
 import { User } from 'firebase/auth';
 import { db, auth, isUserAdmin } from './academicFirebase';
 import { uploadFileProxy, deleteFileProxy, getStorageUrl } from './supabaseStorage';
@@ -7,6 +7,20 @@ import { BUNDLED_CERTIFICATES } from '../data/certificates';
 import { detectVerificationUrl, isIndividualVerificationUrl } from './verificationDetection';
 
 export const certificatesRef = collection(db, 'certifications');
+const certExclusionsDocRef = doc(db, 'site_content', 'cert_exclusions');
+
+const updateCertExclusion = async (certId: string, hide: boolean) => {
+  try {
+    const snap = await getDoc(certExclusionsDocRef);
+    const existing: string[] = snap.exists() && Array.isArray(snap.data().hiddenIds) ? snap.data().hiddenIds : [];
+    const next = hide
+      ? Array.from(new Set([...existing, certId]))
+      : existing.filter((id) => id !== certId);
+    await setDoc(certExclusionsDocRef, { hiddenIds: next, updatedAt: new Date().toISOString() }, { merge: true });
+  } catch (err) {
+    console.warn('Could not update certificate exclusion list:', err);
+  }
+};
 
 /**
  * Checks whether a path refers to a Supabase Storage uploaded object
@@ -102,13 +116,92 @@ export const resolveCertificateOriginalFileUrl = (cert: PortfolioCertificate): s
   return resolveCertificateUrl(cert.fileUrl || cert.sourceAsset || cert.imageUrl || '');
 };
 
+const normalizeText = (s?: string) =>
+  (s || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
+
+const getCertificateAssetKeys = (cert: Partial<PortfolioCertificate>): string[] => {
+  const keys = new Set<string>();
+  const rawCandidates = [cert.sourceAsset, cert.fileUrl, cert.imageUrl].filter(Boolean) as string[];
+  for (const raw of rawCandidates) {
+    const clean = raw.split('?')[0].split('#')[0].trim();
+    if (!clean || clean.startsWith('data:') || clean.startsWith('blob:')) continue;
+    let fileName = clean;
+    try {
+      fileName = decodeURIComponent(clean.split('/').pop() || clean);
+    } catch {
+      fileName = clean.split('/').pop() || clean;
+    }
+    const normalized = fileName.replace(/^\d{10,}_/, '').trim().toLowerCase();
+    if (!normalized || normalized === 'diagnostic-test.jpg') continue;
+    if (normalized.startsWith('nptel-programming-in-java')) {
+      keys.add('nptel-programming-in-java');
+    }
+    keys.add(normalized);
+  }
+  return Array.from(keys);
+};
+
+export const matchesSameCertificate = (
+  a: Partial<PortfolioCertificate>,
+  b: Partial<PortfolioCertificate>
+): boolean => {
+  if (a.id && b.id && a.id === b.id) return true;
+
+  const credIdA = normalizeText(a.credentialId);
+  const credIdB = normalizeText(b.credentialId);
+  if (credIdA.length >= 4 && credIdB.length >= 4 && credIdA === credIdB) {
+    return true;
+  }
+
+  const urlA = normalizeText(a.credentialUrl).replace(/\/+$/, '');
+  const urlB = normalizeText(b.credentialUrl).replace(/\/+$/, '');
+  if (urlA.startsWith('https://') && urlB.startsWith('https://') && urlA === urlB) {
+    return true;
+  }
+
+  const assetsA = getCertificateAssetKeys(a);
+  const assetsB = getCertificateAssetKeys(b);
+  if (assetsA.some((k) => assetsB.includes(k))) {
+    return true;
+  }
+
+  const titleA = normalizeText(a.title);
+  const titleB = normalizeText(b.title);
+  if (titleA && titleB) {
+    const issuerA = normalizeText(a.issuer);
+    const issuerB = normalizeText(b.issuer);
+    const sameIssuer =
+      !issuerA ||
+      !issuerB ||
+      issuerA === issuerB ||
+      issuerA.includes(issuerB) ||
+      issuerB.includes(issuerA);
+
+    if (titleA === titleB && sameIssuer) return true;
+
+    if (
+      titleA.includes('programming in java') &&
+      titleB.includes('programming in java') &&
+      (issuerA.includes('nptel') || issuerA.includes('iit') || issuerA.includes('kharagpur')) &&
+      (issuerB.includes('nptel') || issuerB.includes('iit') || issuerB.includes('kharagpur'))
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+};
+
 /**
  * Smartly merges remote Firestore records with `BUNDLED_CERTIFICATES` so that:
- * 1. The NPTEL Programming in Java Elite certificate (`displayOrder: 0`) and all 43 bundled certificates
- *    are always present even if Firestore was seeded with an older 42-item snapshot.
- * 2. Missing or generic metadata fields (`credentialUrl`, `credentialId`, `issueDate`, `expiryDate`,
- *    `grade`, `score`, `assignmentScore`, `examScore`, `credits`, `duration`, `imageUrl`, `skills`)
- *    on existing Firestore documents are automatically enriched from `BUNDLED_CERTIFICATES`.
+ * 1. All bundled certificates are enriched and deduplicated cleanly across ID, asset filename,
+ *    credential ID, verification URL, and title+issuer — never creating "double" entries even
+ *    if Firestore contains legacy duplicate documents.
+ * 2. Missing or generic metadata fields on existing Firestore documents are automatically
+ *    enriched from `BUNDLED_CERTIFICATES`.
  */
 export const mergeWithBundledCertificates = (
   remoteItems: PortfolioCertificate[],
@@ -121,24 +214,32 @@ export const mergeWithBundledCertificates = (
       .map((c, idx) => ({ ...c, displayOrder: idx }));
   }
 
-  const normalize = (s?: string) => (s || '').trim().toLowerCase();
   const usedRemoteIds = new Set<string>();
   const merged: PortfolioCertificate[] = [];
 
-  for (const bundled of BUNDLED_CERTIFICATES) {
-    const match = remoteItems.find(
-      r =>
-        r.id === bundled.id ||
-        (r.sourceAsset && bundled.sourceAsset && normalize(r.sourceAsset) === normalize(bundled.sourceAsset)) ||
-        (normalize(r.title) === normalize(bundled.title) && normalize(r.issuer) === normalize(bundled.issuer)) ||
-        (bundled.id === 'nptel-programming-in-java-2026' && normalize(r.title).includes('programming in java'))
-    );
+  const pickBestRemote = (candidates: PortfolioCertificate[], preferredId: string): PortfolioCertificate => {
+    const sorted = [...candidates].sort((a, b) => {
+      if (a.id === preferredId && b.id !== preferredId) return -1;
+      if (b.id === preferredId && a.id !== preferredId) return 1;
+      const pubA = a.published !== false ? 1 : 0;
+      const pubB = b.published !== false ? 1 : 0;
+      if (pubA !== pubB) return pubB - pubA;
+      return (b.updatedAt || '').localeCompare(a.updatedAt || '');
+    });
+    return sorted[0];
+  };
 
-    if (match) {
-      usedRemoteIds.add(match.id);
-      if ((match as any).deleted === true) {
+  for (const bundled of BUNDLED_CERTIFICATES) {
+    const matches = remoteItems.filter(r => matchesSameCertificate(r, bundled));
+
+    if (matches.length > 0) {
+      matches.forEach(m => usedRemoteIds.add(m.id));
+      const activeMatches = matches.filter(m => (m as any).deleted !== true);
+      if (activeMatches.length === 0) {
         continue;
       }
+
+      const match = pickBestRemote(activeMatches, bundled.id);
       const isNptelJava = bundled.id === 'nptel-programming-in-java-2026';
       const isGenericDesc =
         !match.description ||
@@ -203,17 +304,31 @@ export const mergeWithBundledCertificates = (
     }
   }
 
-  // Append any custom admin-added certificates not in BUNDLED_CERTIFICATES
+  // Append any custom admin-added certificates not in BUNDLED_CERTIFICATES, deduplicated strictly
+  const customItems: PortfolioCertificate[] = [];
   for (const remote of remoteItems) {
-    if (!usedRemoteIds.has(remote.id) && (remote as any).deleted !== true) {
-      const autoUrl = remote.credentialUrl || detectVerificationUrl(remote) || '';
-      merged.push({
-        ...remote,
-        credentialUrl: autoUrl,
-        verificationStatus: remote.verificationStatus || (autoUrl ? 'approved' : undefined)
-      });
+    if (usedRemoteIds.has(remote.id) || (remote as any).deleted === true) continue;
+    if (merged.some(existing => matchesSameCertificate(existing, remote))) continue;
+
+    const existingCustomIdx = customItems.findIndex(existing => matchesSameCertificate(existing, remote));
+    const autoUrl = remote.credentialUrl || detectVerificationUrl(remote) || '';
+    const prepared: PortfolioCertificate = {
+      ...remote,
+      credentialUrl: autoUrl,
+      verificationStatus: remote.verificationStatus || (autoUrl ? 'approved' : undefined)
+    };
+
+    if (existingCustomIdx >= 0) {
+      const existing = customItems[existingCustomIdx];
+      if ((prepared.updatedAt || '') > (existing.updatedAt || '')) {
+        customItems[existingCustomIdx] = prepared;
+      }
+    } else {
+      customItems.push(prepared);
     }
   }
+
+  merged.push(...customItems);
 
   return merged
     .filter(c => adminMode || c.published !== false)
@@ -243,7 +358,9 @@ export const initializeCertificatesInFirestore = async () => {
     // If admin is logged in and NPTEL Java certificate is missing from Firestore, seed it once
     if (isUserAdmin(auth.currentUser)) {
       const nptelCert = BUNDLED_CERTIFICATES[0];
-      const exists = snap.docs.some(d => d.id === nptelCert.id);
+      const exists = snap.docs.some(d =>
+        matchesSameCertificate({ id: d.id, ...d.data() } as PortfolioCertificate, nptelCert)
+      );
       if (!exists) {
         const { id, ...data } = nptelCert;
         await setDoc(doc(db, 'certifications', id), {
@@ -260,17 +377,46 @@ export const initializeCertificatesInFirestore = async () => {
 
 export const subscribeToCertificates = (callback: (items: PortfolioCertificate[]) => void, admin = false) => {
   const base = admin ? query(certificatesRef) : query(certificatesRef, where('published', '==', true));
-  return onSnapshot(
-    base,
-    snap => {
-      const remote = snap.docs.map(d => ({ id: d.id, ...d.data() } as PortfolioCertificate));
-      callback(mergeWithBundledCertificates(remote, admin));
+  let latestRemote: PortfolioCertificate[] = [];
+  let hiddenIds = new Set<string>();
+  let hasRemoteSnapshot = false;
+
+  const emitMerged = () => {
+    const merged = mergeWithBundledCertificates(hasRemoteSnapshot ? latestRemote : [], admin);
+    const filtered = admin ? merged : merged.filter((item) => !hiddenIds.has(item.id));
+    callback(filtered.map((c, idx) => ({ ...c, displayOrder: idx })));
+  };
+
+  const unsubExclusions = onSnapshot(
+    certExclusionsDocRef,
+    (snap) => {
+      const ids = snap.exists() && Array.isArray(snap.data().hiddenIds) ? snap.data().hiddenIds : [];
+      hiddenIds = new Set(ids);
+      emitMerged();
     },
-    err => {
-      console.error('Certificates listener:', err);
-      callback(mergeWithBundledCertificates([], admin));
+    () => {
+      // Ignore exclusion listener error
     }
   );
+
+  const unsubCerts = onSnapshot(
+    base,
+    (snap) => {
+      hasRemoteSnapshot = true;
+      latestRemote = snap.docs.map((d) => ({ id: d.id, ...d.data() } as PortfolioCertificate));
+      emitMerged();
+    },
+    (err) => {
+      console.error('Certificates listener:', err);
+      hasRemoteSnapshot = false;
+      emitMerged();
+    }
+  );
+
+  return () => {
+    unsubExclusions();
+    unsubCerts();
+  };
 };
 
 /**
@@ -291,6 +437,10 @@ export const saveCertificate = async (data: Omit<PortfolioCertificate, 'id'>, id
 
   if (id) {
     await setDoc(doc(db, 'certifications', id), cleanPayload, { merge: true });
+    const isBundled = BUNDLED_CERTIFICATES.some((b) => b.id === id);
+    if (isBundled) {
+      await updateCertExclusion(id, data.published === false);
+    }
     return id;
   } else {
     const docRef = await addDoc(certificatesRef, { ...cleanPayload, createdAt: new Date().toISOString() });
@@ -355,6 +505,7 @@ export const removeCertificate = async (
       { deleted: true, published: false, updatedAt: new Date().toISOString() },
       { merge: true }
     );
+    await updateCertExclusion(item.id, true);
   } else {
     await deleteDoc(doc(db, 'certifications', item.id));
   }
@@ -464,20 +615,41 @@ export const subscribeToPublicCertificates = (
   callback: (items: PortfolioCertificate[], catalogImported: boolean) => void
 ) => {
   let remoteItems: PortfolioCertificate[] = [];
+  let hiddenIds = new Set<string>();
   let catalogImported = false;
+  let hasRemoteSnapshot = false;
+
   const emit = () => {
-    const merged = mergeWithBundledCertificates(remoteItems, false);
-    callback(merged, catalogImported);
+    const merged = mergeWithBundledCertificates(hasRemoteSnapshot ? remoteItems : [], false);
+    const filtered = merged.filter((item) => !hiddenIds.has(item.id));
+    callback(
+      filtered.map((c, idx) => ({ ...c, displayOrder: idx })),
+      catalogImported
+    );
   };
+
+  const stopExclusions = onSnapshot(
+    certExclusionsDocRef,
+    (snap) => {
+      const ids = snap.exists() && Array.isArray(snap.data().hiddenIds) ? snap.data().hiddenIds : [];
+      hiddenIds = new Set(ids);
+      emit();
+    },
+    () => {
+      // Ignore exclusion listener errors
+    }
+  );
 
   const stopItems = onSnapshot(
     query(certificatesRef, where('published', '==', true)),
     snap => {
+      hasRemoteSnapshot = true;
       remoteItems = snap.docs.map(d => ({ id: d.id, ...d.data() } as PortfolioCertificate));
       emit();
     },
     err => {
       console.error('Public certificates listener:', err);
+      hasRemoteSnapshot = false;
       remoteItems = [];
       emit();
     }
@@ -497,7 +669,118 @@ export const subscribeToPublicCertificates = (
   );
 
   return () => {
+    stopExclusions();
     stopItems();
     stopState();
+  };
+};
+
+/**
+ * Cleans up duplicate Firestore documents in `certifications` (preserving one canonical
+ * record per certificate with the best/newest metadata) and normalizes displayOrder.
+ */
+export const cleanupDuplicateCertificatesInFirestore = async (): Promise<{
+  duplicatesRemoved: number;
+  totalRemaining: number;
+}> => {
+  if (!isUserAdmin(auth.currentUser)) {
+    throw new Error('Admin access required.');
+  }
+
+  const snap = await getDocs(certificatesRef);
+  if (snap.empty) {
+    return { duplicatesRemoved: 0, totalRemaining: 0 };
+  }
+
+  const rawDocs = snap.docs.map((d) => ({ id: d.id, ...d.data() } as PortfolioCertificate));
+  const consumedIds = new Set<string>();
+  const toDeleteIds = new Set<string>();
+  const updates: { id: string; payload: Record<string, any> }[] = [];
+
+  const sortPreferred = (list: PortfolioCertificate[], preferredId?: string) =>
+    [...list].sort((a, b) => {
+      if (preferredId) {
+        if (a.id === preferredId && b.id !== preferredId) return -1;
+        if (b.id === preferredId && a.id !== preferredId) return 1;
+      }
+      const delA = (a as any).deleted === true ? 1 : 0;
+      const delB = (b as any).deleted === true ? 1 : 0;
+      if (delA !== delB) return delA - delB;
+      const pubA = a.published !== false ? 1 : 0;
+      const pubB = b.published !== false ? 1 : 0;
+      if (pubA !== pubB) return pubB - pubA;
+      return (b.updatedAt || '').localeCompare(a.updatedAt || '');
+    });
+
+  // 1. Deduplicate matches for each bundled certificate
+  for (const bundled of BUNDLED_CERTIFICATES) {
+    const matches = rawDocs.filter((r) => !consumedIds.has(r.id) && matchesSameCertificate(r, bundled));
+    if (matches.length === 0) continue;
+    matches.forEach((m) => consumedIds.add(m.id));
+    if (matches.length === 1) continue;
+
+    const sorted = sortPreferred(matches, bundled.id);
+    const keeper = sorted[0];
+    const duplicates = sorted.slice(1);
+
+    const bestNonDeleted = sortPreferred(matches.filter((m) => (m as any).deleted !== true))[0];
+    if (bestNonDeleted && bestNonDeleted.id !== keeper.id) {
+      const { id: _dropId, ...rest } = bestNonDeleted;
+      const cleanMerge = Object.fromEntries(
+        Object.entries({
+          ...rest,
+          updatedAt: new Date().toISOString()
+        }).filter(([_, v]) => v !== undefined)
+      );
+      updates.push({ id: keeper.id, payload: cleanMerge });
+    }
+
+    duplicates.forEach((dup) => toDeleteIds.add(dup.id));
+  }
+
+  // 2. Deduplicate remaining custom documents against each other
+  const remaining = rawDocs.filter((r) => !consumedIds.has(r.id));
+  const customGroups: PortfolioCertificate[][] = [];
+  for (const docItem of remaining) {
+    const group = customGroups.find((g) => matchesSameCertificate(g[0], docItem));
+    if (group) {
+      group.push(docItem);
+    } else {
+      customGroups.push([docItem]);
+    }
+  }
+
+  for (const group of customGroups) {
+    if (group.length <= 1) continue;
+    const sorted = sortPreferred(group);
+    sorted.slice(1).forEach((dup) => toDeleteIds.add(dup.id));
+  }
+
+  if (toDeleteIds.size === 0 && updates.length === 0) {
+    return { duplicatesRemoved: 0, totalRemaining: rawDocs.length };
+  }
+
+  const ops: Array<{ type: 'set' | 'delete'; id: string; payload?: Record<string, any> }> = [
+    ...updates.map((u) => ({ type: 'set' as const, id: u.id, payload: u.payload })),
+    ...Array.from(toDeleteIds).map((id) => ({ type: 'delete' as const, id }))
+  ];
+
+  const CHUNK_SIZE = 400;
+  for (let i = 0; i < ops.length; i += CHUNK_SIZE) {
+    const batch = writeBatch(db);
+    for (const op of ops.slice(i, i + CHUNK_SIZE)) {
+      const ref = doc(db, 'certifications', op.id);
+      if (op.type === 'delete') {
+        batch.delete(ref);
+      } else if (op.payload) {
+        batch.set(ref, op.payload, { merge: true });
+      }
+    }
+    await batch.commit();
+  }
+
+  return {
+    duplicatesRemoved: toDeleteIds.size,
+    totalRemaining: rawDocs.length - toDeleteIds.size
   };
 };

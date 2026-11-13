@@ -10,12 +10,12 @@ interface HeroProps {
 }
 
 export const Hero: React.FC<HeroProps> = ({ onOpenResume }) => {
-  const { settings } = usePortfolio();
-  const whatsappLink = SOCIAL_LINKS.find(s => s.platform === 'WhatsApp');
-  const githubLink = SOCIAL_LINKS.find(s => s.platform === 'GitHub');
-  const linkedinLink = SOCIAL_LINKS.find(s => s.platform === 'LinkedIn');
+  const { settings, university, projects, certificates } = usePortfolio();
+  const githubUrl = settings.github || SOCIAL_LINKS.find(s => s.platform === 'GitHub')?.url || '#';
+  const linkedinUrl = settings.linkedin || SOCIAL_LINKS.find(s => s.platform === 'LinkedIn')?.url || '#';
+  const whatsappDigits = (settings.whatsapp || '').replace(/[^0-9]/g, '') || '919334387983';
   
-  const whatsappUrl = `https://wa.me/${settings.whatsapp.replace(/\+/g, '')}?text=${encodeURIComponent(settings.whatsappPrefilledMessage || "Hello Nitesh! I visited your portfolio and I'm interested in discussing a project with you.")}`;
+  const whatsappUrl = `https://wa.me/${whatsappDigits}?text=${encodeURIComponent(settings.whatsappPrefilledMessage || "Hello Nitesh! I visited your portfolio and I'm interested in discussing a project with you.")}`;
 
 
   return (
@@ -46,7 +46,7 @@ export const Hero: React.FC<HeroProps> = ({ onOpenResume }) => {
             </h1>
 
             <p className="text-sm sm:text-lg lg:text-xl text-slate-600 dark:text-slate-300 max-w-2xl mx-auto lg:mx-0 font-normal leading-relaxed text-wrap-balance">
-              {settings.title}. Pursuing B.Tech CSE at <span className="text-slate-900 dark:text-white font-semibold">Arka Jain University</span>. Crafting high-performance web applications, intelligent bots, and enterprise platforms.
+              {settings.title}. Pursuing {university.degree} in {university.branch} at <span className="text-slate-900 dark:text-white font-semibold">{university.institution}</span>. Crafting high-performance web applications, intelligent bots, and enterprise platforms.
             </p>
 
             <div className="flex flex-wrap items-center justify-center lg:justify-start gap-2 sm:gap-3 text-xs sm:text-sm text-slate-500 dark:text-slate-400">
@@ -57,7 +57,7 @@ export const Hero: React.FC<HeroProps> = ({ onOpenResume }) => {
               <span aria-hidden="true" className="text-slate-300 dark:text-slate-700">·</span>
               <div className="flex items-center gap-1.5">
                 <GraduationCap className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
-                <span>Arka Jain University</span>
+                <span>{university.institution}</span>
               </div>
             </div>
 
@@ -77,7 +77,7 @@ export const Hero: React.FC<HeroProps> = ({ onOpenResume }) => {
                 onClick={() => document.getElementById('certifications')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
                 className="inline-flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50/70 dark:bg-indigo-950/40 text-indigo-700 dark:text-cyan-300 font-semibold text-xs sm:text-sm hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-all active:scale-95 whitespace-nowrap shadow-xs min-h-[44px] cursor-pointer"
               >
-                <span>43+ Certifications</span>
+                <span>{certificates.length}+ Certifications</span>
               </button>
 
               <button
@@ -93,7 +93,7 @@ export const Hero: React.FC<HeroProps> = ({ onOpenResume }) => {
             {/* Social Links Row */}
             <div className="flex items-center justify-center lg:justify-start gap-3 sm:gap-4 pt-1 sm:pt-2">
               <a
-                href={githubLink?.url || "#"}
+                href={githubUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 aria-label="GitHub Profile"
@@ -103,7 +103,7 @@ export const Hero: React.FC<HeroProps> = ({ onOpenResume }) => {
               </a>
 
               <a
-                href={linkedinLink?.url || "#"}
+                href={linkedinUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 aria-label="LinkedIn Profile"
@@ -147,7 +147,7 @@ export const Hero: React.FC<HeroProps> = ({ onOpenResume }) => {
                   <Code className="w-3.5 h-3.5 sm:w-4 sm:h-4 md:w-4.5 md:h-4.5" />
                 </div>
                 <div>
-                  <div className="text-[10px] sm:text-[11px] md:text-xs font-semibold text-slate-900 dark:text-white">8+ Projects</div>
+                  <div className="text-[10px] sm:text-[11px] md:text-xs font-semibold text-slate-900 dark:text-white">{projects.length}+ Projects</div>
                   <div className="text-[9px] sm:text-[10px] md:text-[11px] text-slate-500 dark:text-slate-400">Full-Stack & AI</div>
                 </div>
               </div>
@@ -165,11 +165,11 @@ export const Hero: React.FC<HeroProps> = ({ onOpenResume }) => {
           className="mt-10 sm:mt-16 pt-6 sm:pt-10 border-t border-slate-200 dark:border-slate-800 grid grid-cols-2 md:grid-cols-4 gap-2.5 sm:gap-6 text-center"
         >
           <div className="p-3 sm:p-4 rounded-xl sm:rounded-2xl bg-white dark:bg-slate-900/50 border border-slate-200/80 dark:border-slate-800/80 shadow-sm">
-            <div className="text-lg sm:text-2xl lg:text-3xl font-extrabold text-indigo-600 dark:text-indigo-400 tabular-nums">B.Tech CSE</div>
+            <div className="text-lg sm:text-2xl lg:text-3xl font-extrabold text-indigo-600 dark:text-indigo-400 tabular-nums">{university.degree}</div>
             <div className="text-[9px] sm:text-xs lg:text-sm text-slate-500 dark:text-slate-400 mt-0.5 sm:mt-1 uppercase tracking-wider font-semibold">Education</div>
           </div>
           <div className="p-3 sm:p-4 rounded-xl sm:rounded-2xl bg-white dark:bg-slate-900/50 border border-slate-200/80 dark:border-slate-800/80 shadow-sm">
-            <div className="text-lg sm:text-2xl lg:text-3xl font-extrabold text-indigo-600 dark:text-indigo-400 tabular-nums">8+</div>
+            <div className="text-lg sm:text-2xl lg:text-3xl font-extrabold text-indigo-600 dark:text-indigo-400 tabular-nums">{projects.length}+</div>
             <div className="text-[9px] sm:text-xs lg:text-sm text-slate-500 dark:text-slate-400 mt-0.5 sm:mt-1 uppercase tracking-wider font-semibold">Projects</div>
           </div>
           <div className="p-3 sm:p-4 rounded-xl sm:rounded-2xl bg-white dark:bg-slate-900/50 border border-slate-200/80 dark:border-slate-800/80 shadow-sm">

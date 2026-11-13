@@ -10,7 +10,7 @@ interface FooterProps {
 }
 
 export const Footer: React.FC<FooterProps> = ({ onOpenResume }) => {
-  const { settings } = usePortfolio();
+  const { settings, university } = usePortfolio();
   const scrollToTop = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -27,8 +27,14 @@ export const Footer: React.FC<FooterProps> = ({ onOpenResume }) => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  const whatsappLink = SOCIAL_LINKS.find(s => s.platform === 'WhatsApp');
-  const whatsappUrl = `https://wa.me/${settings.whatsapp.replace(/\+/g, '')}?text=${encodeURIComponent(settings.whatsappPrefilledMessage || "Hello Nitesh! I visited your portfolio and I'm interested in discussing a project with you.")}`;
+  const whatsappDigits = (settings.whatsapp || '').replace(/[^0-9]/g, '') || '919334387983';
+  const whatsappUrl = `https://wa.me/${whatsappDigits}?text=${encodeURIComponent(settings.whatsappPrefilledMessage || "Hello Nitesh! I visited your portfolio and I'm interested in discussing a project with you.")}`;
+  const liveSocialLinks = [
+    { platform: 'GitHub', url: settings.github || SOCIAL_LINKS.find(s => s.platform === 'GitHub')?.url },
+    { platform: 'LinkedIn', url: settings.linkedin || SOCIAL_LINKS.find(s => s.platform === 'LinkedIn')?.url },
+    { platform: 'Instagram', url: settings.instagram || SOCIAL_LINKS.find(s => s.platform === 'Instagram')?.url },
+    { platform: 'WhatsApp', url: whatsappUrl },
+  ].filter((link): link is { platform: string; url: string } => Boolean(link.url));
 
 
   return (
@@ -51,7 +57,7 @@ export const Footer: React.FC<FooterProps> = ({ onOpenResume }) => {
               </div>
             </div>
             <p className="text-sm text-slate-600 dark:text-slate-400 max-w-sm leading-relaxed">
-              {settings.title}. Pursuing B.Tech CSE at Arka Jain University. Building robust, scalable, and intelligent digital solutions with a focus on impact.
+              {settings.title}. Pursuing {university.degree} in {university.branch} at {university.institution}. Building robust, scalable, and intelligent digital solutions with a focus on impact.
             </p>
           </div>
 
@@ -86,7 +92,7 @@ export const Footer: React.FC<FooterProps> = ({ onOpenResume }) => {
             <div className="space-y-4">
               <h4 className="text-xs font-bold uppercase tracking-widest text-slate-900 dark:text-white">Connect</h4>
               <nav className="flex flex-col space-y-2.5 text-sm text-slate-500 dark:text-slate-400">
-                {SOCIAL_LINKS.map(link => (
+                {liveSocialLinks.map(link => (
                   <a key={link.platform} href={link.url} target="_blank" rel="noopener noreferrer" className="hover:text-indigo-600 dark:hover:text-white transition-colors">{link.platform}</a>
                 ))}
               </nav>

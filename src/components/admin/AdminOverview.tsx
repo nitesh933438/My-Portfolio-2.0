@@ -6,7 +6,7 @@ import { PROJECTS } from '../../data/portfolio';
 import { BUNDLED_CERTIFICATES } from '../../data/certificates';
 import { subscribeToCertificates } from '../../services/certificateFirebase';
 import { subscribeToProjects } from '../../services/projectFirebase';
-import { fetchAuditHistory, AuditRecordItem, db, subscribeToSchoolRecords } from '../../services/academicFirebase';
+import { subscribeToAuditHistory, AuditRecordItem, db, subscribeToSchoolRecords } from '../../services/academicFirebase';
 import { collection, query, onSnapshot, orderBy, limit } from 'firebase/firestore';
 
 export const AdminOverview: React.FC = () => {
@@ -48,8 +48,8 @@ export const AdminOverview: React.FC = () => {
       console.warn('Could not subscribe to messages:', e);
     }
 
-    // 4. Audit history
-    fetchAuditHistory().then(setAuditList);
+    // 4. Live audit history subscription
+    const unsubAudit = subscribeToAuditHistory(setAuditList);
 
     return () => {
       unsubProj();
@@ -57,6 +57,7 @@ export const AdminOverview: React.FC = () => {
       unsubSchools();
       unsubMsgCount();
       unsubRecentMsg();
+      unsubAudit();
     };
   }, []);
 

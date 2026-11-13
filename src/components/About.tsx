@@ -1,7 +1,6 @@
 import React from 'react';
 import { motion } from 'motion/react';
-import { User, MapPin, GraduationCap, Briefcase, Mail, Phone, FileText } from 'lucide-react';
-import { EDUCATION_DATA } from '../data/portfolio';
+import { User, FileText } from 'lucide-react';
 import { usePortfolio } from '../context/PortfolioContext';
 import { ScrollReveal } from './ScrollReveal';
 
@@ -10,7 +9,7 @@ interface AboutProps {
 }
 
 export const About: React.FC<AboutProps> = ({ onOpenResume }) => {
-  const { settings } = usePortfolio();
+  const { settings, university } = usePortfolio();
 
   return (
     <section id="about" className="py-[var(--section-py)] bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 overflow-hidden">
@@ -32,7 +31,7 @@ export const About: React.FC<AboutProps> = ({ onOpenResume }) => {
             <ScrollReveal direction="right" delay={0.2}>
               <div className="space-y-6 text-center lg:text-left">
                 <h4 className="text-2xl font-bold text-slate-900 dark:text-white">
-                  Building intelligent, user-centric web systems from Rohtas, Bihar.
+                  Building intelligent, user-centric web systems from {settings.location}.
                 </h4>
                 
                 <p className="text-slate-600 dark:text-slate-300 leading-relaxed text-base">
@@ -50,7 +49,7 @@ export const About: React.FC<AboutProps> = ({ onOpenResume }) => {
                   </div>
                   <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/50">
                     <div className="text-xs font-medium text-slate-500 dark:text-slate-400">Education</div>
-                    <div className="text-sm font-semibold text-slate-900 dark:text-white mt-1">{EDUCATION_DATA[0].college}</div>
+                    <div className="text-sm font-semibold text-slate-900 dark:text-white mt-1">{university.institution}</div>
                   </div>
                 </div>
               </div>
@@ -72,11 +71,11 @@ export const About: React.FC<AboutProps> = ({ onOpenResume }) => {
                 </div>
                 <div className="flex justify-between py-2 border-b border-slate-200 dark:border-slate-800">
                   <span className="text-slate-500 dark:text-slate-400">Degree</span>
-                  <span className="font-semibold text-slate-900 dark:text-white truncate max-w-[150px] sm:max-w-none text-right">B.Tech in CSE</span>
+                  <span className="font-semibold text-slate-900 dark:text-white truncate max-w-[150px] sm:max-w-none text-right">{university.degree} in {university.branch}</span>
                 </div>
                 <div className="flex justify-between py-2 border-b border-slate-200 dark:border-slate-800">
                   <span className="text-slate-500 dark:text-slate-400">Status</span>
-                  <span className="font-semibold text-indigo-600 dark:text-indigo-400">{EDUCATION_DATA[0].status}</span>
+                  <span className="font-semibold text-indigo-600 dark:text-indigo-400">{university.status}</span>
                 </div>
                 <div className="flex justify-between py-2 border-b border-slate-200 dark:border-slate-800">
                   <span className="text-slate-500 dark:text-slate-400">Currently Learning</span>
