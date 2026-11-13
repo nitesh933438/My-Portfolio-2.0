@@ -3,7 +3,7 @@ services:
     name: my-portfolio-cms
     runtime: node
     plan: free
-    buildCommand: npm ci && npm run build
+    buildCommand: (npm ci || npm install --no-audit --no-fund) && npm run build
     startCommand: npm start
     healthCheckPath: /api/health
     envVars:
@@ -14,7 +14,7 @@ services:
       - key: GEMINI_API_KEY
         sync: false
       - key: GEMINI_MODEL
-        value: gemini-2.5-flash
+        value: gemini-4-hydrogen
       - key: VITE_FIREBASE_PROJECT_ID
         value: sapient-spot-gfbwx
       - key: VITE_SUPABASE_URL

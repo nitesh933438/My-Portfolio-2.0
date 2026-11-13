@@ -27,7 +27,7 @@ jobs:
           node-version: 24.12.0
 
       - name: Install dependencies
-        run: npm ci
+        run: npm ci || npm install --no-audit --no-fund
 
       - name: Build website
         run: npm run build

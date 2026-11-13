@@ -137,7 +137,7 @@ let ocrQueue: Promise<any> = Promise.resolve();
 
 async function getOcrWorker() {
   if (!ocrWorkerPromise) {
-    ocrWorkerPromise = createWorker('eng').catch((err) => {
+    ocrWorkerPromise = createWorker('eng', 1, { cachePath: '/tmp' }).catch((err) => {
       ocrWorkerPromise = null;
       throw err;
     });
