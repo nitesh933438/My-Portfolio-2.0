@@ -1,20 +1,47 @@
-import { collection, addDoc, updateDoc, setDoc, deleteDoc, doc, onSnapshot, query, orderBy, getDocs, writeBatch } from 'firebase/firestore';
+import { collection, addDoc, deleteDoc, doc, getDoc, onSnapshot, setDoc, getDocs, writeBatch } from 'firebase/firestore';
 import { db, auth, isUserAdmin } from './academicFirebase';
 import { Project, ProjectScreenshot, PROJECTS } from '../data/portfolio';
-import { getProjectScreenshotMetadata, isExcludedProjectScreenshot } from '../data/projectScreenshotCatalog';
+import { isExcludedProjectScreenshot } from '../data/projectScreenshotCatalog';
 import { getStorageUrl, deleteFileProxy } from './supabaseStorage';
+import {
+  isUploadedStoragePath,
+  stripUndefined,
+  matchesSameProject,
+  normalizeAndSyncScreenshots,
+  pickBestRemoteProject,
+  mergeWithBundledProjects,
+  isScreenshotUrlInUse
+} from '../utils/projectHelpers';
+
+export {
+  isUploadedStoragePath,
+  matchesSameProject,
+  normalizeAndSyncScreenshots,
+  mergeWithBundledProjects,
+  isScreenshotUrlInUse
+};
+
+export const projectsColRef = collection(db, 'projects');
+const projectExclusionsDocRef = doc(db, 'site_metadata', 'project_exclusions');
 
 export const resolveProjectImageUrl = (pathOrUrl: string): string => {
   if (!pathOrUrl) return '';
-  if (pathOrUrl.startsWith('http://') || pathOrUrl.startsWith('https://') || pathOrUrl.startsWith('data:')) return pathOrUrl;
-  
-  let cleanPath = pathOrUrl;
+  if (
+    pathOrUrl.startsWith('http://') ||
+    pathOrUrl.startsWith('https://') ||
+    pathOrUrl.startsWith('data:') ||
+    pathOrUrl.startsWith('blob:')
+  ) {
+    return pathOrUrl;
+  }
+
+  let cleanPath = pathOrUrl.trim();
   while (cleanPath.startsWith('./') || cleanPath.startsWith('/')) {
     if (cleanPath.startsWith('./')) cleanPath = cleanPath.slice(2);
     if (cleanPath.startsWith('/')) cleanPath = cleanPath.slice(1);
   }
 
-  const baseUrl = import.meta.env.BASE_URL || '/';
+  const baseUrl = import.meta.env?.BASE_URL || '/';
   const prefix = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
 
   if (cleanPath.startsWith('uploads/')) {
@@ -32,201 +59,211 @@ export const resolveProjectImageUrl = (pathOrUrl: string): string => {
   return `${prefix}projects/${cleanPath}`;
 };
 
-export const projectsColRef = collection(db, 'projects');
-
-const syncScreenshotTitlePrefix = (rawTitle: string, orderNum: number): string => {
-  const clean = (rawTitle || '').replace(/^\d+\s*[–-]\s*/, '').trim();
-  const prefix = String(orderNum).padStart(2, '0');
-  return clean ? `${prefix} – ${clean}` : `${prefix} – Screenshot`;
+const updateProjectExclusion = async (idsToChange: string[], hide: boolean) => {
+  const validIds = Array.from(new Set(idsToChange.filter(Boolean)));
+  if (validIds.length === 0) return;
+  try {
+    const snap = await getDoc(projectExclusionsDocRef);
+    const existing: string[] = snap.exists() && Array.isArray(snap.data().hiddenIds) ? snap.data().hiddenIds : [];
+    const next = hide
+      ? Array.from(new Set([...existing, ...validIds]))
+      : existing.filter((id) => !validIds.includes(id));
+    await setDoc(projectExclusionsDocRef, { hiddenIds: next, updatedAt: new Date().toISOString() }, { merge: true });
+  } catch (err) {
+    console.warn('Could not update project exclusion list:', err);
+  }
 };
 
-export const mergeWithBundledProjects = (firestoreProjects: Project[]): Project[] => {
-  const mergedList = firestoreProjects.map((fp) => {
-    const bundled = PROJECTS.find(
-      (bp) => bp.slug === fp.slug || bp.id === fp.id || bp.title.toLowerCase() === fp.title?.toLowerCase()
-    );
-
-    if (!bundled) {
-      if (fp.screenshotMetadata && fp.screenshotMetadata.length > 0) {
-        const synced = normalizeAndSyncScreenshots(fp.screenshotMetadata);
-        return {
-          ...fp,
-          screenshotMetadata: synced.items,
-          mainScreenshot: synced.mainScreenshot || fp.mainScreenshot,
-          additionalScreenshots: synced.additionalScreenshots
-        };
-      }
-      return fp;
-    }
-
-    const projectKey = bundled.slug || bundled.id;
-
-    // If screenshotMetadata is already stored in Firestore, respect the admin's custom order, cover, & deletions
-    if (fp.screenshotMetadata && fp.screenshotMetadata.length > 0) {
-      const filteredMeta = fp.screenshotMetadata
-        .filter((m) => Boolean(m.url) && !isExcludedProjectScreenshot(m.url))
-        .sort((a, b) => (a.displayOrder ?? 999) - (b.displayOrder ?? 999))
-        .map((m, idx) => {
-          const info = getProjectScreenshotMetadata(projectKey, idx, m.url);
-          const rawTitle =
-            m.title && !m.title.includes('Application Screenshot')
-              ? m.title
-              : info.title;
-          return {
-            ...m,
-            displayOrder: idx + 1,
-            title: syncScreenshotTitlePrefix(rawTitle, idx + 1),
-            category: m.category || info.category,
-            caption:
-              m.caption && !m.caption.includes('workflow screenshot view')
-                ? m.caption
-                : info.caption,
-            altText: m.altText || syncScreenshotTitlePrefix(rawTitle, idx + 1),
-            published: m.published !== false,
-          };
-        });
-
-      const synced = normalizeAndSyncScreenshots(filteredMeta);
-      return {
-        ...bundled,
-        ...fp,
-        slug: fp.slug || bundled.slug,
-        mainScreenshot: synced.mainScreenshot || fp.mainScreenshot || bundled.mainScreenshot,
-        additionalScreenshots: synced.additionalScreenshots,
-        screenshotMetadata: synced.items,
-      };
-    }
-
-    // Legacy fallback when screenshotMetadata has not been initialized yet
-    const currentAdd = (fp.additionalScreenshots || []).filter((url) => !isExcludedProjectScreenshot(url));
-    const bundledAdd = (bundled.additionalScreenshots || []).filter((url) => url !== bundled.mainScreenshot);
-    const isCustomExternalCover =
-      fp.mainScreenshot &&
-      !isExcludedProjectScreenshot(fp.mainScreenshot) &&
-      !fp.mainScreenshot.includes('/images/projects/') &&
-      !fp.mainScreenshot.includes('/images/banners/');
-    const mergedMain = isCustomExternalCover ? fp.mainScreenshot : (bundled.mainScreenshot || fp.mainScreenshot);
-
-    const customUploaded = currentAdd.filter(
-      (url) =>
-        url !== mergedMain &&
-        !bundledAdd.includes(url) &&
-        !url.includes('/images/projects/') &&
-        !url.includes('/images/banners/')
-    );
-    const mergedAdditional = (bundledAdd.length > 0 ? [...bundledAdd, ...customUploaded] : currentAdd).filter(
-      (url) => url !== mergedMain
-    );
-
-    return {
-      ...bundled,
-      ...fp,
-      slug: fp.slug || bundled.slug,
-      mainScreenshot: mergedMain,
-      additionalScreenshots: mergedAdditional,
-    };
-  });
-
-  return mergedList
-    .sort((a, b) => (a.displayOrder ?? 9999) - (b.displayOrder ?? 9999))
-    .map((p, idx) => ({ ...p, displayOrder: idx + 1 }));
+export const getHiddenProjectIds = async (): Promise<Set<string>> => {
+  try {
+    const snap = await getDoc(projectExclusionsDocRef);
+    const ids = snap.exists() && Array.isArray(snap.data().hiddenIds) ? snap.data().hiddenIds : [];
+    return new Set(ids);
+  } catch {
+    return new Set();
+  }
 };
+
+let projectSeedPromise: Promise<void> | null = null;
 
 export const initializeProjectsInFirestore = async () => {
-  try {
-    const querySnapshot = await getDocs(projectsColRef);
-    if (querySnapshot.empty) {
-      for (let i = 0; i < PROJECTS.length; i++) {
-        const proj = PROJECTS[i];
-        const { id, ...data } = proj;
-        await addDoc(projectsColRef, { ...data, displayOrder: i + 1 });
+  if (!isUserAdmin(auth.currentUser)) return;
+  if (projectSeedPromise) return projectSeedPromise;
+
+  projectSeedPromise = (async () => {
+    try {
+      const [querySnapshot, hiddenIds] = await Promise.all([
+        getDocs(projectsColRef),
+        getHiddenProjectIds()
+      ]);
+
+      const existingProjects = querySnapshot.docs.map((d) => ({ id: d.id, ...d.data() } as Project));
+      const now = new Date().toISOString();
+
+      if (querySnapshot.empty) {
+        const batch = writeBatch(db);
+        PROJECTS.forEach((proj, idx) => {
+          if (hiddenIds.has(proj.id) || hiddenIds.has(proj.slug)) return;
+          const { id, ...data } = proj;
+          batch.set(
+            doc(db, 'projects', id),
+            stripUndefined({ ...data, slug: proj.slug || id, displayOrder: idx + 1, deleted: false, createdAt: now, updatedAt: now }),
+            { merge: true }
+          );
+        });
+        await batch.commit();
+        console.log('Initialized default projects in Firestore');
+        return;
       }
-      console.log('Initialized default projects in Firestore');
+
+      // Ensure no missing un-excluded bundled projects exist if partial seed occurred earlier
+      const batch = writeBatch(db);
+      let missingCount = 0;
+      PROJECTS.forEach((proj, idx) => {
+        if (hiddenIds.has(proj.id) || hiddenIds.has(proj.slug)) return;
+        const alreadyPresent = existingProjects.some((ep) => matchesSameProject(ep, proj));
+        if (!alreadyPresent) {
+          const { id, ...data } = proj;
+          batch.set(
+            doc(db, 'projects', id),
+            stripUndefined({
+              ...data,
+              slug: proj.slug || id,
+              displayOrder: existingProjects.length + missingCount + idx + 1,
+              deleted: false,
+              createdAt: now,
+              updatedAt: now
+            }),
+            { merge: true }
+          );
+          missingCount += 1;
+        }
+      });
+      if (missingCount > 0) {
+        await batch.commit();
+      }
+    } catch (e) {
+      console.warn('Could not auto-seed projects:', e);
+    } finally {
+      projectSeedPromise = null;
     }
-  } catch (e) {
-    console.warn('Could not auto-seed projects:', e);
-  }
+  })();
+
+  return projectSeedPromise;
 };
 
 export const subscribeToProjects = (callback: (projects: Project[]) => void) => {
-  const q = query(projectsColRef, orderBy('displayOrder', 'asc'));
-  return onSnapshot(q, (snapshot) => {
-    const projects = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project));
-    if (projects.length === 0) {
-      callback(PROJECTS.map((p, idx) => ({ ...p, displayOrder: idx + 1 })));
-    } else {
-      callback(mergeWithBundledProjects(projects));
+  let latestRemote: Project[] = [];
+  let hiddenIds = new Set<string>();
+  let hasRemoteSnapshot = false;
+
+  const emitMerged = () => {
+    const result = hasRemoteSnapshot
+      ? mergeWithBundledProjects(latestRemote, hiddenIds)
+      : PROJECTS
+          .filter((p) => !hiddenIds.has(p.id) && !hiddenIds.has(p.slug))
+          .map((p, idx) => ({ ...p, displayOrder: idx + 1 }));
+    callback(result);
+  };
+
+  const unsubExclusions = onSnapshot(
+    projectExclusionsDocRef,
+    (snap) => {
+      const ids = snap.exists() && Array.isArray(snap.data().hiddenIds) ? snap.data().hiddenIds : [];
+      hiddenIds = new Set(ids);
+      emitMerged();
+    },
+    () => {
+      // Ignore exclusion read errors
     }
-  }, (err) => {
-    console.warn('Projects listener offline fallback:', err.message);
-    callback(PROJECTS.map((p, idx) => ({ ...p, displayOrder: idx + 1 })));
-  });
-};
+  );
 
-/**
- * Recalculates sequential display orders (1, 2, 3...) and syncs main & additional screenshots
- * along with their 01, 02, 03 title prefixes.
- */
-export const normalizeAndSyncScreenshots = (screenshots: ProjectScreenshot[]) => {
-  if (!screenshots || screenshots.length === 0) {
-    return {
-      items: [],
-      mainScreenshot: '',
-      additionalScreenshots: []
-    };
-  }
-
-  // Preserve identity while re-assigning sequential 1-based display orders and synced title numbers
-  const items = screenshots.map((item, idx) => ({
-    ...item,
-    displayOrder: idx + 1,
-    title: syncScreenshotTitlePrefix(item.title, idx + 1),
-    published: item.published !== false
-  }));
-
-  // Ensure cover selection
-  let coverItem = items.find(i => i.isCover);
-  if (!coverItem) {
-    coverItem = items[0];
-    items[0].isCover = true;
-  }
-
-  // Set all other items' isCover to false
-  items.forEach(i => {
-    if (i.id !== coverItem?.id) {
-      i.isCover = false;
+  // Query whole collection and sort client-side so docs missing displayOrder are never silently dropped
+  const unsubProjects = onSnapshot(
+    projectsColRef,
+    (snapshot) => {
+      hasRemoteSnapshot = true;
+      latestRemote = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as Project));
+      emitMerged();
+    },
+    (err) => {
+      console.warn('Projects listener offline fallback:', err.message);
+      hasRemoteSnapshot = false;
+      emitMerged();
     }
-  });
+  );
 
-  const mainScreenshot = coverItem.url;
-  const additionalScreenshots = items
-    .filter(i => i.id !== coverItem?.id && i.published)
-    .map(i => i.url);
-
-  return {
-    items,
-    mainScreenshot,
-    additionalScreenshots
+  return () => {
+    unsubExclusions();
+    unsubProjects();
   };
 };
 
+
+
 export const saveProject = async (project: Omit<Project, 'id'>, id?: string): Promise<string> => {
   if (!isUserAdmin(auth.currentUser)) throw new Error('Unauthorized');
-  
-  // If screenshotMetadata is present, sync mainScreenshot & additionalScreenshots
-  let payload: any = { ...project, updatedAt: new Date().toISOString() };
-  if (project.screenshotMetadata && project.screenshotMetadata.length > 0) {
-    const synced = normalizeAndSyncScreenshots(project.screenshotMetadata);
+
+  const now = new Date().toISOString();
+  const payload: Record<string, any> = {
+    ...project,
+    deleted: false,
+    updatedAt: now
+  };
+
+  const trimmedMain = (project.mainScreenshot || '').trim();
+  const existingMeta = Array.isArray(project.screenshotMetadata) ? [...project.screenshotMetadata] : [];
+
+  if (existingMeta.length > 0) {
+    let workingMeta = existingMeta;
+
+    if (trimmedMain) {
+      const currentCover = workingMeta.find((s) => s.isCover) || workingMeta[0];
+      if (!currentCover || currentCover.url !== trimmedMain) {
+        const existingMatchIdx = workingMeta.findIndex((s) => s.url === trimmedMain);
+        if (existingMatchIdx >= 0) {
+          const matched = { ...workingMeta[existingMatchIdx], isCover: true, published: true };
+          const others = workingMeta
+            .filter((_, idx) => idx !== existingMatchIdx)
+            .map((s) => ({ ...s, isCover: false }));
+          workingMeta = [matched, ...others];
+        } else {
+          const others = workingMeta.map((s) => ({ ...s, isCover: false }));
+          const newCover: ProjectScreenshot = {
+            id: `scr_cover_${Date.now()}`,
+            url: trimmedMain,
+            title: `${project.title || 'Project'} – Poster Cover`,
+            category: 'Poster Cover',
+            caption: 'Official project poster cover and primary showcase image.',
+            altText: `${project.title || 'Project'} Poster Cover`,
+            displayOrder: 1,
+            published: true,
+            isCover: true,
+            createdAt: now,
+            updatedAt: now
+          };
+          workingMeta = [newCover, ...others];
+        }
+      }
+    }
+
+    const synced = normalizeAndSyncScreenshots(workingMeta);
     payload.screenshotMetadata = synced.items;
-    payload.mainScreenshot = synced.mainScreenshot || project.mainScreenshot;
+    payload.mainScreenshot = synced.mainScreenshot || trimmedMain;
     payload.additionalScreenshots = synced.additionalScreenshots;
   }
 
+  const cleanPayload = stripUndefined(payload);
+  const exclusionsToRemove = [id, project.slug].filter(Boolean) as string[];
+  if (exclusionsToRemove.length > 0) {
+    await updateProjectExclusion(exclusionsToRemove, false);
+  }
+
   if (id) {
-    await setDoc(doc(db, 'projects', id), payload, { merge: true });
+    await setDoc(doc(db, 'projects', id), cleanPayload, { merge: true });
     return id;
   } else {
-    const docRef = await addDoc(projectsColRef, { ...payload, createdAt: new Date().toISOString() });
+    const docRef = await addDoc(projectsColRef, { ...cleanPayload, createdAt: now });
     return docRef.id;
   }
 };
@@ -237,54 +274,45 @@ export const saveProject = async (project: Omit<Project, 'id'>, id?: string): Pr
  */
 export const reindexProjectsInFirestore = async (orderedProjects: Project[]) => {
   if (!isUserAdmin(auth.currentUser)) return;
-  const batch = writeBatch(db);
+  const CHUNK_SIZE = 400;
   const now = new Date().toISOString();
 
-  orderedProjects.forEach((p, idx) => {
-    if (!p.id) return;
-    batch.set(
-      doc(db, 'projects', p.id),
-      { displayOrder: idx + 1, updatedAt: now },
-      { merge: true }
-    );
-  });
-
-  await batch.commit();
+  for (let i = 0; i < orderedProjects.length; i += CHUNK_SIZE) {
+    const batch = writeBatch(db);
+    orderedProjects.slice(i, i + CHUNK_SIZE).forEach((p, offset) => {
+      if (!p.id) return;
+      const { id, ...data } = p;
+      batch.set(
+        doc(db, 'projects', id),
+        stripUndefined({
+          ...data,
+          displayOrder: i + offset + 1,
+          deleted: false,
+          updatedAt: now
+        }),
+        { merge: true }
+      );
+    });
+    await batch.commit();
+  }
 };
 
 export const saveProjectScreenshots = async (projectId: string, screenshots: ProjectScreenshot[]) => {
   if (!isUserAdmin(auth.currentUser)) throw new Error('Unauthorized');
 
   const synced = normalizeAndSyncScreenshots(screenshots);
+  const payload = stripUndefined({
+    screenshotMetadata: synced.items,
+    mainScreenshot: synced.mainScreenshot,
+    additionalScreenshots: synced.additionalScreenshots,
+    deleted: false,
+    updatedAt: new Date().toISOString()
+  });
 
-  await setDoc(
-    doc(db, 'projects', projectId),
-    {
-      screenshotMetadata: synced.items,
-      mainScreenshot: synced.mainScreenshot,
-      additionalScreenshots: synced.additionalScreenshots,
-      updatedAt: new Date().toISOString()
-    },
-    { merge: true }
-  );
+  await setDoc(doc(db, 'projects', projectId), payload, { merge: true });
 };
 
-/**
- * Safely checks if a file URL is in use elsewhere before deleting from storage
- */
-export const isScreenshotUrlInUse = (url: string, currentProjectId: string, allProjects: Project[]): boolean => {
-  if (!url) return false;
 
-  for (const proj of allProjects) {
-    if (proj.id === currentProjectId) continue;
-
-    if (proj.mainScreenshot === url) return true;
-    if (proj.additionalScreenshots?.includes(url)) return true;
-    if (proj.screenshotMetadata?.some(s => s.url === url)) return true;
-  }
-
-  return false;
-};
 
 export const deleteProject = async (
   projectId: string,
@@ -294,8 +322,31 @@ export const deleteProject = async (
 ) => {
   if (!isUserAdmin(auth.currentUser)) throw new Error('Unauthorized');
 
-  // Delete the Firestore record first. If this fails, leave all media untouched.
-  await deleteDoc(doc(db, 'projects', projectId));
+  const target = allProjects.find((p) => p.id === projectId);
+  const matchedBundled = PROJECTS.find(
+    (bp) => bp.id === projectId || (target && matchesSameProject(bp, target))
+  );
+
+  // Also delete any duplicate Firestore docs matching this project so none can resurface
+  const snap = await getDocs(projectsColRef);
+  const batch = writeBatch(db);
+  batch.delete(doc(db, 'projects', projectId));
+
+  snap.docs.forEach((d) => {
+    if (d.id === projectId) return;
+    const data = { id: d.id, ...d.data() } as Project;
+    if (
+      (target && matchesSameProject(data, target)) ||
+      (matchedBundled && matchesSameProject(data, matchedBundled))
+    ) {
+      batch.delete(doc(db, 'projects', d.id));
+    }
+  });
+  await batch.commit();
+
+  if (matchedBundled) {
+    await updateProjectExclusion([projectId, matchedBundled.id, matchedBundled.slug], true);
+  }
 
   if (remainingOrdered && remainingOrdered.length > 0) {
     await reindexProjectsInFirestore(remainingOrdered);
@@ -303,9 +354,9 @@ export const deleteProject = async (
 
   const idToken = await auth.currentUser?.getIdToken();
   if (!idToken) return;
+
   const uniquePaths = Array.from(new Set(assetPaths)).filter((assetPath) => {
-    if (!assetPath || assetPath.startsWith('http') || assetPath.startsWith('data:') || assetPath.startsWith('blob:')) return false;
-    if (!assetPath.includes('/')) return false;
+    if (!isUploadedStoragePath(assetPath)) return false;
     return !isScreenshotUrlInUse(assetPath, projectId, allProjects);
   });
 
@@ -313,8 +364,99 @@ export const deleteProject = async (
     try {
       await deleteFileProxy(assetPath, idToken);
     } catch (error) {
-      // A failed media cleanup must not undo the successful metadata deletion.
       console.warn('Project deleted, but an unused asset could not be removed:', assetPath, error);
     }
   }
 };
+
+/**
+ * Cleans up duplicate Firestore documents in `projects` (preserving one canonical
+ * record per project with the richest/newest metadata) and deletes duplicate docs.
+ */
+export const cleanupDuplicateProjectsInFirestore = async (): Promise<{
+  duplicatesRemoved: number;
+  totalRemaining: number;
+}> => {
+  if (!isUserAdmin(auth.currentUser)) {
+    throw new Error('Unauthorized');
+  }
+
+  const snap = await getDocs(projectsColRef);
+  if (snap.empty) {
+    return { duplicatesRemoved: 0, totalRemaining: 0 };
+  }
+
+  const rawDocs = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Project));
+  const consumedIds = new Set<string>();
+  const toDeleteIds = new Set<string>();
+  const updates: { id: string; payload: Record<string, any> }[] = [];
+
+  // 1. Deduplicate matches for each bundled project
+  for (const bundled of PROJECTS) {
+    const matches = rawDocs.filter((r) => !consumedIds.has(r.id) && matchesSameProject(r, bundled));
+    if (matches.length === 0) continue;
+    matches.forEach((m) => consumedIds.add(m.id));
+    if (matches.length === 1) continue;
+
+    const keeper = pickBestRemoteProject(matches, bundled.id);
+    const duplicates = matches.filter((m) => m.id !== keeper.id);
+
+    const bestNonDeleted = pickBestRemoteProject(matches.filter((m) => (m as any).deleted !== true));
+    if (bestNonDeleted && bestNonDeleted.id !== keeper.id) {
+      const { id: _dropId, ...rest } = bestNonDeleted;
+      updates.push({
+        id: keeper.id,
+        payload: stripUndefined({ ...rest, deleted: false, updatedAt: new Date().toISOString() })
+      });
+    }
+
+    duplicates.forEach((dup) => toDeleteIds.add(dup.id));
+  }
+
+  // 2. Deduplicate remaining custom projects against each other
+  const remaining = rawDocs.filter((r) => !consumedIds.has(r.id));
+  const customGroups: Project[][] = [];
+  for (const docItem of remaining) {
+    const group = customGroups.find((g) => matchesSameProject(g[0], docItem));
+    if (group) {
+      group.push(docItem);
+    } else {
+      customGroups.push([docItem]);
+    }
+  }
+
+  for (const group of customGroups) {
+    if (group.length <= 1) continue;
+    const keeper = pickBestRemoteProject(group);
+    group.filter((m) => m.id !== keeper.id).forEach((dup) => toDeleteIds.add(dup.id));
+  }
+
+  if (toDeleteIds.size === 0 && updates.length === 0) {
+    return { duplicatesRemoved: 0, totalRemaining: rawDocs.length };
+  }
+
+  const ops: Array<{ type: 'set' | 'delete'; id: string; payload?: Record<string, any> }> = [
+    ...updates.map((u) => ({ type: 'set' as const, id: u.id, payload: u.payload })),
+    ...Array.from(toDeleteIds).map((id) => ({ type: 'delete' as const, id }))
+  ];
+
+  const CHUNK_SIZE = 400;
+  for (let i = 0; i < ops.length; i += CHUNK_SIZE) {
+    const batch = writeBatch(db);
+    for (const op of ops.slice(i, i + CHUNK_SIZE)) {
+      const ref = doc(db, 'projects', op.id);
+      if (op.type === 'delete') {
+        batch.delete(ref);
+      } else if (op.payload) {
+        batch.set(ref, op.payload, { merge: true });
+      }
+    }
+    await batch.commit();
+  }
+
+  return {
+    duplicatesRemoved: toDeleteIds.size,
+    totalRemaining: rawDocs.length - toDeleteIds.size
+  };
+};
+

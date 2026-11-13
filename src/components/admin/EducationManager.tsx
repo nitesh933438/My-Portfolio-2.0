@@ -93,9 +93,14 @@ export const EducationManager: React.FC = () => {
     if (!editingSemester) return;
     try {
       const isUpcoming = statusInput === 'UPCOMING';
+      const parsedSgpa = sgpaInput.trim() ? parseFloat(sgpaInput) : null;
+      if (!isUpcoming && parsedSgpa !== null && (Number.isNaN(parsedSgpa) || parsedSgpa < 0 || parsedSgpa > 10)) {
+        showToast('SGPA must be between 0.00 and 10.00.', 'error');
+        return;
+      }
       const updatedSem: SemesterResult = {
         ...editingSemester,
-        sgpa: isUpcoming ? null : (sgpaInput ? parseFloat(sgpaInput) : null),
+        sgpa: isUpcoming ? null : parsedSgpa,
         resultDeclarationDate: isUpcoming ? null : (declDateInput || new Date().toLocaleDateString()),
         status: statusInput,
         statusLabel: statusInput === 'PASS' ? 'Pass' : statusInput === 'FAIL' ? 'Fail' : 'Upcoming',
@@ -360,11 +365,11 @@ export const EducationManager: React.FC = () => {
               </button>
               <div>
                 <label className="block text-xs font-bold uppercase text-slate-500 dark:text-slate-400 mb-1.5">Percentage (%)</label>
-                <input type="number" step="0.1" value={editingSchool.percentage} onChange={(e) => setEditingSchool({ ...editingSchool, percentage: parseFloat(e.target.value) })} className="w-full p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-bold text-slate-900 dark:text-white" required />
+                <input type="number" step="0.1" min="0" max="100" value={Number.isNaN(editingSchool.percentage) ? '' : editingSchool.percentage} onChange={(e) => setEditingSchool({ ...editingSchool, percentage: e.target.value === '' ? 0 : parseFloat(e.target.value) || 0 })} className="w-full p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-bold text-slate-900 dark:text-white" required />
               </div>
               <div>
                 <label className="block text-xs font-bold uppercase text-slate-500 dark:text-slate-400 mb-1.5">Total Marks Obtained</label>
-                <input type="number" value={editingSchool.totalMarks} onChange={(e) => setEditingSchool({ ...editingSchool, totalMarks: parseInt(e.target.value) })} className="w-full p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-bold text-slate-900 dark:text-white" required />
+                <input type="number" min="0" value={Number.isNaN(editingSchool.totalMarks) ? '' : editingSchool.totalMarks} onChange={(e) => setEditingSchool({ ...editingSchool, totalMarks: e.target.value === '' ? 0 : parseInt(e.target.value, 10) || 0 })} className="w-full p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-bold text-slate-900 dark:text-white" required />
               </div>
               <div>
                 <label className="block text-xs font-bold uppercase text-slate-500 dark:text-slate-400 mb-1.5">Passing Year</label>

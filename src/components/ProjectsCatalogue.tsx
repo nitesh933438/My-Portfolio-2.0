@@ -1,22 +1,51 @@
 import { useState, useMemo, useEffect, FC } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Search, ExternalLink, Github, ArrowRight, FolderGit2, XCircle, LayoutGrid, Clock, Rocket, Beaker, Archive } from 'lucide-react';
-import { Project, ProjectCategory, ProjectStatus, PROJECTS } from '../data/portfolio';
-import { subscribeToProjects, resolveProjectImageUrl } from '../services/projectFirebase';
+import { Project, ProjectCategory, ProjectStatus } from '../data/portfolio';
+import { resolveProjectImageUrl } from '../services/projectFirebase';
+import { usePortfolio } from '../context/PortfolioContext';
 
 interface ProjectsCatalogueProps {
   onSelectProject: (project: Project) => void;
 }
 
 export const ProjectsCatalogue: FC<ProjectsCatalogueProps> = ({ onSelectProject }) => {
-  const [projects, setProjects] = useState<Project[]>(PROJECTS);
-  useEffect(() => subscribeToProjects(setProjects), []);
+  const { projects } = usePortfolio();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<ProjectCategory | 'All Projects'>('All Projects');
   const [showArchived, setShowArchived] = useState(false);
+  const [failedImgIds, setFailedImgIds] = useState<Record<string, boolean>>({});
 
-  const dynamicCategories = useMemo(() => Array.from(new Set(projects.map((project) => project.category))).sort(), [projects]);
+  const archivedCount = useMemo(
+    () => projects.filter((project) => project.status === 'Archived').length,
+    [projects]
+  );
+
+  const scopedProjects = useMemo(
+    () =>
+      showArchived
+        ? projects.filter((project) => project.status === 'Archived')
+        : projects.filter((project) => project.status !== 'Archived'),
+    [projects, showArchived]
+  );
+
+  const dynamicCategories = useMemo(
+    () => Array.from(new Set(scopedProjects.map((project) => project.category))).sort(),
+    [scopedProjects]
+  );
   const categories = ['All Projects', ...dynamicCategories] as const;
+
+  useEffect(() => {
+    if (selectedCategory !== 'All Projects' && !dynamicCategories.includes(selectedCategory as ProjectCategory)) {
+      setSelectedCategory('All Projects');
+    }
+  }, [dynamicCategories, selectedCategory]);
+
+  useEffect(() => {
+    if (showArchived && archivedCount === 0) {
+      setShowArchived(false);
+    }
+  }, [archivedCount, showArchived]);
 
   const clearFilters = () => {
     setSearchQuery('');
@@ -25,31 +54,30 @@ export const ProjectsCatalogue: FC<ProjectsCatalogueProps> = ({ onSelectProject 
   };
 
   const filteredProjects = useMemo(() => {
-    return projects.filter((project) => {
-      // Basic filtering by search query
-      const matchesSearch = 
-        project.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        project.shortDescription.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        project.techStack.some(t => t.toLowerCase().includes(searchQuery.toLowerCase()));
+    const q = searchQuery.trim().toLowerCase();
+    return scopedProjects.filter((project) => {
+      const matchesSearch =
+        !q ||
+        project.title.toLowerCase().includes(q) ||
+        project.shortDescription.toLowerCase().includes(q) ||
+        project.techStack.some((t) => t.toLowerCase().includes(q));
 
-      // Category filtering (Primary or Secondary)
-      const matchesCategory = 
-        selectedCategory === 'All Projects' || 
-        project.category === selectedCategory || 
+      const matchesCategory =
+        selectedCategory === 'All Projects' ||
+        project.category === selectedCategory ||
         (project.secondaryCategories && project.secondaryCategories.includes(selectedCategory as ProjectCategory));
 
-      // Status filtering (Archived is hidden by default)
-      const matchesStatus = showArchived ? project.status === 'Archived' : project.status !== 'Archived';
-
-      return matchesSearch && matchesCategory && matchesStatus;
+      return matchesSearch && matchesCategory;
     });
-  }, [projects, searchQuery, selectedCategory, showArchived]);
+  }, [scopedProjects, searchQuery, selectedCategory]);
 
   // Split into sections
-  const completedProjects = filteredProjects.filter(p => p.status === 'Completed');
-  const upcomingProjects = filteredProjects.filter(p => 
-    p.status === 'In Progress' || p.status === 'Planning' || p.status === 'Coming Soon'
-  );
+  const primaryProjects = showArchived
+    ? filteredProjects
+    : filteredProjects.filter((p) => p.status === 'Completed');
+  const upcomingProjects = showArchived
+    ? []
+    : filteredProjects.filter((p) => p.status === 'In Progress' || p.status === 'Planning' || p.status === 'Coming Soon');
 
   const getStatusIcon = (status: ProjectStatus) => {
     switch (status) {
@@ -67,17 +95,24 @@ export const ProjectsCatalogue: FC<ProjectsCatalogueProps> = ({ onSelectProject 
       key={project.id}
       className="group flex flex-col bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-[2rem] overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300"
     >
-      <div className="relative aspect-video overflow-hidden cursor-pointer" onClick={() => onSelectProject(project)}>
-        <img
-          src={resolveProjectImageUrl(project.mainScreenshot)}
-          alt={project.title}
-          loading="lazy"
-          decoding="async"
-          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-          onError={(e) => {
-            (e.target as HTMLImageElement).style.opacity = '0.3';
-          }}
-        />
+      <div className="relative aspect-video overflow-hidden cursor-pointer bg-slate-900 flex items-center justify-center" onClick={() => onSelectProject(project)}>
+        {failedImgIds[project.id] || !project.mainScreenshot ? (
+          <div className="flex flex-col items-center justify-center gap-2 text-indigo-300/80 p-6">
+            <FolderGit2 className="w-10 h-10" />
+            <span className="text-[10px] font-black uppercase tracking-widest">{project.category}</span>
+          </div>
+        ) : (
+          <img
+            src={resolveProjectImageUrl(project.mainScreenshot)}
+            alt={project.title}
+            loading="lazy"
+            decoding="async"
+            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+            onError={() => {
+              setFailedImgIds((prev) => ({ ...prev, [project.id]: true }));
+            }}
+          />
+        )}
         <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end p-6">
           <p className="text-white text-xs font-bold uppercase tracking-widest flex items-center gap-2">
             View Details <ArrowRight className="w-4 h-4" />
@@ -187,7 +222,7 @@ export const ProjectsCatalogue: FC<ProjectsCatalogueProps> = ({ onSelectProject 
             whileInView={{ opacity: 1, y: 0 }}
             className="text-lg text-slate-600 dark:text-slate-400 font-medium"
           >
-            A curated collection of {projects.length} projects across {categories.length - 1} categories, ranging from full-stack applications to AI integrations.
+            A curated collection of {scopedProjects.length} projects across {Math.max(1, categories.length - 1)} categories, ranging from full-stack applications to AI integrations.
           </motion.p>
         </div>
 
@@ -225,12 +260,14 @@ export const ProjectsCatalogue: FC<ProjectsCatalogueProps> = ({ onSelectProject 
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Filter by category</span>
-              <button 
-                onClick={() => setShowArchived(!showArchived)}
-                className={`text-[9px] font-bold uppercase tracking-widest transition-colors ${showArchived ? 'text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}
-              >
-                {showArchived ? 'Hide Archived' : 'Show Archived'}
-              </button>
+              {(archivedCount > 0 || showArchived) && (
+                <button 
+                  onClick={() => setShowArchived(!showArchived)}
+                  className={`text-[9px] font-bold uppercase tracking-widest transition-colors ${showArchived ? 'text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}
+                >
+                  {showArchived ? 'Hide Archived' : `Show Archived (${archivedCount})`}
+                </button>
+              )}
             </div>
             <div className="flex items-center gap-3 overflow-x-auto pb-4 scrollbar-hide">
               {categories.map((cat) => (
@@ -263,10 +300,10 @@ export const ProjectsCatalogue: FC<ProjectsCatalogueProps> = ({ onSelectProject 
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 lg:gap-10">
-              {completedProjects.map((project) => renderProjectCard(project))}
+              {primaryProjects.map((project) => renderProjectCard(project))}
             </div>
 
-            {completedProjects.length === 0 && (
+            {primaryProjects.length === 0 && (
               <div className="text-center py-20 bg-slate-50 dark:bg-slate-900/50 rounded-[3rem] border-2 border-dashed border-slate-200 dark:border-slate-800">
                 <FolderGit2 className="w-16 h-16 text-slate-300 mx-auto mb-4" />
                 <p className="text-slate-500 font-bold uppercase tracking-widest">No matching projects found</p>

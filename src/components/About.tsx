@@ -65,25 +65,25 @@ export const About: React.FC<AboutProps> = ({ onOpenResume }) => {
               </h5>
 
               <div className="space-y-4 text-sm">
-                <div className="flex justify-between py-2 border-b border-slate-200 dark:border-slate-800">
-                  <span className="text-slate-500 dark:text-slate-400">Full Name</span>
-                  <span className="font-semibold text-slate-900 dark:text-white">{settings.name}</span>
+                <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 py-2 border-b border-slate-200 dark:border-slate-800">
+                  <span className="text-slate-500 dark:text-slate-400 shrink-0">Full Name</span>
+                  <span className="font-semibold text-slate-900 dark:text-white text-right">{settings.name}</span>
                 </div>
-                <div className="flex justify-between py-2 border-b border-slate-200 dark:border-slate-800">
-                  <span className="text-slate-500 dark:text-slate-400">Degree</span>
-                  <span className="font-semibold text-slate-900 dark:text-white truncate max-w-[150px] sm:max-w-none text-right">{university.degree} in {university.branch}</span>
+                <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 py-2 border-b border-slate-200 dark:border-slate-800">
+                  <span className="text-slate-500 dark:text-slate-400 shrink-0">Degree</span>
+                  <span className="font-semibold text-slate-900 dark:text-white text-left sm:text-right break-words">{university.degree} in {university.branch}</span>
                 </div>
-                <div className="flex justify-between py-2 border-b border-slate-200 dark:border-slate-800">
-                  <span className="text-slate-500 dark:text-slate-400">Status</span>
-                  <span className="font-semibold text-indigo-600 dark:text-indigo-400">{university.status}</span>
+                <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 py-2 border-b border-slate-200 dark:border-slate-800">
+                  <span className="text-slate-500 dark:text-slate-400 shrink-0">Status</span>
+                  <span className="font-semibold text-indigo-600 dark:text-indigo-400 text-right">{university.status}</span>
                 </div>
-                <div className="flex justify-between py-2 border-b border-slate-200 dark:border-slate-800">
-                  <span className="text-slate-500 dark:text-slate-400">Currently Learning</span>
+                <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 py-2 border-b border-slate-200 dark:border-slate-800">
+                  <span className="text-slate-500 dark:text-slate-400 shrink-0">Currently Learning</span>
                   <span className="font-semibold text-indigo-600 dark:text-indigo-400 text-right">MERN Stack</span>
                 </div>
-                <div className="flex justify-between py-2">
-                  <span className="text-slate-500 dark:text-slate-400">Email</span>
-                  <a href={`mailto:${settings.email}`} className="font-semibold text-indigo-600 dark:text-indigo-400 hover:underline truncate max-w-[150px] sm:max-w-none">{settings.email}</a>
+                <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 py-2">
+                  <span className="text-slate-500 dark:text-slate-400 shrink-0">Email</span>
+                  <a href={`mailto:${settings.email}`} className="font-semibold text-indigo-600 dark:text-indigo-400 hover:underline break-all sm:break-normal text-left sm:text-right">{settings.email}</a>
                 </div>
               </div>
 

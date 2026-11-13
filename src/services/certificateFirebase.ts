@@ -7,7 +7,7 @@ import { BUNDLED_CERTIFICATES } from '../data/certificates';
 import { detectVerificationUrl, isIndividualVerificationUrl } from './verificationDetection';
 
 export const certificatesRef = collection(db, 'certifications');
-const certExclusionsDocRef = doc(db, 'site_content', 'cert_exclusions');
+const certExclusionsDocRef = doc(db, 'site_metadata', 'cert_exclusions');
 
 const updateCertExclusion = async (certId: string, hide: boolean) => {
   try {
@@ -337,10 +337,10 @@ export const mergeWithBundledCertificates = (
 };
 
 export const initializeCertificatesInFirestore = async () => {
+  if (!isUserAdmin(auth.currentUser)) return;
   try {
     const snap = await getDocs(certificatesRef);
     if (snap.empty) {
-      if (!isUserAdmin(auth.currentUser)) return;
       for (let i = 0; i < BUNDLED_CERTIFICATES.length; i++) {
         const cert = BUNDLED_CERTIFICATES[i];
         const { id, ...data } = cert;

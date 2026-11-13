@@ -134,11 +134,20 @@ export const Hero: React.FC<HeroProps> = ({ onOpenResume }) => {
           >
             <div className="relative w-44 h-44 sm:w-56 sm:h-56 md:w-64 md:h-64 lg:w-72 lg:h-72 xl:w-80 xl:h-80 2xl:w-96 2xl:h-96 mx-auto">
               <div className="absolute inset-0 bg-gradient-to-tr from-indigo-600 to-purple-600 rounded-3xl rotate-3 opacity-20 blur-xl" />
-              <div className="relative w-full h-full rounded-3xl overflow-hidden border-2 border-slate-200 dark:border-slate-800 shadow-2xl bg-slate-900">
+              <div className="relative w-full h-full rounded-3xl overflow-hidden border-2 border-slate-200 dark:border-slate-800 shadow-2xl bg-slate-900 flex items-center justify-center">
                 <img
                   src={resolveAssetUrl(settings.profilePhoto, 'profile')}
                   alt={settings.name}
                   referrerPolicy="no-referrer"
+                  onError={(e) => {
+                    const img = e.currentTarget;
+                    if (!img.dataset.fallbackApplied) {
+                      img.dataset.fallbackApplied = '1';
+                      img.src = './assets/aistudio/Any_Profile_Photo_0559445a.png';
+                    } else {
+                      img.style.display = 'none';
+                    }
+                  }}
                   className="w-full h-full object-cover object-center hover:scale-105 transition-transform duration-500"
                 />
               </div>
@@ -187,7 +196,7 @@ export const Hero: React.FC<HeroProps> = ({ onOpenResume }) => {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 1, duration: 1 }}
-          className="absolute bottom-10 left-1/2 -translate-x-1/2 hidden md:flex flex-col items-center gap-2"
+          className="mt-8 hidden md:flex flex-col items-center gap-2"
         >
           <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">Scroll</span>
           <motion.div 

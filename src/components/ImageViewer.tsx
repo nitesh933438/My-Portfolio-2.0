@@ -15,6 +15,8 @@ import {
   Loader2,
   Sparkles
 } from 'lucide-react';
+import { useModalHistory } from '../hooks/useModalHistory';
+import { downloadAssetFile } from '../utils/fileDownload';
 
 interface ImageViewerProps {
   isOpen: boolean;
@@ -47,6 +49,8 @@ export const ImageViewer: FC<ImageViewerProps> = ({
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
 
+  const { closeModal } = useModalHistory(isOpen, 'image-viewer', onClose);
+
   const viewerRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const thumbnailContainerRef = useRef<HTMLDivElement>(null);
@@ -63,15 +67,13 @@ export const ImageViewer: FC<ImageViewerProps> = ({
     setHasError(false);
   }, [currentIndex, isOpen, currentImage]);
 
-  // Prevent background scrolling while open, restore on close
+  // Prevent background scrolling while open, restore previous state on close
   useEffect(() => {
-    if (isOpen) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = '';
-    }
+    if (!isOpen) return;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
     return () => {
-      document.body.style.overflow = '';
+      document.body.style.overflow = prevOverflow;
     };
   }, [isOpen]);
 
@@ -115,7 +117,7 @@ export const ImageViewer: FC<ImageViewerProps> = ({
 
       if (e.key === 'Escape') {
         e.preventDefault();
-        onClose();
+        closeModal();
       } else if (e.key === 'ArrowRight') {
         e.preventDefault();
         handleNext();
@@ -139,7 +141,7 @@ export const ImageViewer: FC<ImageViewerProps> = ({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, scale, currentIndex, totalImages]);
+  }, [isOpen, scale, currentIndex, totalImages, closeModal]);
 
   if (!isOpen || totalImages === 0) return null;
 
@@ -198,34 +200,13 @@ export const ImageViewer: FC<ImageViewerProps> = ({
 
   const handleDownload = async (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!currentImage) return;
+    if (!currentImage || isDownloading) return;
 
     try {
       setIsDownloading(true);
-      const filename = `${projectTitle.toLowerCase().replace(/[^a-z0-9]/g, '_')}_screenshot_${currentIndex + 1}.jpg`;
-      
-      const response = await fetch(currentImage);
-      if (!response.ok) throw new Error('Fetch failed');
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-      
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = filename;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-    } catch (err) {
-      // Fallback: direct window download
-      const link = document.createElement('a');
-      link.href = currentImage;
-      link.download = `screenshot_${currentIndex + 1}.jpg`;
-      link.target = '_blank';
-      link.rel = 'noopener noreferrer';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      await downloadAssetFile(currentImage, `${projectTitle}_screenshot_${currentIndex + 1}`, {
+        defaultExt: 'jpg',
+      });
     } finally {
       setIsDownloading(false);
     }
@@ -346,7 +327,7 @@ export const ImageViewer: FC<ImageViewerProps> = ({
         role="dialog"
         aria-modal="true"
         aria-label={`Fullscreen image viewer for ${projectTitle}`}
-        onClick={() => scale === 1 && onClose()}
+        onClick={() => scale === 1 && closeModal()}
       >
         {/* Top Control Bar */}
         <header 
@@ -441,9 +422,10 @@ export const ImageViewer: FC<ImageViewerProps> = ({
 
             {/* Close Button */}
             <button
-              onClick={onClose}
+              type="button"
+              onClick={() => closeModal()}
               aria-label="Close Viewer (Esc)"
-              className="p-2 sm:p-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white transition-all shadow-lg shadow-indigo-600/30 active:scale-95 min-w-[36px] min-h-[36px] flex items-center justify-center"
+              className="p-2 sm:p-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white transition-all shadow-lg shadow-indigo-600/30 active:scale-95 min-w-[36px] min-h-[36px] flex items-center justify-center cursor-pointer"
               title="Close Viewer (Esc)"
             >
               <X className="w-4.5 h-4.5" />

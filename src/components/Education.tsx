@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   GraduationCap, 
@@ -8,32 +8,20 @@ import {
   Sparkles, 
   TrendingUp, 
   CheckCircle2, 
-  Clock, 
   BookOpen, 
   School,
   ChevronDown,
   Building2,
   Binary,
-  Layers,
-  Settings,
-  ShieldCheck
+  Layers
 } from 'lucide-react';
-import { ACADEMIC_DATA, SemesterResult, UniversityRecord, SchoolRecord } from '../data/education';
+import { ACADEMIC_DATA, SemesterResult } from '../data/education';
 import { ScrollReveal } from './ScrollReveal';
-import { subscribeToUniversityRecord, subscribeToSchoolRecords, initializeAcademicDataInFirestore } from '../services/academicFirebase';
+import { usePortfolio } from '../context/PortfolioContext';
 
 export const Education: React.FC = () => {
-  const [university, setUniversity] = useState<UniversityRecord>(ACADEMIC_DATA.university);
-  const [schooling, setSchooling] = useState<SchoolRecord[]>(ACADEMIC_DATA.schooling);
+  const { university, schooling } = usePortfolio();
   const [showAllSemesters, setShowAllSemesters] = useState(false);
-
-  useEffect(() => {
-    // Subscribe to live Firestore updates
-    const unsubscribeUniversity = subscribeToUniversityRecord((liveData) => setUniversity(liveData));
-    const unsubscribeSchools = subscribeToSchoolRecords(setSchooling);
-
-    return () => { unsubscribeUniversity(); unsubscribeSchools(); };
-  }, []);
 
   // Semesters 1-4 shown initially, or all 8 on toggle
   const visibleSemesters = showAllSemesters 
@@ -128,7 +116,7 @@ export const Education: React.FC = () => {
                 </div>
 
                 {/* Right: Academic Performance Trajectory Card */}
-                <div className="lg:text-right flex flex-row lg:flex-col items-center lg:items-end justify-between gap-4 p-4 rounded-2xl bg-slate-50 dark:bg-slate-950/70 border border-slate-200/80 dark:border-slate-800 shrink-0">
+                <div className="lg:text-right flex flex-wrap lg:flex-col items-center lg:items-end justify-between gap-3 sm:gap-4 p-4 rounded-2xl bg-slate-50 dark:bg-slate-950/70 border border-slate-200/80 dark:border-slate-800 shrink-0">
                   <div className="text-left lg:text-right">
                     <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 block">
                       Latest SGPA ({latestDeclared ? `Sem ${latestDeclared.semesterNumber}` : 'Not declared'})

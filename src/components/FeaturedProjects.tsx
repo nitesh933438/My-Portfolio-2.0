@@ -1,19 +1,21 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { ExternalLink, Github, ArrowRight, Sparkles, Rocket } from 'lucide-react';
-import { Project, PROJECTS } from '../data/portfolio';
-import { subscribeToProjects } from '../services/projectFirebase';
+import { ExternalLink, Github, ArrowRight, Sparkles, Rocket, FolderGit2 } from 'lucide-react';
+import { Project } from '../data/portfolio';
 import { ScrollReveal } from './ScrollReveal';
 import { resolveProjectImageUrl } from '../services/projectFirebase';
+import { usePortfolio } from '../context/PortfolioContext';
 
 interface FeaturedProjectsProps {
   onSelectProject: (project: Project) => void;
 }
 
 export const FeaturedProjects: React.FC<FeaturedProjectsProps> = ({ onSelectProject }) => {
-  const [projects, setProjects] = useState<Project[]>(PROJECTS);
-  useEffect(() => subscribeToProjects(setProjects), []);
-  const featuredList = projects.filter((p) => p.featured).slice(0, 6);
+  const { projects } = usePortfolio();
+  const [failedImgIds, setFailedImgIds] = useState<Record<string, boolean>>({});
+  const featuredList = projects.filter((p) => p.featured && p.status !== 'Archived').slice(0, 6);
+
+  if (featuredList.length === 0) return null;
 
   return (
     <section className="py-[var(--section-py)] bg-slate-50 dark:bg-slate-900/50 border-t border-slate-200 dark:border-slate-800 overflow-hidden relative">
@@ -44,19 +46,26 @@ export const FeaturedProjects: React.FC<FeaturedProjectsProps> = ({ onSelectProj
                 
                 {/* Visual Area */}
                 <div 
-                  className="relative aspect-[16/10] overflow-hidden cursor-pointer bg-slate-900"
+                  className="relative aspect-[16/10] overflow-hidden cursor-pointer bg-slate-900 flex items-center justify-center"
                   onClick={() => onSelectProject(project)}
                 >
-                  <img
-                    src={resolveProjectImageUrl(project.mainScreenshot)}
-                    alt={project.title}
-                    loading="lazy"
-                    decoding="async"
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                    onError={(e) => {
-                      (e.target as HTMLImageElement).style.opacity = '0.3';
-                    }}
-                  />
+                  {failedImgIds[project.id] || !project.mainScreenshot ? (
+                    <div className="flex flex-col items-center justify-center gap-2 text-indigo-300/80 p-6">
+                      <FolderGit2 className="w-10 h-10" />
+                      <span className="text-[10px] font-black uppercase tracking-widest">{project.category}</span>
+                    </div>
+                  ) : (
+                    <img
+                      src={resolveProjectImageUrl(project.mainScreenshot)}
+                      alt={project.title}
+                      loading="lazy"
+                      decoding="async"
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                      onError={() => {
+                        setFailedImgIds((prev) => ({ ...prev, [project.id]: true }));
+                      }}
+                    />
+                  )}
                   
                   {/* Glass Overlay */}
                   <div className="absolute inset-0 bg-gradient-to-t from-slate-950/90 via-slate-950/20 to-transparent opacity-60 group-hover:opacity-80 transition-opacity duration-500" />
@@ -112,6 +121,8 @@ export const FeaturedProjects: React.FC<FeaturedProjectsProps> = ({ onSelectProj
                         href={project.githubUrl}
                         target="_blank"
                         rel="noopener noreferrer"
+                        aria-label={`View ${project.title} source on GitHub`}
+                        title="GitHub Repository"
                         className="p-3 rounded-2xl bg-white dark:bg-slate-800 text-slate-400 hover:text-slate-900 dark:hover:text-white border border-slate-200 dark:border-slate-700 shadow-sm transition-all hover:scale-110 active:scale-95"
                       >
                         <Github className="w-4 h-4" />
@@ -122,6 +133,8 @@ export const FeaturedProjects: React.FC<FeaturedProjectsProps> = ({ onSelectProj
                         href={project.liveDemoUrl}
                         target="_blank"
                         rel="noopener noreferrer"
+                        aria-label={`Open live demo for ${project.title}`}
+                        title="Live Demo"
                         className="p-3 rounded-2xl bg-indigo-600 text-white shadow-lg shadow-indigo-600/20 transition-all hover:scale-110 active:scale-95"
                       >
                         <ExternalLink className="w-4 h-4" />

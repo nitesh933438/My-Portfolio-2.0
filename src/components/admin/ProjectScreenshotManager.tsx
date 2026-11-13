@@ -4,7 +4,8 @@ import { Project, ProjectScreenshot } from '../../data/portfolio';
 import { 
   saveProjectScreenshots, 
   resolveProjectImageUrl, 
-  isScreenshotUrlInUse 
+  isScreenshotUrlInUse,
+  isUploadedStoragePath
 } from '../../services/projectFirebase';
 import { auth } from '../../services/academicFirebase';
 import { uploadFileProxy, deleteFileProxy, validateFile } from '../../services/supabaseStorage';
@@ -84,26 +85,53 @@ export const ProjectScreenshotManager: React.FC<ProjectScreenshotManagerProps> =
   const [previewViewerOpen, setPreviewViewerOpen] = useState(false);
   const [previewIndex, setPreviewIndex] = useState(0);
 
-  // Initialize screenshots list from project data (Poster Cover is always #01)
+  // Refs to prevent stale closures during drag/save and preserve local edits from background snapshots
+  const screenshotsRef = useRef<ProjectScreenshot[]>([]);
+  const isDraggingRef = useRef(false);
+  const savingRef = useRef(false);
+  const hasUnsavedChangesRef = useRef(false);
+  const initializedProjectIdRef = useRef<string | null>(null);
+
+  const commitScreenshotsState = (next: ProjectScreenshot[]) => {
+    screenshotsRef.current = next;
+    setScreenshots(next);
+  };
+
+  // Initialize screenshots list from project data
   useEffect(() => {
-    if (!project) return;
+    if (!isOpen || !project) {
+      initializedProjectIdRef.current = null;
+      setSelectedIds([]);
+      hasUnsavedChangesRef.current = false;
+      setHasUnsavedChanges(false);
+      return;
+    }
+
+    const isNewProject = initializedProjectIdRef.current !== project.id;
+    if (!isNewProject && (isDraggingRef.current || savingRef.current || hasUnsavedChangesRef.current)) {
+      return;
+    }
+
     const projectKey = project.slug || project.id;
 
     if (project.screenshotMetadata && project.screenshotMetadata.length > 0) {
+      const seenUrls = new Set<string>();
       const filtered = [...project.screenshotMetadata]
-        .filter(s => !isExcludedProjectScreenshot(s.url))
-        .sort((a, b) => a.displayOrder - b.displayOrder);
+        .filter((s) => {
+          if (!s.url || isExcludedProjectScreenshot(s.url)) return false;
+          if (seenUrls.has(s.url)) return false;
+          seenUrls.add(s.url);
+          return true;
+        })
+        .sort((a, b) => (a.displayOrder ?? 999) - (b.displayOrder ?? 999));
 
-      const hasMain = filtered.some(s => s.url === project.mainScreenshot);
+      const hasMain = filtered.some((s) => s.url === project.mainScreenshot);
       const ordered = hasMain
-        ? [
-            ...filtered.filter(s => s.url === project.mainScreenshot),
-            ...filtered.filter(s => s.url !== project.mainScreenshot)
-          ]
+        ? filtered
         : project.mainScreenshot
         ? [
             {
-              id: `scr_cover_${Math.random().toString(36).substring(2, 7)}`,
+              id: `scr_cover_${Date.now()}`,
               url: project.mainScreenshot,
               title: '',
               caption: '',
@@ -113,9 +141,14 @@ export const ProjectScreenshotManager: React.FC<ProjectScreenshotManagerProps> =
               published: true,
               isCover: true
             },
-            ...filtered
+            ...filtered.map((s) => ({ ...s, isCover: false }))
           ]
         : filtered;
+
+      const explicitCoverId =
+        ordered.find((s) => s.isCover)?.id ||
+        ordered.find((s) => s.url === project.mainScreenshot)?.id ||
+        ordered[0]?.id;
 
       const upgraded = ordered.map((item, idx) => {
         const catalogMeta = getProjectScreenshotMetadata(projectKey, idx, item.url);
@@ -130,7 +163,7 @@ export const ProjectScreenshotManager: React.FC<ProjectScreenshotManagerProps> =
         return {
           ...item,
           displayOrder: idx + 1,
-          isCover: idx === 0,
+          isCover: item.id === explicitCoverId,
           title: isGenericTitle ? catalogMeta.title : item.title,
           category: isGenericCategory ? catalogMeta.category : item.category,
           caption:
@@ -139,20 +172,19 @@ export const ProjectScreenshotManager: React.FC<ProjectScreenshotManagerProps> =
               : catalogMeta.caption
         };
       });
-      setScreenshots(upgraded);
+      commitScreenshotsState(upgraded);
     } else {
-      // Build initial screenshotMetadata list from [mainScreenshot (Poster Cover), ...additionalScreenshots]
       const allUrls = Array.from(
         new Set(
           [project.mainScreenshot, ...(project.additionalScreenshots || [])]
             .filter(Boolean)
-            .filter(u => !isExcludedProjectScreenshot(u))
+            .filter((u) => !isExcludedProjectScreenshot(u))
         )
       );
       const initial: ProjectScreenshot[] = allUrls.map((url, idx) => {
         const meta = getProjectScreenshotMetadata(projectKey, idx, url);
         return {
-          id: `scr_legacy_${idx}_${Math.random().toString(36).substring(2, 7)}`,
+          id: `scr_legacy_${idx}_${project.id}`,
           url,
           title: meta.title,
           caption: meta.caption,
@@ -163,17 +195,23 @@ export const ProjectScreenshotManager: React.FC<ProjectScreenshotManagerProps> =
           isCover: idx === 0
         };
       });
-      setScreenshots(initial);
+      commitScreenshotsState(initial);
     }
 
+    hasUnsavedChangesRef.current = false;
     setHasUnsavedChanges(false);
-    setSelectedIds([]);
+    if (isNewProject) {
+      initializedProjectIdRef.current = project.id;
+      setSelectedIds([]);
+    }
   }, [project, isOpen]);
 
   if (!isOpen || !project) return null;
 
   // Re-calculate sequential numbers (1, 2, 3... N) and sync title prefix (01 – ..., 02 – ...)
   const resequence = (list: ProjectScreenshot[]): ProjectScreenshot[] => {
+    if (list.length === 0) return [];
+    const coverId = list.find((item) => item.isCover)?.id || list[0].id;
     return list.map((item, idx) => {
       const orderNum = idx + 1;
       const cleanTitle = (item.title || '').replace(/^\d+\s*[–-]\s*/, '').trim();
@@ -181,19 +219,34 @@ export const ProjectScreenshotManager: React.FC<ProjectScreenshotManagerProps> =
       return {
         ...item,
         displayOrder: orderNum,
+        isCover: item.id === coverId,
         title: cleanTitle ? `${prefix} – ${cleanTitle}` : `${prefix} – Screenshot`
       };
     });
   };
 
   // Helper to mark changes and auto-persist sequential order to Firestore
-  const updateList = (newList: ProjectScreenshot[]) => {
+  const updateList = async (newList: ProjectScreenshot[], successToast?: string): Promise<boolean> => {
     const resequenced = resequence(newList);
-    setScreenshots(resequenced);
+    commitScreenshotsState(resequenced);
+    hasUnsavedChangesRef.current = true;
     setHasUnsavedChanges(true);
-    saveProjectScreenshots(project.id, resequenced)
-      .then(() => setHasUnsavedChanges(false))
-      .catch(err => console.warn('Auto-save screenshot order note:', err));
+    savingRef.current = true;
+    setSaving(true);
+    try {
+      await saveProjectScreenshots(project.id, resequenced);
+      hasUnsavedChangesRef.current = false;
+      setHasUnsavedChanges(false);
+      if (successToast) showToast(successToast, 'success');
+      if (onProjectUpdated) onProjectUpdated();
+      return true;
+    } catch (err: any) {
+      showToast(err?.message || 'Could not auto-save screenshot changes. Click Save Changes to retry.', 'error');
+      return false;
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
   };
 
   // 1. UPLOAD MULTIPLE SCREENSHOTS
@@ -232,8 +285,10 @@ export const ProjectScreenshotManager: React.FC<ProjectScreenshotManagerProps> =
         });
       }
 
-      updateList([...screenshots, ...newScreenshots]);
-      showToast(`Successfully uploaded ${newScreenshots.length} screenshot(s)`, 'success');
+      const ok = await updateList([...screenshotsRef.current, ...newScreenshots]);
+      if (ok) {
+        showToast(`Successfully uploaded ${newScreenshots.length} screenshot(s)`, 'success');
+      }
     } catch (err: any) {
       showToast(err.message || 'Error uploading screenshots', 'error');
     } finally {
@@ -246,48 +301,56 @@ export const ProjectScreenshotManager: React.FC<ProjectScreenshotManagerProps> =
     const idToken = await auth.currentUser?.getIdToken();
     if (!idToken) return showToast('Unauthorized', 'error');
 
+    const previousItem = screenshotsRef.current.find((item) => item.id === targetId);
     try {
       validateFile(file, ['image/jpeg', 'image/png', 'image/webp', 'image/gif'], 20 * 1024 * 1024);
       const { path } = await uploadFileProxy(file, 'projects', idToken);
 
-      const updated = screenshots.map(item => {
+      const updated = screenshotsRef.current.map(item => {
         if (item.id === targetId) {
           return { ...item, url: path, updatedAt: new Date().toISOString() };
         }
         return item;
       });
 
-      updateList(updated);
+      const ok = await updateList(updated, 'Screenshot image replaced successfully');
+      if (ok && previousItem && isUploadedStoragePath(previousItem.url)) {
+        const inUse = isScreenshotUrlInUse(previousItem.url, project.id, allProjects);
+        if (!inUse) {
+          deleteFileProxy(previousItem.url, idToken).catch(() => undefined);
+        }
+      }
       setReplacingItemId(null);
-      showToast('Screenshot image replaced successfully', 'success');
     } catch (err: any) {
       showToast(err.message || 'Failed to replace image', 'error');
     }
   };
 
-  // 3. SET PRIMARY COVER SCREENSHOT
-  const handleSetCover = (id: string) => {
-    const updated = screenshots.map(item => ({
-      ...item,
-      isCover: item.id === id
-    }));
-    updateList(updated);
-    showToast('Primary cover screenshot updated', 'info');
+  // 3. SET PRIMARY COVER SCREENSHOT (promotes chosen screenshot to #01 & marks isCover)
+  const handleSetCover = async (id: string) => {
+    const target = screenshotsRef.current.find((item) => item.id === id);
+    if (!target) return;
+    const others = screenshotsRef.current
+      .filter((item) => item.id !== id)
+      .map((item) => ({ ...item, isCover: false }));
+    const promoted = [{ ...target, isCover: true, published: true }, ...others];
+    await updateList(promoted, 'Primary cover screenshot updated to #01!');
   };
 
   // 4. TOGGLE PUBLISH / UNPUBLISH VISIBILITY
-  const handleTogglePublish = (id: string) => {
-    const updated = screenshots.map(item => {
+  const handleTogglePublish = async (id: string) => {
+    const updated = screenshotsRef.current.map(item => {
       if (item.id === id) {
         return { ...item, published: !item.published };
       }
       return item;
     });
-    updateList(updated);
+    await updateList(updated);
   };
 
   // 5. DRAG AND DROP REORDERING
   const handleDragStart = (e: any, index: number) => {
+    isDraggingRef.current = true;
     setDraggedIndex(index);
     if (e.dataTransfer) {
       e.dataTransfer.effectAllowed = 'move';
@@ -298,33 +361,33 @@ export const ProjectScreenshotManager: React.FC<ProjectScreenshotManagerProps> =
     if (e.preventDefault) e.preventDefault();
     if (draggedIndex === null || draggedIndex === index) return;
 
-    const list = [...screenshots];
+    const list = [...screenshotsRef.current];
     const draggedItem = list[draggedIndex];
+    if (!draggedItem) return;
     list.splice(draggedIndex, 1);
     list.splice(index, 0, draggedItem);
 
     setDraggedIndex(index);
-    setScreenshots(resequence(list));
+    const resequenced = resequence(list);
+    commitScreenshotsState(resequenced);
+    hasUnsavedChangesRef.current = true;
     setHasUnsavedChanges(true);
   };
 
-  const handleDragEnd = () => {
+  const handleDragEnd = async () => {
+    isDraggingRef.current = false;
     setDraggedIndex(null);
-    saveProjectScreenshots(project.id, screenshots)
-      .then(() => {
-        setHasUnsavedChanges(false);
-        showToast('Screenshot order & serial numbers updated automatically!', 'success');
-      })
-      .catch(err => console.warn('Drag auto-save note:', err));
+    await updateList(screenshotsRef.current, 'Screenshot order & serial numbers updated automatically!');
   };
 
   // ACCESSIBLE MOVE CONTROLS
-  const moveItem = (fromIndex: number, toIndex: number) => {
-    if (toIndex < 0 || toIndex >= screenshots.length) return;
-    const list = [...screenshots];
+  const moveItem = async (fromIndex: number, toIndex: number) => {
+    const current = screenshotsRef.current;
+    if (toIndex < 0 || toIndex >= current.length) return;
+    const list = [...current];
     const [moved] = list.splice(fromIndex, 1);
     list.splice(toIndex, 0, moved);
-    updateList(list);
+    await updateList(list);
   };
 
   // 6. DELETE SCREENSHOT
@@ -333,28 +396,21 @@ export const ProjectScreenshotManager: React.FC<ProjectScreenshotManagerProps> =
     setDeleting(true);
 
     try {
-      const idToken = await auth.currentUser?.getIdToken();
-      
-      // Check if storage file is in use by other projects before deleting
-      if (idToken && deletingItem.url.includes('/') && !deletingItem.url.startsWith('http')) {
-        const inUse = isScreenshotUrlInUse(deletingItem.url, project.id, allProjects);
-        if (!inUse) {
-          try {
-            await deleteFileProxy(deletingItem.url, idToken);
-          } catch (e) {
-            console.warn('Could not delete storage file:', e);
+      const remaining = screenshotsRef.current.filter(s => s.id !== deletingItem.id);
+      const ok = await updateList(remaining, 'Screenshot removed and serial numbers recalculated');
+
+      if (ok) {
+        const idToken = await auth.currentUser?.getIdToken();
+        if (idToken && isUploadedStoragePath(deletingItem.url)) {
+          const inUse = isScreenshotUrlInUse(deletingItem.url, project.id, allProjects);
+          if (!inUse) {
+            deleteFileProxy(deletingItem.url, idToken).catch((e) => {
+              console.warn('Could not delete storage file:', e);
+            });
           }
         }
+        setDeletingItem(null);
       }
-
-      const remaining = screenshots.filter(s => s.id !== deletingItem.id);
-      updateList(remaining);
-
-      // Auto-save changes immediately to Firestore
-      await saveProjectScreenshots(project.id, resequence(remaining));
-      
-      showToast('Screenshot removed and serial numbers recalculated', 'success');
-      setDeletingItem(null);
     } catch (err: any) {
       showToast(err.message || 'Failed to delete screenshot', 'error');
     } finally {
@@ -377,41 +433,40 @@ export const ProjectScreenshotManager: React.FC<ProjectScreenshotManagerProps> =
     );
   };
 
-  const handleBulkPublish = (published: boolean) => {
-    const updated = screenshots.map(s => 
+  const handleBulkPublish = async (published: boolean) => {
+    const count = selectedIds.length;
+    const updated = screenshotsRef.current.map(s => 
       selectedIds.includes(s.id) ? { ...s, published } : s
     );
-    updateList(updated);
-    showToast(`Updated visibility for ${selectedIds.length} screenshots`, 'info');
+    await updateList(updated, `Updated visibility for ${count} screenshot(s)`);
   };
 
   const handleBulkDelete = async () => {
     if (selectedIds.length === 0) return;
     setBulkDeleting(true);
+    const idsToRemove = [...selectedIds];
+    const targets = screenshotsRef.current.filter(s => idsToRemove.includes(s.id));
 
     try {
-      const idToken = await auth.currentUser?.getIdToken();
+      const remaining = screenshotsRef.current.filter(s => !idsToRemove.includes(s.id));
+      const ok = await updateList(remaining, `Deleted ${idsToRemove.length} screenshot(s) and updated numbering`);
 
-      for (const id of selectedIds) {
-        const target = screenshots.find(s => s.id === id);
-        if (target && idToken && target.url.includes('/') && !target.url.startsWith('http')) {
-          const inUse = isScreenshotUrlInUse(target.url, project.id, allProjects);
-          if (!inUse) {
-            try {
-              await deleteFileProxy(target.url, idToken);
-            } catch (e) {
-              console.warn('Could not delete bulk asset:', e);
+      if (ok) {
+        setSelectedIds([]);
+        const idToken = await auth.currentUser?.getIdToken();
+        if (idToken) {
+          for (const target of targets) {
+            if (isUploadedStoragePath(target.url)) {
+              const inUse = isScreenshotUrlInUse(target.url, project.id, allProjects);
+              if (!inUse) {
+                deleteFileProxy(target.url, idToken).catch((e) => {
+                  console.warn('Could not delete bulk asset:', e);
+                });
+              }
             }
           }
         }
       }
-
-      const remaining = screenshots.filter(s => !selectedIds.includes(s.id));
-      updateList(remaining);
-      setSelectedIds([]);
-
-      await saveProjectScreenshots(project.id, resequence(remaining));
-      showToast(`Deleted ${selectedIds.length} screenshots and updated numbering`, 'success');
     } catch (err: any) {
       showToast(err.message || 'Bulk delete failed', 'error');
     } finally {
@@ -421,30 +476,32 @@ export const ProjectScreenshotManager: React.FC<ProjectScreenshotManagerProps> =
 
   // 7. SAVE ALL CHANGES TO FIRESTORE
   const handleSaveChanges = async () => {
+    savingRef.current = true;
     setSaving(true);
     try {
-      await saveProjectScreenshots(project.id, screenshots);
+      await saveProjectScreenshots(project.id, screenshotsRef.current);
+      hasUnsavedChangesRef.current = false;
       setHasUnsavedChanges(false);
       showToast('All screenshot metadata and order saved permanently!', 'success');
       if (onProjectUpdated) onProjectUpdated();
     } catch (err: any) {
       showToast(err.message || 'Failed to save screenshot gallery', 'error');
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
 
   // SAVE METADATA FROM SUB-MODAL
-  const handleSaveMetadata = (e: React.FormEvent) => {
+  const handleSaveMetadata = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingItem) return;
 
-    const updated = screenshots.map(s => 
+    const updated = screenshotsRef.current.map(s => 
       s.id === editingItem.id ? editingItem : s
     );
-    updateList(updated);
+    await updateList(updated, 'Screenshot metadata updated');
     setEditingItem(null);
-    showToast('Screenshot metadata updated', 'success');
   };
 
   const publishedScreenshots = screenshots.filter(s => s.published);
@@ -575,7 +632,10 @@ export const ProjectScreenshotManager: React.FC<ProjectScreenshotManagerProps> =
                     type="file"
                     multiple
                     accept="image/*"
-                    onChange={(e) => handleFileUpload(e.target.files)}
+                    onChange={(e) => {
+                      handleFileUpload(e.target.files);
+                      e.target.value = '';
+                    }}
                     className="hidden"
                   />
                 </label>
@@ -799,6 +859,7 @@ export const ProjectScreenshotManager: React.FC<ProjectScreenshotManagerProps> =
                             onChange={(e) => {
                               const file = e.target.files?.[0];
                               if (file) handleReplaceImage(file, item.id);
+                              e.target.value = '';
                             }}
                             className="hidden"
                           />

@@ -1,12 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { motion } from 'motion/react';
-import { SKILLS_DATA, ICONS, SkillCategory } from '../data/portfolio';
-import { subscribeToSkills } from '../services/portfolioContentFirebase';
+import { ICONS } from '../data/portfolio';
+import { usePortfolio } from '../context/PortfolioContext';
 import { ScrollReveal } from './ScrollReveal';
 
 export const Skills: React.FC = () => {
-  const [skillsData, setSkillsData] = useState<SkillCategory[]>(SKILLS_DATA);
-  useEffect(() => subscribeToSkills(setSkillsData), []);
+  const { skills: skillsData } = usePortfolio();
   const renderIcon = (iconName: keyof typeof ICONS) => {
     const IconComponent = ICONS[iconName] || ICONS.Code2;
     return <IconComponent className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />;

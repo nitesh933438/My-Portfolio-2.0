@@ -24,10 +24,11 @@ import {
 import { BUNDLED_CERTIFICATES } from '../data/certificates';
 import {
   resolveCertificateOriginalFileUrl,
-  resolveCertificatePreviewImageUrl,
-  subscribeToPublicCertificates
+  resolveCertificatePreviewImageUrl
 } from '../services/certificateFirebase';
+import { usePortfolio } from '../context/PortfolioContext';
 import { isExternalLiveVerificationUrl } from '../services/verificationDetection';
+import { downloadAssetFile } from '../utils/fileDownload';
 import type { PortfolioCertificate } from '../types/certificate';
 
 const formatIssueDate = (value?: string) => {
@@ -53,20 +54,20 @@ export const CertificateVerifyPage: React.FC = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
 
-  const [items, setItems] = useState<PortfolioCertificate[]>(BUNDLED_CERTIFICATES);
+  const { certificates } = usePortfolio();
+  const items = certificates.length > 0 ? certificates : BUNDLED_CERTIFICATES;
   const [lookupInput, setLookupInput] = useState('');
   const [viewerMode, setViewerMode] = useState<'image' | 'pdf'>('image');
   const [zoom, setZoom] = useState(1);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [imgError, setImgError] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+
+  const queryToken = certId || searchParams.get('id') || searchParams.get('q') || '';
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
-    return subscribeToPublicCertificates(merged => {
-      if (merged.length) setItems(merged);
-    });
-  }, []);
-
-  const queryToken = certId || searchParams.get('id') || searchParams.get('q') || '';
+  }, [queryToken]);
 
   const matchedCert = useMemo(() => {
     if (!queryToken) return items[0] || BUNDLED_CERTIFICATES[0];
@@ -85,6 +86,7 @@ export const CertificateVerifyPage: React.FC = () => {
   useEffect(() => {
     setViewerMode('image');
     setZoom(1);
+    setImgError(false);
     if (matchedCert) {
       setLookupInput(matchedCert.credentialId || matchedCert.id);
     } else if (queryToken) {
@@ -98,7 +100,23 @@ export const CertificateVerifyPage: React.FC = () => {
       setCopiedKey(key);
       setTimeout(() => setCopiedKey(prev => (prev === key ? null : prev)), 2000);
     } catch {
-      // ignore
+      try {
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.setAttribute('readonly', '');
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        const ok = document.execCommand('copy');
+        document.body.removeChild(textarea);
+        if (ok) {
+          setCopiedKey(key);
+          setTimeout(() => setCopiedKey(prev => (prev === key ? null : prev)), 2000);
+        }
+      } catch {
+        // Ignore if clipboard access blocked
+      }
     }
   };
 
@@ -164,19 +182,14 @@ export const CertificateVerifyPage: React.FC = () => {
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 pb-20">
       {/* Top Verification Header Bar */}
       <header className="sticky top-0 z-40 border-b border-slate-200 dark:border-slate-800 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-2.5 sm:py-0 sm:min-h-16 flex flex-wrap sm:flex-nowrap items-center justify-between gap-2.5 sm:gap-4">
           <div className="flex items-center gap-3">
             <button
               type="button"
               onClick={() => {
-                if (window.history.length > 1) {
-                  navigate(-1);
-                } else {
-                  navigate('/');
-                  setTimeout(() => {
-                    document.getElementById('certifications')?.scrollIntoView({ behavior: 'smooth' });
-                  }, 120);
-                }
+                navigate('/?section=certifications', {
+                  state: { scrollTo: 'certifications' },
+                });
               }}
               className="px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/80 hover:bg-indigo-50 dark:hover:bg-slate-800 text-xs font-bold text-slate-700 dark:text-slate-200 flex items-center gap-2 transition-all whitespace-nowrap shrink-0 cursor-pointer"
             >
@@ -184,26 +197,26 @@ export const CertificateVerifyPage: React.FC = () => {
               <span>Back to Portfolio</span>
             </button>
 
-            <div className="hidden sm:flex items-center gap-2 text-xs font-bold text-emerald-600 dark:text-emerald-400">
+            <div className="hidden md:flex items-center gap-2 text-xs font-bold text-emerald-600 dark:text-emerald-400">
               <ShieldCheck className="w-4 h-4 shrink-0" />
               <span>Official Portfolio Credential Verification Registry</span>
             </div>
           </div>
 
           {/* Live Credential ID Search Form */}
-          <form onSubmit={handleLookupSubmit} className="flex items-center gap-2 flex-1 max-w-md">
-            <div className="relative flex-1">
+          <form onSubmit={handleLookupSubmit} className="flex items-center gap-2 w-full sm:w-auto sm:flex-1 sm:max-w-md">
+            <div className="relative flex-1 min-w-0">
               <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 value={lookupInput}
                 onChange={e => setLookupInput(e.target.value)}
-                placeholder="Enter Roll No / Credential ID (e.g. NPTEL26CS153S1262000875)"
-                className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 pl-9 pr-3 py-1.5 text-xs font-mono text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500"
+                placeholder="Enter Roll No / Credential ID"
+                className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 pl-9 pr-3 py-2 sm:py-1.5 text-xs font-mono text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500"
               />
             </div>
             <button
               type="submit"
-              className="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition-all whitespace-nowrap shrink-0"
+              className="px-3.5 py-2 sm:py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition-all whitespace-nowrap shrink-0 cursor-pointer"
             >
               Verify ID
             </button>
@@ -258,13 +271,13 @@ export const CertificateVerifyPage: React.FC = () => {
                 </div>
               </div>
 
-              <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+              <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto shrink-0">
                 {externalIssuerUrl && (
                   <a
                     href={externalIssuerUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-2 shadow-md shadow-emerald-600/20 transition-all whitespace-nowrap"
+                    className="w-full sm:w-auto justify-center px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-2 shadow-md shadow-emerald-600/20 transition-all whitespace-nowrap"
                   >
                     <ShieldCheck className="w-4 h-4 shrink-0" />
                     <span>Verify on External Issuer Server</span>
@@ -276,21 +289,31 @@ export const CertificateVerifyPage: React.FC = () => {
                   href={originalFileUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold flex items-center gap-2 shadow-md shadow-indigo-600/20 transition-all whitespace-nowrap"
+                  className="flex-1 sm:flex-initial justify-center px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold flex items-center gap-2 shadow-md shadow-indigo-600/20 transition-all whitespace-nowrap"
                 >
                   <FileText className="w-4 h-4 shrink-0" />
                   <span>{isPdf ? 'Open Original Signed PDF' : 'Open Original Certificate'}</span>
                   <ExternalLink className="w-3.5 h-3.5 shrink-0" />
                 </a>
 
-                <a
-                  href={originalFileUrl}
-                  download={`${matchedCert.title.replace(/[^a-z0-9]/gi, '_')}.${isPdf ? 'pdf' : 'jpg'}`}
-                  className="px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold flex items-center gap-2 transition-all whitespace-nowrap"
+                <button
+                  type="button"
+                  disabled={downloading}
+                  onClick={async () => {
+                    setDownloading(true);
+                    try {
+                      await downloadAssetFile(originalFileUrl, matchedCert.title, {
+                        defaultExt: isPdf ? 'pdf' : 'jpg',
+                      });
+                    } finally {
+                      setDownloading(false);
+                    }
+                  }}
+                  className="flex-1 sm:flex-initial justify-center px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold flex items-center gap-2 transition-all whitespace-nowrap cursor-pointer disabled:opacity-60"
                 >
                   <Download className="w-4 h-4 text-indigo-600 dark:text-cyan-400 shrink-0" />
-                  <span>Download {isPdf ? 'PDF' : 'Certificate'}</span>
-                </a>
+                  <span>{downloading ? 'Downloading...' : `Download ${isPdf ? 'PDF' : 'Certificate'}`}</span>
+                </button>
               </div>
             </div>
 
@@ -299,32 +322,34 @@ export const CertificateVerifyPage: React.FC = () => {
               {/* Left 7 Columns: Original Certificate Visual & PDF Inspector */}
               <div className="lg:col-span-7 rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden shadow-sm">
                 <div className="px-5 py-3.5 border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3 bg-slate-50/70 dark:bg-slate-900/80">
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <button
                       type="button"
                       onClick={() => setViewerMode('image')}
-                      className={`px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all whitespace-nowrap ${
+                      className={`px-3 sm:px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all whitespace-nowrap cursor-pointer ${
                         viewerMode === 'image'
                           ? 'bg-indigo-600 text-white shadow-xs'
                           : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700'
                       }`}
                     >
-                      <ImageIcon className="w-3.5 h-3.5" />
-                      <span>Original Certificate Image (HD)</span>
+                      <ImageIcon className="w-3.5 h-3.5 shrink-0" />
+                      <span className="sm:hidden">HD Image</span>
+                      <span className="hidden sm:inline">Original Certificate Image (HD)</span>
                     </button>
 
                     {isPdf && (
                       <button
                         type="button"
                         onClick={() => setViewerMode('pdf')}
-                        className={`px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all whitespace-nowrap ${
+                        className={`px-3 sm:px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all whitespace-nowrap cursor-pointer ${
                           viewerMode === 'pdf'
                             ? 'bg-indigo-600 text-white shadow-xs'
                             : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700'
                         }`}
                       >
-                        <FileText className="w-3.5 h-3.5" />
-                        <span>Embedded PDF Reader</span>
+                        <FileText className="w-3.5 h-3.5 shrink-0" />
+                        <span className="sm:hidden">PDF Reader</span>
+                        <span className="hidden sm:inline">Embedded PDF Reader</span>
                       </button>
                     )}
                   </div>
@@ -334,8 +359,9 @@ export const CertificateVerifyPage: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => setZoom(z => Math.max(0.75, +(z - 0.25).toFixed(2)))}
-                        className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-100 text-slate-700 dark:text-slate-300"
+                        className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 cursor-pointer"
                         title="Zoom Out"
+                        aria-label="Zoom Out"
                       >
                         <ZoomOut className="w-4 h-4" />
                       </button>
@@ -345,16 +371,18 @@ export const CertificateVerifyPage: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => setZoom(z => Math.min(2.5, +(z + 0.25).toFixed(2)))}
-                        className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-100 text-slate-700 dark:text-slate-300"
+                        className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 cursor-pointer"
                         title="Zoom In"
+                        aria-label="Zoom In"
                       >
                         <ZoomIn className="w-4 h-4" />
                       </button>
                       <button
                         type="button"
                         onClick={() => setZoom(1)}
-                        className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-100 text-slate-700 dark:text-slate-300"
+                        className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 cursor-pointer"
                         title="Reset Zoom"
+                        aria-label="Reset Zoom"
                       >
                         <RotateCcw className="w-4 h-4" />
                       </button>
@@ -362,22 +390,86 @@ export const CertificateVerifyPage: React.FC = () => {
                   )}
                 </div>
 
-                <div className="p-4 sm:p-6 bg-slate-100/70 dark:bg-slate-950/60 min-h-[420px] flex items-center justify-center overflow-auto">
+                <div
+                  className={`p-3 sm:p-6 bg-slate-100/70 dark:bg-slate-950/60 min-h-[260px] sm:min-h-[420px] max-h-[680px] overflow-auto ${
+                    viewerMode === 'pdf' ? 'flex flex-col gap-3' : zoom <= 1 ? 'flex items-center justify-center' : 'block'
+                  }`}
+                >
                   {viewerMode === 'pdf' && isPdf ? (
-                    <iframe
-                      src={originalFileUrl}
-                      title={matchedCert.title}
-                      className="w-full h-[560px] rounded-xl border border-slate-200 dark:border-slate-800 bg-white"
-                    />
+                    <>
+                      <div className="w-full flex flex-wrap items-center justify-between gap-2 px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs">
+                        <span className="text-slate-600 dark:text-slate-300 font-medium">
+                          Having trouble reading PDF inline on mobile?
+                        </span>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setViewerMode('image')}
+                            className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 font-bold hover:bg-slate-200 dark:hover:bg-slate-700 cursor-pointer"
+                          >
+                            HD Image View
+                          </button>
+                          <a
+                            href={originalFileUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-bold"
+                          >
+                            <span>Open Full PDF</span>
+                            <ExternalLink className="w-3 h-3" />
+                          </a>
+                        </div>
+                      </div>
+                      <iframe
+                        src={originalFileUrl}
+                        title={matchedCert.title}
+                        className="w-full h-[440px] sm:h-[520px] rounded-xl border border-slate-200 dark:border-slate-800 bg-white"
+                      />
+                    </>
+                  ) : !previewImgUrl || imgError ? (
+                    <div className="w-full min-h-[300px] flex flex-col items-center justify-center text-center p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 gap-4">
+                      <FileText className="w-12 h-12 text-indigo-600 dark:text-cyan-400" />
+                      <div className="space-y-1 max-w-md">
+                        <p className="text-sm font-bold text-slate-900 dark:text-white">
+                          Certificate image preview unavailable
+                        </p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                          Open the original certificate document in a new tab or download it directly.
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap items-center justify-center gap-2.5">
+                        {isPdf && (
+                          <button
+                            type="button"
+                            onClick={() => setViewerMode('pdf')}
+                            className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 text-xs font-bold cursor-pointer"
+                          >
+                            Switch to PDF Reader
+                          </button>
+                        )}
+                        <a
+                          href={originalFileUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold"
+                        >
+                          <span>Open Original File</span>
+                          <ExternalLink className="w-3.5 h-3.5" />
+                        </a>
+                      </div>
+                    </div>
                   ) : (
                     <img
                       src={previewImgUrl}
                       alt={matchedCert.title}
+                      onError={() => setImgError(true)}
                       style={{
-                        transform: `scale(${zoom})`,
-                        transformOrigin: 'center center'
+                        width: zoom === 1 ? 'auto' : `${Math.round(zoom * 100)}%`,
+                        maxWidth: zoom > 1 ? 'none' : '100%',
+                        maxHeight: zoom > 1 ? 'none' : '580px',
+                        height: 'auto',
                       }}
-                      className="max-w-full max-h-[600px] object-contain rounded-xl shadow-md transition-transform duration-200 bg-white"
+                      className="mx-auto block object-contain rounded-xl shadow-md transition-all duration-200 bg-white"
                     />
                   )}
                 </div>
@@ -462,20 +554,21 @@ export const CertificateVerifyPage: React.FC = () => {
                       <dd className="font-black text-slate-900 dark:text-white">NITESH KUMAR</dd>
                     </div>
 
-                    <div className="py-2.5 flex items-center justify-between gap-4">
-                      <dt className="text-slate-500 dark:text-slate-400 font-medium flex items-center gap-1.5">
+                    <div className="py-2.5 flex flex-wrap items-center justify-between gap-2 sm:gap-4">
+                      <dt className="text-slate-500 dark:text-slate-400 font-medium flex items-center gap-1.5 shrink-0">
                         <Hash className="w-3.5 h-3.5 text-indigo-500" />
                         <span>Roll No / Credential ID</span>
                       </dt>
-                      <dd className="font-mono font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
-                        <span>{matchedCert.credentialId || matchedCert.id}</span>
+                      <dd className="font-mono font-bold text-slate-900 dark:text-white flex items-center gap-1.5 min-w-0">
+                        <span className="break-all">{matchedCert.credentialId || matchedCert.id}</span>
                         <button
                           type="button"
                           onClick={() =>
                             handleCopy(matchedCert.credentialId || matchedCert.id, 'verify-id')
                           }
-                          className="p-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-indigo-600 dark:text-cyan-400"
+                          className="p-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-indigo-600 dark:text-cyan-400 shrink-0 cursor-pointer"
                           title="Copy Credential ID"
+                          aria-label="Copy Credential ID"
                         >
                           {copiedKey === 'verify-id' ? (
                             <Check className="w-3.5 h-3.5 text-emerald-500" />
@@ -610,9 +703,9 @@ export const CertificateVerifyPage: React.FC = () => {
 
         {/* Quick Switcher for All 43 Verified Credentials */}
         <div className="pt-6 border-t border-slate-200 dark:border-slate-800">
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 mb-4">
             <h3 className="text-sm font-black uppercase tracking-wider text-slate-900 dark:text-white flex items-center gap-2">
-              <Award className="w-4 h-4 text-indigo-600 dark:text-cyan-400" />
+              <Award className="w-4 h-4 text-indigo-600 dark:text-cyan-400 shrink-0" />
               <span>All {items.length} Verified Credentials in Registry</span>
             </h3>
             <span className="text-xs text-slate-500 dark:text-slate-400">

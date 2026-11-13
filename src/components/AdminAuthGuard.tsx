@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion } from 'motion/react';
 import { ShieldAlert, LogIn, Lock, Loader2, LogOut, ArrowLeft, ShieldCheck } from 'lucide-react';
 import { User, onAuthStateChanged, signInWithPopup, signOut } from 'firebase/auth';
@@ -13,6 +14,7 @@ interface AdminAuthGuardProps {
 }
 
 export const AdminAuthGuard: React.FC<AdminAuthGuardProps> = ({ children }) => {
+  const navigate = useNavigate();
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
@@ -49,7 +51,7 @@ export const AdminAuthGuard: React.FC<AdminAuthGuardProps> = ({ children }) => {
   };
 
   const handleReturnHome = () => {
-    window.location.href = '#/';
+    navigate('/');
   };
 
   if (loading) {

@@ -1,13 +1,10 @@
-import React, { useEffect, useState } from 'react';
-import { motion } from 'motion/react';
-import { GraduationCap, Briefcase, Calendar, MapPin, CheckCircle } from 'lucide-react';
-import { EXPERIENCE_DATA, Experience } from '../data/portfolio';
-import { subscribeToExperience } from '../services/portfolioContentFirebase';
+import React from 'react';
+import { Briefcase, Calendar, MapPin, CheckCircle } from 'lucide-react';
+import { usePortfolio } from '../context/PortfolioContext';
 import { ScrollReveal } from './ScrollReveal';
 
 export const EducationExperience: React.FC = () => {
-  const [experience, setExperience] = useState<Experience[]>(EXPERIENCE_DATA);
-  useEffect(() => subscribeToExperience(setExperience), []);
+  const { experience } = usePortfolio();
   return (
     <section id="experience" className="py-20 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 overflow-hidden">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">

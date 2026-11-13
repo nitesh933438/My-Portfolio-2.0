@@ -1,12 +1,16 @@
 import { useState, useEffect, FC } from 'react';
-import { HashRouter, Routes, Route, useLocation } from 'react-router-dom';
+import { HashRouter, Routes, Route, useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
+import { onAuthStateChanged } from 'firebase/auth';
 import { PublicPortfolio } from './components/PublicPortfolio';
+import { parsePortfolioSectionTarget } from './utils/navigationHelpers';
 import { PortfolioProvider } from './context/PortfolioContext';
 import { AIScannerProvider } from './context/AIScannerContext';
 
 import { ACADEMIC_DATA, UniversityRecord, SchoolRecord } from './data/education';
 import { 
+  auth,
+  isUserAdmin,
   subscribeToUniversityRecord, 
   subscribeToSchoolRecords,
   initializeAcademicDataInFirestore,
@@ -54,12 +58,23 @@ interface AnimatedAppRoutesProps {
 
 const AnimatedAppRoutes: FC<AnimatedAppRoutesProps> = ({ theme, setTheme, liveUniversity }) => {
   const location = useLocation();
+  const navigate = useNavigate();
 
   useEffect(() => {
-    if (location.pathname.startsWith('/admin') || location.pathname.startsWith('/verify')) {
-      window.scrollTo(0, 0);
+    const isStandaloneRoute =
+      location.pathname.startsWith('/admin') ||
+      location.pathname.startsWith('/verify') ||
+      location.pathname === '/resume';
+    const targetSection = parsePortfolioSectionTarget({
+      pathname: location.pathname,
+      hash: window.location.hash,
+      search: location.search,
+      state: location.state,
+    });
+    if (isStandaloneRoute || !targetSection) {
+      window.scrollTo({ top: 0, behavior: 'instant' });
     }
-  }, [location.pathname]);
+  }, [location.pathname, location.search, location.hash, location.state]);
 
   const routeTransitionKey = location.pathname.startsWith('/admin')
     ? 'admin-root'
@@ -92,17 +107,16 @@ const AnimatedAppRoutes: FC<AnimatedAppRoutesProps> = ({ theme, setTheme, liveUn
           <Route path="/resume" element={<ResumePage />} />
           <Route path="/verify/:certId" element={<CertificateVerifyPage />} />
           <Route path="/verify" element={<CertificateVerifyPage />} />
-          <Route path="/*" element={<PublicPortfolio theme={theme} setTheme={setTheme} />} />
           <Route path="/admin" element={
             <AdminAuthGuard>
               <AdminLayout theme={theme} setTheme={setTheme} />
             </AdminAuthGuard>
           }>
             <Route index element={
-              <AdminDashboardPage theme={theme} setTheme={setTheme} onNavigateHome={() => window.location.href = '#/'} currentUniversity={liveUniversity} />
+              <AdminDashboardPage theme={theme} setTheme={setTheme} onNavigateHome={() => navigate('/')} currentUniversity={liveUniversity} />
             } />
             <Route path="certificates" element={
-              <CertificateAdminPage onBack={() => window.location.href = '#/admin'} />
+              <CertificateAdminPage onBack={() => navigate('/admin')} />
             } />
             <Route path="projects" element={<ProjectsManager />} />
             <Route path="education" element={<EducationManager />} />
@@ -112,6 +126,7 @@ const AnimatedAppRoutes: FC<AnimatedAppRoutesProps> = ({ theme, setTheme, liveUn
             <Route path="settings" element={<SettingsManager />} />
             <Route path="ai" element={<AIAssistantPage />} />
           </Route>
+          <Route path="/*" element={<PublicPortfolio theme={theme} setTheme={setTheme} />} />
         </Routes>
       </motion.div>
     </AnimatePresence>
@@ -142,16 +157,19 @@ const App: FC = () => {
     const unsubSkills = subscribeToSkills(setLiveSkills);
     const unsubExperience = subscribeToExperience(setLiveExperience);
 
-    // Defer background initialization checks so initial render & scrolling are 100% unblocked
-    const seedTimer = window.setTimeout(() => {
-      initializeAcademicDataInFirestore();
-      initializeSiteSettingsInFirestore();
-      initializeProjectsInFirestore();
-      initializeCertificatesInFirestore();
-    }, 1200);
+    let hasSeededForAdmin = false;
+    const unsubAuth = onAuthStateChanged(auth, (user) => {
+      if (!hasSeededForAdmin && isUserAdmin(user)) {
+        hasSeededForAdmin = true;
+        initializeAcademicDataInFirestore();
+        initializeSiteSettingsInFirestore();
+        initializeProjectsInFirestore();
+        initializeCertificatesInFirestore();
+      }
+    });
     
     return () => {
-      window.clearTimeout(seedTimer);
+      unsubAuth();
       unsubUniversity();
       unsubSchooling();
       unsubSettings();

@@ -16,29 +16,54 @@ import { ResumeModal } from './ResumeModal';
 import { ScrollProgressBar } from './ScrollProgressBar';
 import { LoadingScreen } from './LoadingScreen';
 import { Certifications } from './Certifications';
-import { Project } from '../data/portfolio';
+import { usePortfolio } from '../context/PortfolioContext';
+import { parsePortfolioSectionTarget } from '../utils/navigationHelpers';
 
 export const PublicPortfolio: React.FC<{ theme: any, setTheme: any }> = ({ theme, setTheme }) => {
-  const [selectedProject, setSelectedProject] = useState<Project | null>(null);
+  const { projects } = usePortfolio();
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [resumeModalOpen, setResumeModalOpen] = useState(false);
   const location = useLocation();
+  const selectedProject = selectedProjectId
+    ? projects.find((p) => p.id === selectedProjectId) || null
+    : null;
 
-  // Handle hash navigation (e.g. returning to #certifications or #projects)
+  // Handle section navigation (e.g. returning to ?section=certifications, #projects, or { scrollTo })
   useEffect(() => {
-    const rawHash = window.location.hash;
-    // Extract section if present after public route, e.g. #/certifications or #certifications
-    const match = rawHash.match(/#\/?([a-zA-Z0-9_-]+)$/);
-    const targetSection = match ? match[1] : '';
+    const targetSection = parsePortfolioSectionTarget({
+      pathname: location.pathname,
+      hash: window.location.hash,
+      search: location.search,
+      state: location.state,
+    });
 
-    if (targetSection && targetSection !== 'admin' && !targetSection.startsWith('verify')) {
+    if (!targetSection) return;
+
+    let cancelled = false;
+    let attempts = 0;
+    const maxAttempts = 16;
+    let timerId: number | undefined;
+
+    const tryScroll = () => {
+      if (cancelled) return;
       const el = document.getElementById(targetSection);
       if (el) {
-        setTimeout(() => {
-          el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }, 80);
+        el.scrollIntoView({ behavior: 'instant', block: 'start' });
+        return;
       }
-    }
-  }, [location.pathname]);
+      attempts += 1;
+      if (attempts < maxAttempts) {
+        timerId = window.setTimeout(tryScroll, 50);
+      }
+    };
+
+    // Wait briefly so AnimatePresence exit/enter finishes mounting the target section
+    timerId = window.setTimeout(tryScroll, 50);
+    return () => {
+      cancelled = true;
+      if (timerId !== undefined) window.clearTimeout(timerId);
+    };
+  }, [location.pathname, location.search, location.hash, location.state, location.key]);
 
   return (
     <div className="relative min-h-screen bg-white dark:bg-slate-950 transition-colors duration-500 overflow-x-hidden">
@@ -50,15 +75,15 @@ export const PublicPortfolio: React.FC<{ theme: any, setTheme: any }> = ({ theme
         <About onOpenResume={() => setResumeModalOpen(true)} />
         <Education />
         <Skills />
-        <FeaturedProjects onSelectProject={(p) => setSelectedProject(p)} />
-        <ProjectsCatalogue onSelectProject={(p) => setSelectedProject(p)} />
+        <FeaturedProjects onSelectProject={(p) => setSelectedProjectId(p.id)} />
+        <ProjectsCatalogue onSelectProject={(p) => setSelectedProjectId(p.id)} />
         <EducationExperience />
         <Certifications />
         <GithubSection />
         <Contact />
       </main>
       <Footer onOpenResume={() => setResumeModalOpen(true)} />
-      <ProjectModal project={selectedProject} onClose={() => setSelectedProject(null)} />
+      <ProjectModal project={selectedProject} onClose={() => setSelectedProjectId(null)} />
       <ResumeModal isOpen={resumeModalOpen} onClose={() => setResumeModalOpen(false)} />
     </div>
   );

@@ -18,6 +18,7 @@ import {
 import { NAV_LINKS } from '../data/portfolio';
 import { usePortfolio } from '../context/PortfolioContext';
 import { NKLogo } from './NKLogo';
+import { useModalHistory } from '../hooks/useModalHistory';
 
 interface NavbarProps {
   theme: 'light' | 'dark' | 'system';
@@ -41,6 +42,11 @@ export const Navbar: FC<NavbarProps> = ({ theme, setTheme, onOpenResume }) => {
   const [activeSection, setActiveSection] = useState('about');
   const [hoveredSection, setHoveredSection] = useState<string | null>(null);
   const navLinks = NAV_LINKS;
+  const { closeModal: closeMobileDrawer } = useModalHistory(
+    mobileMenuOpen,
+    'mobile-nav-drawer',
+    () => setMobileMenuOpen(false)
+  );
 
   const cycleTheme = () => {
     const nextTheme = theme === 'light' ? 'dark' : theme === 'dark' ? 'system' : 'light';
@@ -80,26 +86,36 @@ export const Navbar: FC<NavbarProps> = ({ theme, setTheme, onOpenResume }) => {
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setMobileMenuOpen(false);
+      if (event.key === 'Escape') closeMobileDrawer();
     };
     document.addEventListener('keydown', closeOnEscape);
     return () => {
       document.body.style.overflow = previousOverflow;
       document.removeEventListener('keydown', closeOnEscape);
     };
-  }, [mobileMenuOpen]);
+  }, [mobileMenuOpen, closeMobileDrawer]);
 
   const scrollToSection = (href: string) => {
     const targetId = href.replace(/^#/, '');
-    setMobileMenuOpen(false);
-    if (!targetId) {
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-      return;
+    const wasDrawerOpen = mobileMenuOpen;
+    if (wasDrawerOpen) {
+      closeMobileDrawer();
     }
-    const element = document.getElementById(targetId);
-    if (element) {
-      setActiveSection(targetId);
-      element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const performScroll = () => {
+      if (!targetId) {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        return;
+      }
+      const element = document.getElementById(targetId);
+      if (element) {
+        setActiveSection(targetId);
+        element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    };
+    if (wasDrawerOpen) {
+      window.setTimeout(performScroll, 40);
+    } else {
+      performScroll();
     }
   };
 
@@ -240,7 +256,7 @@ export const Navbar: FC<NavbarProps> = ({ theme, setTheme, onOpenResume }) => {
 
           <button
             type="button"
-            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            onClick={() => (mobileMenuOpen ? closeMobileDrawer() : setMobileMenuOpen(true))}
             className="md:hidden p-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 active:scale-90 cursor-pointer"
             aria-label="Toggle Menu"
             aria-expanded={mobileMenuOpen}
@@ -260,7 +276,7 @@ export const Navbar: FC<NavbarProps> = ({ theme, setTheme, onOpenResume }) => {
             exit={{ opacity: 0, y: -12 }}
             transition={{ duration: 0.16 }}
             id="portfolio-mobile-navigation"
-            className="md:hidden absolute top-16 sm:top-20 left-0 right-0 max-h-[calc(100dvh-4rem)] bg-white/95 dark:bg-slate-950/95 backdrop-blur-xl border-b border-slate-200 dark:border-slate-800 px-4 py-5 shadow-2xl overflow-y-auto overscroll-contain"
+            className="md:hidden absolute top-16 sm:top-20 left-0 right-0 max-h-[calc(100dvh-4rem)] bg-white dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 px-4 py-5 shadow-2xl overflow-y-auto overscroll-contain z-50"
           >
             <nav className="grid grid-cols-2 gap-2.5" aria-label="Mobile Navigation">
               {navLinks.map(link => {
@@ -318,8 +334,8 @@ export const Navbar: FC<NavbarProps> = ({ theme, setTheme, onOpenResume }) => {
               <button
                 type="button"
                 onClick={() => {
-                  setMobileMenuOpen(false);
-                  onOpenResume();
+                  closeMobileDrawer({ skipHistoryBack: true });
+                  window.setTimeout(() => onOpenResume(), 30);
                 }}
                 className="w-full py-3.5 px-4 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-2xl shadow-md flex items-center justify-center gap-2 active:scale-95 transition-all cursor-pointer"
               >

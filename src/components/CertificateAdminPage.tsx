@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { onAuthStateChanged, signInWithPopup, signOut, User } from 'firebase/auth';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -85,6 +86,7 @@ const blank = (nextOrder = 0): Omit<PortfolioCertificate, 'id' | 'createdAt' | '
 });
 
 export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
+  const navigate = useNavigate();
   const [user, setUser] = useState<User | null>(null);
   const [items, setItems] = useState<PortfolioCertificate[]>(() =>
     BUNDLED_CERTIFICATES.map((c, idx) => ({ ...c, displayOrder: idx }))
@@ -577,7 +579,7 @@ export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
             >
               Sign in with Google
             </button>
-            <button onClick={onBack} className="text-xs text-slate-400 underline">
+            <button type="button" onClick={() => navigate('/')} className="text-xs text-slate-400 underline cursor-pointer">
               Back to portfolio
             </button>
           </div>
@@ -1041,6 +1043,9 @@ export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
                           alt={item.title}
                           loading="lazy"
                           decoding="async"
+                          onError={(e) => {
+                            (e.currentTarget as HTMLImageElement).style.display = 'none';
+                          }}
                           className="w-full h-full object-contain"
                         />
                       ) : (
@@ -1151,6 +1156,7 @@ export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
                       type="button"
                       onClick={() => toggleFeatured(item)}
                       title={item.featured ? 'Featured Certificate (Click to remove star)' : 'Star as Featured Certificate'}
+                      aria-label={item.featured ? `Unstar ${item.title}` : `Star ${item.title} as featured`}
                       className={`p-2 rounded-xl transition-all cursor-pointer ${
                         item.featured
                           ? 'text-amber-500 bg-amber-500/20 hover:bg-amber-500/30 ring-1 ring-amber-500/40 shadow-xs'
@@ -1166,6 +1172,7 @@ export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
                         type="button"
                         onClick={() => moveToFirst(item)}
                         title="Move to Start (#1 Top Position)"
+                        aria-label={`Move ${item.title} to top position`}
                         className="p-2 rounded-xl text-indigo-600 dark:text-cyan-400 bg-indigo-500/10 hover:bg-indigo-500/20 cursor-pointer transition-all"
                       >
                         <ChevronsUp size={15} />
@@ -1178,6 +1185,7 @@ export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
                       onClick={() => moveCertificate(item, -1)}
                       disabled={orderedItems[0]?.id === item.id}
                       title="Move up one position"
+                      aria-label={`Move ${item.title} up`}
                       className="p-2 rounded-xl text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-25 cursor-pointer transition-all"
                     >
                       <ArrowUp size={15} />
@@ -1189,6 +1197,7 @@ export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
                       onClick={() => moveCertificate(item, 1)}
                       disabled={orderedItems[orderedItems.length - 1]?.id === item.id}
                       title="Move down one position"
+                      aria-label={`Move ${item.title} down`}
                       className="p-2 rounded-xl text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-25 cursor-pointer transition-all"
                     >
                       <ArrowDown size={15} />
@@ -1199,6 +1208,7 @@ export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
                       type="button"
                       onClick={() => togglePublished(item)}
                       title={item.published !== false ? 'Published (Click to hide from public)' : 'Hidden (Click to publish)'}
+                      aria-label={item.published !== false ? `Hide ${item.title}` : `Publish ${item.title}`}
                       className={`p-2 rounded-xl cursor-pointer transition-all ${
                         item.published !== false
                           ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20'
@@ -1211,6 +1221,7 @@ export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
                       type="button"
                       onClick={() => edit(item)}
                       title="Edit Certificate"
+                      aria-label={`Edit ${item.title}`}
                       className="p-2 rounded-xl text-indigo-600 dark:text-indigo-400 bg-indigo-500/10 hover:bg-indigo-500/20 cursor-pointer"
                     >
                       <Edit2 size={16} />
@@ -1219,6 +1230,7 @@ export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
                       type="button"
                       onClick={() => setDeletingCert(item)}
                       title="Delete Certificate"
+                      aria-label={`Delete ${item.title}`}
                       className="p-2 rounded-xl text-rose-600 dark:text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 cursor-pointer"
                     >
                       <Trash2 size={16} />

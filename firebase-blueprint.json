@@ -88,6 +88,17 @@
         "read": { "type": "boolean" }
       },
       "required": ["name", "email", "message"]
+    },
+    "SiteContent": {
+      "title": "SiteContent",
+      "description": "Public portfolio content and exclusion lists managed via Admin CMS",
+      "type": "object",
+      "properties": {
+        "categories": { "type": "array" },
+        "items": { "type": "array" },
+        "hiddenIds": { "type": "array" },
+        "updatedAt": { "type": "string" }
+      }
     }
   },
   "firestore": {
@@ -112,8 +123,8 @@
       "description": "Inquiries submitted via contact section"
     },
     "/site_metadata/{documentId}": {
-      "schema": { "$ref": "#/entities/AcademicRecord" },
-      "description": "Global portfolio configuration metadata"
+      "schema": "SiteContent",
+      "description": "Global portfolio configuration and CMS documents (portfolio_config, certificates, skills_content, experience_content, project_exclusions, cert_exclusions)"
     }
   }
 }

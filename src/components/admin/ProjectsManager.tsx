@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Plus, 
@@ -25,7 +25,10 @@ import {
   saveProject, 
   deleteProject, 
   reindexProjectsInFirestore,
-  resolveProjectImageUrl
+  resolveProjectImageUrl,
+  matchesSameProject,
+  cleanupDuplicateProjectsInFirestore,
+  getHiddenProjectIds
 } from '../../services/projectFirebase';
 import { getProjectScreenshotMetadata, isExcludedProjectScreenshot } from '../../data/projectScreenshotCatalog';
 import { validateFile, uploadFileProxy } from '../../services/supabaseStorage';
@@ -104,6 +107,7 @@ export const ProjectsManager: React.FC = () => {
   const [keyFeaturesInput, setKeyFeaturesInput] = useState('');
   const { showToast } = useAdminToast();
   const { pendingResult, setPendingResult } = useAIScanner();
+  const didCleanupRef = useRef(false);
 
   useEffect(() => {
     const unsub = subscribeToProjects(setProjects);
@@ -111,9 +115,24 @@ export const ProjectsManager: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    if (didCleanupRef.current) return;
+    didCleanupRef.current = true;
+    cleanupDuplicateProjectsInFirestore()
+      .then((res) => {
+        if (res.duplicatesRemoved > 0) {
+          showToast(`Removed ${res.duplicatesRemoved} duplicate project record(s) automatically.`, 'info');
+        }
+      })
+      .catch((err) => {
+        console.warn('Auto duplicate project check skipped:', err);
+      });
+  }, [showToast]);
+
+  useEffect(() => {
     if (editingProject) {
       setTechStackInput((editingProject.techStack || []).join(', '));
       setKeyFeaturesInput((editingProject.keyFeatures || []).join('\n'));
+      setUploadStatus(null);
     }
   }, [editingProject?.id]);
 
@@ -188,29 +207,53 @@ export const ProjectsManager: React.FC = () => {
   const handleSaveProject = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingProject) return;
+
+    const trimmedTitle = editingProject.title.trim();
+    if (!trimmedTitle) {
+      showToast('Project title is required.', 'error');
+      return;
+    }
+
+    const parsedTech = techStackInput
+      .split(',')
+      .map(s => s.trim())
+      .filter(Boolean);
+    const parsedFeatures = keyFeaturesInput
+      .split('\n')
+      .map(s => s.trim())
+      .filter(Boolean);
+    const normalizedSlug = (editingProject.slug || trimmedTitle || 'project')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '');
+
+    const { id, ...projectPayload } = editingProject;
+    const cleanData = {
+      ...projectPayload,
+      title: trimmedTitle,
+      shortDescription: (editingProject.shortDescription || '').trim(),
+      detailedDescription: (editingProject.detailedDescription || '').trim(),
+      githubUrl: (editingProject.githubUrl || '').trim(),
+      liveDemoUrl: (editingProject.liveDemoUrl || '').trim(),
+      mainScreenshot: (editingProject.mainScreenshot || '').trim(),
+      slug: normalizedSlug,
+      techStack: parsedTech.length > 0 ? parsedTech : ['React', 'TypeScript'],
+      keyFeatures: parsedFeatures
+    };
+
+    if (!id) {
+      const duplicate = projects.find((p) => matchesSameProject(p, cleanData));
+      if (duplicate) {
+        showToast(
+          `Project "${duplicate.title}" already exists. Edit the existing project instead of adding a duplicate.`,
+          'error'
+        );
+        return;
+      }
+    }
+
     setLoading(true);
     try {
-      const parsedTech = techStackInput
-        .split(',')
-        .map(s => s.trim())
-        .filter(Boolean);
-      const parsedFeatures = keyFeaturesInput
-        .split('\n')
-        .map(s => s.trim())
-        .filter(Boolean);
-      const normalizedSlug = (editingProject.slug || editingProject.title || 'project')
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/^-|-$/g, '');
-
-      const { id, ...projectPayload } = editingProject;
-      const cleanData = {
-        ...projectPayload,
-        slug: normalizedSlug,
-        techStack: parsedTech.length > 0 ? parsedTech : ['React', 'TypeScript'],
-        keyFeatures: parsedFeatures
-      };
-
       const savedId = await saveProject(cleanData, id || undefined);
 
       // Automatically insert at requested displayOrder and re-sequence all serial numbers (1, 2, 3... N)
@@ -304,25 +347,68 @@ export const ProjectsManager: React.FC = () => {
     if (syncingDefaults) return;
     setSyncingDefaults(true);
     try {
+      await cleanupDuplicateProjectsInFirestore().catch(() => undefined);
+      const hiddenIds = await getHiddenProjectIds();
+      let syncedCount = 0;
+
       for (let i = 0; i < PROJECTS.length; i++) {
         const defaultProj = PROJECTS[i];
-        const existing = projects.find(
-          p => p.slug === defaultProj.slug || p.id === defaultProj.id || p.title.toLowerCase() === defaultProj.title.toLowerCase()
-        );
-        const normalizedGallery = buildProjectScreenshotGallery(defaultProj);
-        const { id: _defaultId, ...payload } = defaultProj;
+        if (hiddenIds.has(defaultProj.id) || hiddenIds.has(defaultProj.slug)) continue;
+
+        const existing = projects.find((p) => matchesSameProject(p, defaultProj));
+        const defaultGallery = buildProjectScreenshotGallery(defaultProj);
+
+        let mergedGallery: ProjectScreenshot[];
+        if (existing?.screenshotMetadata && existing.screenshotMetadata.length > 0) {
+          const validExisting = existing.screenshotMetadata.filter((s) => Boolean(s.url) && !isExcludedProjectScreenshot(s.url));
+          const existingUrls = new Set(validExisting.map((s) => s.url));
+          const missingBundled = defaultGallery.filter((d) => !existingUrls.has(d.url));
+          const hasBrokenCover =
+            !existing.mainScreenshot ||
+            isExcludedProjectScreenshot(existing.mainScreenshot) ||
+            existing.mainScreenshot.endsWith('/main.jpg');
+
+          if (hasBrokenCover && defaultGallery[0]) {
+            const poster = { ...defaultGallery[0], isCover: true };
+            const others = [...validExisting, ...missingBundled]
+              .filter((s) => s.url !== poster.url)
+              .map((s) => ({ ...s, isCover: false }));
+            mergedGallery = [poster, ...others];
+          } else {
+            mergedGallery = [...validExisting, ...missingBundled.map((m) => ({ ...m, isCover: false }))];
+          }
+        } else {
+          mergedGallery = defaultGallery;
+        }
+
+        const { id: _defaultId, ...defaultPayload } = defaultProj;
+        const targetId = existing?.id || defaultProj.id;
         await saveProject(
           {
-            ...payload,
+            ...defaultPayload,
+            ...(existing ? {
+              title: existing.title || defaultProj.title,
+              shortDescription: existing.shortDescription || defaultProj.shortDescription,
+              detailedDescription: existing.detailedDescription || defaultProj.detailedDescription,
+              category: existing.category || defaultProj.category,
+              techStack: existing.techStack && existing.techStack.length > 0 ? existing.techStack : defaultProj.techStack,
+              keyFeatures: existing.keyFeatures && existing.keyFeatures.length > 0 ? existing.keyFeatures : defaultProj.keyFeatures,
+              githubUrl: existing.githubUrl !== undefined ? existing.githubUrl : defaultProj.githubUrl,
+              liveDemoUrl: existing.liveDemoUrl !== undefined ? existing.liveDemoUrl : defaultProj.liveDemoUrl,
+              status: existing.status || defaultProj.status,
+              featured: existing.featured !== undefined ? existing.featured : defaultProj.featured,
+              creationDate: existing.creationDate || defaultProj.creationDate,
+            } : {}),
             displayOrder: existing?.displayOrder || i + 1,
-            mainScreenshot: normalizedGallery[0]?.url || defaultProj.mainScreenshot,
-            additionalScreenshots: normalizedGallery.slice(1).map(s => s.url),
-            screenshotMetadata: normalizedGallery
+            mainScreenshot: mergedGallery.find((s) => s.isCover)?.url || mergedGallery[0]?.url || existing?.mainScreenshot || defaultProj.mainScreenshot,
+            additionalScreenshots: mergedGallery.filter((s) => !s.isCover && s.published !== false).map((s) => s.url),
+            screenshotMetadata: mergedGallery
           },
-          existing?.id
+          targetId
         );
+        syncedCount += 1;
       }
-      showToast(`Synchronized all ${PROJECTS.length} projects & poster covers!`, 'success');
+      showToast(`Synchronized ${syncedCount} project(s) & poster covers safely!`, 'success');
     } catch (err: any) {
       showToast(err.message || 'Failed to sync default projects', 'error');
     } finally {
@@ -398,13 +484,13 @@ export const ProjectsManager: React.FC = () => {
     if (!editingProject) return;
     try {
       validateFile(file, ['image/jpeg', 'image/png', 'image/webp'], 15 * 1024 * 1024);
-      setUploadStatus('Uploading screenshot...');
+      setUploadStatus('Uploading cover...');
       const idToken = await auth.currentUser?.getIdToken();
       if (!idToken) throw new Error('Not authenticated');
       const { path } = await uploadFileProxy(file, 'projects', idToken);
-      setEditingProject({ ...editingProject, mainScreenshot: path });
+      setEditingProject((prev) => (prev ? { ...prev, mainScreenshot: path } : prev));
       setUploadStatus(null);
-      showToast('Screenshot uploaded!', 'success');
+      showToast('Cover image uploaded! Click Save Project to apply.', 'success');
     } catch (err: any) {
       setUploadStatus(null);
       showToast(err.message, 'error');
@@ -412,6 +498,9 @@ export const ProjectsManager: React.FC = () => {
   };
 
   const categories = ['All', ...Array.from(new Set([...PROJECT_CATEGORIES, ...projects.map(p => p.category)]))];
+  const activeScreenshotProject = managingScreenshotsProject
+    ? projects.find(p => p.id === managingScreenshotsProject.id) || managingScreenshotsProject
+    : null;
 
   return (
     <div className="space-y-6">
@@ -817,13 +906,27 @@ export const ProjectsManager: React.FC = () => {
                 <div>
                   <label className="block text-xs font-bold uppercase text-slate-500 dark:text-slate-400 mb-1">Primary Poster Cover / Screenshot</label>
                   <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                    {editingProject.mainScreenshot && (
+                      <div className="w-24 h-14 rounded-xl overflow-hidden bg-slate-950 border border-slate-200 dark:border-slate-800 shrink-0">
+                        <img
+                          src={resolveProjectImageUrl(editingProject.mainScreenshot)}
+                          alt="Cover preview"
+                          className="w-full h-full object-cover"
+                          onError={(e) => { (e.target as HTMLImageElement).style.opacity = '0.25'; }}
+                        />
+                      </div>
+                    )}
                     <label className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 cursor-pointer text-xs font-bold transition-colors shrink-0">
                       <Upload className="w-4 h-4" />
                       <span>{uploadStatus || 'Upload Cover Image'}</span>
                       <input
                         type="file"
                         accept="image/*"
-                        onChange={e => e.target.files?.[0] && handleImageUpload(e.target.files[0])}
+                        onChange={e => {
+                          const f = e.target.files?.[0];
+                          if (f) handleImageUpload(f);
+                          e.target.value = '';
+                        }}
                         className="hidden"
                       />
                     </label>
@@ -907,14 +1010,14 @@ export const ProjectsManager: React.FC = () => {
       </AnimatePresence>
 
       {/* Dedicated Screenshot Manager Modal */}
-      {managingScreenshotsProject && (
+      {activeScreenshotProject && (
         <ProjectScreenshotManager
           isOpen={true}
-          project={managingScreenshotsProject}
+          project={activeScreenshotProject}
           allProjects={projects}
           onClose={() => setManagingScreenshotsProject(null)}
           onProjectUpdated={() => {
-            const refreshed = projects.find(p => p.id === managingScreenshotsProject.id);
+            const refreshed = projects.find(p => p.id === activeScreenshotProject.id);
             if (refreshed) setManagingScreenshotsProject(refreshed);
           }}
         />

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, orderBy, onSnapshot, deleteDoc, doc, updateDoc } from 'firebase/firestore';
+import { collection, onSnapshot, deleteDoc, doc, updateDoc } from 'firebase/firestore';
 import { db, auth, isUserAdmin } from '../../services/academicFirebase';
-import { Mail, Trash2, CheckCircle, Clock, Loader2, User, Calendar, CheckCircle2 } from 'lucide-react';
+import { Mail, Trash2, Loader2, Calendar } from 'lucide-react';
 import { useAdminToast } from './AdminToastContext';
 
 interface ContactMessage {
@@ -16,14 +16,16 @@ interface ContactMessage {
 
 export const MessagesManager: React.FC = () => {
   const [messages, setMessages] = useState<ContactMessage[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const { showToast } = useAdminToast();
 
   useEffect(() => {
     try {
-      const q = query(collection(db, 'contact_messages'), orderBy('createdAt', 'desc'));
-      const unsub = onSnapshot(q, (snap) => {
-        const msgs = snap.docs.map(d => ({ id: d.id, ...d.data() } as ContactMessage));
+      const unsub = onSnapshot(collection(db, 'contact_messages'), (snap) => {
+        const msgs = snap.docs
+          .map(d => ({ id: d.id, ...d.data() } as ContactMessage))
+          .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
         setMessages(msgs);
         setLoading(false);
       }, (err) => {
@@ -50,6 +52,7 @@ export const MessagesManager: React.FC = () => {
     if (!isUserAdmin(auth.currentUser)) return;
     try {
       await deleteDoc(doc(db, 'contact_messages', id));
+      setConfirmDeleteId(null);
       showToast('Message deleted successfully', 'success');
     } catch (e: any) {
       showToast(e.message || 'Error deleting message', 'error');
@@ -80,7 +83,7 @@ export const MessagesManager: React.FC = () => {
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
                 <div className="flex items-center gap-3">
                   <div className="w-9 h-9 rounded-xl bg-indigo-600/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold text-xs shrink-0">
-                    {msg.name.charAt(0).toUpperCase()}
+                    {(msg.name || '?').charAt(0).toUpperCase()}
                   </div>
                   <div className="min-w-0">
                     <span className="font-black text-sm text-slate-900 dark:text-white block truncate">{msg.name}</span>
@@ -95,13 +98,24 @@ export const MessagesManager: React.FC = () => {
               </div>
               {msg.subject && <h4 className="font-black text-sm text-slate-800 dark:text-slate-200 mb-2">Subject: {msg.subject}</h4>}
               <p className="text-xs text-slate-600 dark:text-slate-300 whitespace-pre-wrap leading-relaxed break-words">{msg.message}</p>
-              <div className="mt-5 pt-4 border-t border-slate-100 dark:border-slate-800/80 flex flex-wrap gap-3 text-xs">
+              <div className="mt-5 pt-4 border-t border-slate-100 dark:border-slate-800/80 flex flex-wrap gap-3 text-xs items-center">
                 <button type="button" onClick={() => toggleRead(msg.id, msg.read)} className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200 font-bold hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer">
                   {msg.read ? 'Mark as Unread' : 'Mark as Read'}
                 </button>
-                <button type="button" onClick={() => deleteMsg(msg.id)} className="px-4 py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 font-bold flex items-center gap-1.5 transition-colors cursor-pointer">
-                  <Trash2 size={13} /> Delete
-                </button>
+                {confirmDeleteId === msg.id ? (
+                  <div className="flex items-center gap-2">
+                    <button type="button" onClick={() => deleteMsg(msg.id)} className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold flex items-center gap-1.5 transition-colors cursor-pointer">
+                      <Trash2 size={13} /> Confirm Delete
+                    </button>
+                    <button type="button" onClick={() => setConfirmDeleteId(null)} className="px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 font-bold hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer">
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <button type="button" onClick={() => setConfirmDeleteId(msg.id)} className="px-4 py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 font-bold flex items-center gap-1.5 transition-colors cursor-pointer">
+                    <Trash2 size={13} /> Delete
+                  </button>
+                )}
               </div>
             </div>
           ))}

@@ -6,7 +6,7 @@ import { ScrollReveal } from './ScrollReveal';
 
 export const GithubSection: React.FC = () => {
   const { settings } = usePortfolio();
-  const githubUser = settings.github.split('/').pop() || 'nitesh933438';
+  const githubUser = (settings.github || '').replace(/\/+$/, '').split('/').pop() || 'nitesh933438';
   return (
     <section className="py-20 bg-slate-50 dark:bg-slate-950 border-t border-slate-200 dark:border-slate-800 overflow-hidden">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">

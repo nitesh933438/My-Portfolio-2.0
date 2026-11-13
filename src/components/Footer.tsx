@@ -101,8 +101,7 @@ export const Footer: React.FC<FooterProps> = ({ onOpenResume }) => {
             <div className="col-span-2 sm:col-span-1 space-y-4">
               <h4 className="text-xs font-bold uppercase tracking-widest text-slate-900 dark:text-white">Location</h4>
               <div className="text-sm text-slate-500 dark:text-slate-400 leading-relaxed">
-                {settings.location}<br />
-                Bihar, India
+                {settings.location || 'Rohtas, Bihar, India'}
               </div>
             </div>
           </div>

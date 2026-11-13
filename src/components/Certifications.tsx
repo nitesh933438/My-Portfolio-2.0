@@ -23,18 +23,19 @@ import {
   ArrowUpDown
 } from 'lucide-react';
 import {
-  subscribeToPublicCertificates,
   resolveCertificatePreviewImageUrl,
   resolveCertificateOriginalFileUrl
 } from '../services/certificateFirebase';
 import { CERTIFICATE_CATEGORIES, type PortfolioCertificate } from '../types/certificate';
 import { ScrollReveal } from './ScrollReveal';
-import { BUNDLED_CERTIFICATES } from '../data/certificates';
+import { usePortfolio } from '../context/PortfolioContext';
 import {
   isIndividualVerificationUrl,
   isExternalLiveVerificationUrl,
   detectVerificationUrl
 } from '../services/verificationDetection';
+import { useModalHistory } from '../hooks/useModalHistory';
+import { downloadAssetFile } from '../utils/fileDownload';
 
 const formatIssueDate = (value?: string) => {
   if (!value) return '';
@@ -49,7 +50,7 @@ const formatIssueDate = (value?: string) => {
 };
 
 export const Certifications: React.FC = () => {
-  const [items, setItems] = useState<PortfolioCertificate[]>(BUNDLED_CERTIFICATES);
+  const { certificates: items } = usePortfolio();
   const [category, setCategory] = useState('All');
   const [quickFilter, setQuickFilter] = useState<'all' | 'featured' | 'verified'>('all');
   const [search, setSearch] = useState('');
@@ -58,12 +59,12 @@ export const Certifications: React.FC = () => {
   const [viewerMode, setViewerMode] = useState<'image' | 'pdf'>('image');
   const [zoom, setZoom] = useState(1);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [failedPreviewUrls, setFailedPreviewUrls] = useState<Record<string, boolean>>({});
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
-  useEffect(() => {
-    return subscribeToPublicCertificates(mergedItems => {
-      setItems(mergedItems);
-    });
-  }, []);
+  const { closeModal } = useModalHistory(Boolean(selected), 'certificate-modal', () =>
+    setSelected(null)
+  );
 
   useEffect(() => {
     if (!selected) return;
@@ -72,14 +73,14 @@ export const Certifications: React.FC = () => {
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setSelected(null);
+      if (event.key === 'Escape') closeModal();
     };
     document.addEventListener('keydown', closeOnEscape);
     return () => {
       document.body.style.overflow = previousOverflow;
       document.removeEventListener('keydown', closeOnEscape);
     };
-  }, [selected]);
+  }, [selected, closeModal]);
 
   const getInternalVerifyRoute = (cert: PortfolioCertificate): string => {
     const token = cert.credentialId || cert.verificationCode || cert.id;
@@ -108,7 +109,23 @@ export const Certifications: React.FC = () => {
       setCopiedKey(key);
       setTimeout(() => setCopiedKey(prev => (prev === key ? null : prev)), 2000);
     } catch {
-      // Fallback copy
+      try {
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.setAttribute('readonly', '');
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        const ok = document.execCommand('copy');
+        document.body.removeChild(textarea);
+        if (ok) {
+          setCopiedKey(key);
+          setTimeout(() => setCopiedKey(prev => (prev === key ? null : prev)), 2000);
+        }
+      } catch {
+        // Ignore if clipboard access blocked
+      }
     }
   };
 
@@ -205,22 +222,37 @@ export const Certifications: React.FC = () => {
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
               {/* Certificate Preview Image */}
               <div className="lg:col-span-5">
-                <div
-                  onClick={() => setSelected(nptelFeatured)}
-                  className="group relative rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 shadow-md cursor-pointer aspect-[1.414/1] flex items-center justify-center"
-                >
-                  <img
-                    src={resolveCertificatePreviewImageUrl(nptelFeatured)}
-                    alt={nptelFeatured.title}
-                    referrerPolicy="no-referrer"
-                    className="w-full h-full object-contain group-hover:scale-[1.02] transition-transform duration-300"
-                  />
-                  <div className="absolute inset-0 bg-slate-950/0 group-hover:bg-slate-950/35 transition-colors flex items-center justify-center">
-                    <span className="opacity-0 group-hover:opacity-100 transition-opacity px-4 py-2 rounded-xl bg-white/95 text-slate-900 text-xs font-bold shadow-lg flex items-center gap-1.5">
-                      <Eye className="w-4 h-4 text-indigo-600" /> Click to Inspect Full Certificate
-                    </span>
-                  </div>
-                </div>
+                {(() => {
+                  const spotlightPreviewUrl = resolveCertificatePreviewImageUrl(nptelFeatured);
+                  return (
+                    <div
+                      onClick={() => setSelected(nptelFeatured)}
+                      className="group relative rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 shadow-md cursor-pointer aspect-[1.414/1] flex items-center justify-center"
+                    >
+                      {spotlightPreviewUrl && !failedPreviewUrls[spotlightPreviewUrl] ? (
+                        <img
+                          src={spotlightPreviewUrl}
+                          alt={nptelFeatured.title}
+                          referrerPolicy="no-referrer"
+                          onError={() =>
+                            setFailedPreviewUrls(prev => ({ ...prev, [spotlightPreviewUrl]: true }))
+                          }
+                          className="w-full h-full object-contain group-hover:scale-[1.02] transition-transform duration-300"
+                        />
+                      ) : (
+                        <div className="flex flex-col items-center gap-2 text-indigo-500 p-4 text-center">
+                          <FileText className="w-12 h-12" />
+                          <span className="text-[10px] font-black tracking-widest uppercase">Official Certificate</span>
+                        </div>
+                      )}
+                      <div className="absolute inset-0 bg-slate-950/0 group-hover:bg-slate-950/35 transition-colors flex items-center justify-center">
+                        <span className="opacity-0 group-hover:opacity-100 transition-opacity px-4 py-2 rounded-xl bg-white/95 text-slate-900 text-xs font-bold shadow-lg flex items-center gap-1.5">
+                          <Eye className="w-4 h-4 text-indigo-600" /> Click to Inspect Full Certificate
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
 
               {/* Certificate Complete Details */}
@@ -259,7 +291,7 @@ export const Certifications: React.FC = () => {
                       Consolidated Score
                     </span>
                     <span className="text-base sm:text-lg font-black text-indigo-600 dark:text-cyan-400 tabular-nums">
-                      78% (Elite)
+                      {nptelFeatured.score || '78%'} {nptelFeatured.grade ? `(${nptelFeatured.grade})` : '(Elite)'}
                     </span>
                   </div>
                   <div className="p-3 rounded-xl bg-white dark:bg-slate-950/80 border border-slate-200/80 dark:border-slate-800">
@@ -267,7 +299,7 @@ export const Certifications: React.FC = () => {
                       Online Assignments
                     </span>
                     <span className="text-base sm:text-lg font-black text-slate-900 dark:text-white tabular-nums">
-                      24.94 / 25
+                      {nptelFeatured.assignmentScore || '24.94 / 25'}
                     </span>
                   </div>
                   <div className="p-3 rounded-xl bg-white dark:bg-slate-950/80 border border-slate-200/80 dark:border-slate-800">
@@ -275,7 +307,7 @@ export const Certifications: React.FC = () => {
                       Proctored Exam
                     </span>
                     <span className="text-base sm:text-lg font-black text-slate-900 dark:text-white tabular-nums">
-                      52.5 / 75
+                      {nptelFeatured.examScore || '52.5 / 75'}
                     </span>
                   </div>
                   <div className="p-3 rounded-xl bg-white dark:bg-slate-950/80 border border-slate-200/80 dark:border-slate-800">
@@ -283,7 +315,7 @@ export const Certifications: React.FC = () => {
                       Course Credits
                     </span>
                     <span className="text-base sm:text-lg font-black text-emerald-600 dark:text-emerald-400 tabular-nums">
-                      4 Credits
+                      {nptelFeatured.credits || '4 Credits'}
                     </span>
                   </div>
                 </div>
@@ -298,17 +330,18 @@ export const Certifications: React.FC = () => {
                       onClick={e => handleCopy(nptelFeatured.credentialId || '', 'nptel-roll', e)}
                       className="p-1 rounded-md hover:bg-slate-200 dark:hover:bg-slate-800 text-indigo-600 dark:text-cyan-400 transition-colors"
                       title="Copy Roll Number"
+                      aria-label="Copy Roll Number"
                     >
                       {copiedKey === 'nptel-roll' ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
                     </button>
                   </div>
                   <span aria-hidden="true">·</span>
                   <span>
-                    <strong className="text-slate-700 dark:text-slate-300">Session:</strong> Jul–Oct 2026 (12 Weeks)
+                    <strong className="text-slate-700 dark:text-slate-300">Session:</strong> {nptelFeatured.duration || 'Jul–Oct 2026 (12 Weeks)'}
                   </span>
                   <span aria-hidden="true">·</span>
                   <span>
-                    <strong className="text-slate-700 dark:text-slate-300">Candidates:</strong> 42,917
+                    <strong className="text-slate-700 dark:text-slate-300">Candidates:</strong> {nptelFeatured.totalCandidates || '42,917'}
                   </span>
                 </div>
 
@@ -342,14 +375,29 @@ export const Certifications: React.FC = () => {
                     <span>Original PDF</span>
                   </a>
 
-                  <a
-                    href={resolveCertificateOriginalFileUrl(nptelFeatured)}
-                    download="Nitesh_Kumar_NPTEL_Programming_in_Java_Certificate.pdf"
-                    className="px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition-all active:scale-95 flex items-center gap-2 min-h-[42px] whitespace-nowrap"
+                  <button
+                    type="button"
+                    disabled={downloadingId === nptelFeatured.id}
+                    onClick={async () => {
+                      setDownloadingId(nptelFeatured.id);
+                      try {
+                        await downloadAssetFile(
+                          resolveCertificateOriginalFileUrl(nptelFeatured),
+                          nptelFeatured.title,
+                          {
+                            explicitFilename: 'Nitesh_Kumar_NPTEL_Programming_in_Java_Certificate.pdf',
+                            defaultExt: 'pdf',
+                          }
+                        );
+                      } finally {
+                        setDownloadingId(null);
+                      }
+                    }}
+                    className="px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition-all active:scale-95 flex items-center gap-2 min-h-[42px] whitespace-nowrap cursor-pointer disabled:opacity-60"
                   >
                     <Download className="w-4 h-4 text-indigo-600 dark:text-cyan-400 shrink-0" />
-                    <span>Download PDF</span>
-                  </a>
+                    <span>{downloadingId === nptelFeatured.id ? 'Downloading...' : 'Download PDF'}</span>
+                  </button>
                 </div>
               </div>
             </div>
@@ -495,17 +543,20 @@ export const Certifications: React.FC = () => {
                         onClick={() => setSelected(item)}
                         className="relative h-48 rounded-2xl bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 overflow-hidden flex items-center justify-center cursor-pointer"
                       >
-                        {previewImgUrl ? (
+                        {previewImgUrl && !failedPreviewUrls[previewImgUrl] ? (
                           <img
                             src={previewImgUrl}
                             alt={item.title}
                             loading="lazy"
                             decoding="async"
                             referrerPolicy="no-referrer"
+                            onError={() =>
+                              setFailedPreviewUrls(prev => ({ ...prev, [previewImgUrl]: true }))
+                            }
                             className="w-full h-full object-contain p-1 group-hover:scale-[1.03] transition-transform duration-300"
                           />
                         ) : (
-                          <div className="flex flex-col items-center gap-2 text-indigo-500">
+                          <div className="flex flex-col items-center gap-2 text-indigo-500 p-4 text-center">
                             <FileText className="w-12 h-12" />
                             <span className="text-[10px] font-black tracking-widest uppercase">Certificate Document</span>
                           </div>
@@ -606,6 +657,7 @@ export const Certifications: React.FC = () => {
                             onClick={e => handleCopy(item.credentialId || '', `id-${item.id}`, e)}
                             className="text-slate-400 hover:text-indigo-600 dark:hover:text-cyan-400 transition-colors shrink-0"
                             title="Copy Credential ID"
+                            aria-label={`Copy Credential ID for ${item.title}`}
                           >
                             {copiedKey === `id-${item.id}` ? (
                               <Check className="w-3.5 h-3.5 text-emerald-500" />
@@ -684,14 +736,25 @@ export const Certifications: React.FC = () => {
                         <span>{isPdf ? 'PDF' : 'File'}</span>
                       </a>
 
-                      <a
-                        href={originalFileUrl}
-                        download={`${item.title.replace(/[^a-z0-9]/gi, '_')}.${isPdf ? 'pdf' : 'jpg'}`}
-                        className="px-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 py-2.5 text-xs font-bold flex items-center justify-center transition-all hover:bg-slate-50 dark:hover:bg-slate-700 active:scale-95 shadow-xs min-h-[42px] shrink-0"
+                      <button
+                        type="button"
+                        disabled={downloadingId === item.id}
+                        onClick={async () => {
+                          setDownloadingId(item.id);
+                          try {
+                            await downloadAssetFile(originalFileUrl, item.title, {
+                              defaultExt: isPdf ? 'pdf' : 'jpg',
+                            });
+                          } finally {
+                            setDownloadingId(null);
+                          }
+                        }}
+                        className="px-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 py-2.5 text-xs font-bold flex items-center justify-center transition-all hover:bg-slate-50 dark:hover:bg-slate-700 active:scale-95 shadow-xs min-h-[42px] shrink-0 cursor-pointer disabled:opacity-60"
                         title={isPdf ? 'Download original PDF certificate' : 'Download original certificate image'}
+                        aria-label={`Download ${item.title}`}
                       >
                         <Download className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
-                      </a>
+                      </button>
                     </div>
                   </article>
                 );
@@ -737,36 +800,40 @@ export const Certifications: React.FC = () => {
             role="dialog"
             aria-modal="true"
             aria-label={selected.title}
-            className="fixed inset-0 z-[100] bg-slate-950/90 backdrop-blur-md p-3 sm:p-6 flex flex-col overflow-y-auto overscroll-contain"
+            onClick={() => closeModal()}
+            className="fixed inset-0 z-[100] bg-slate-950/75 dark:bg-slate-950/90 backdrop-blur-md p-2 sm:p-6 flex flex-col overflow-y-auto overscroll-contain"
           >
-            <div className="max-w-6xl w-full mx-auto bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden shadow-2xl flex flex-col my-auto max-h-[94dvh]">
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="max-w-6xl w-full mx-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl sm:rounded-3xl overflow-hidden shadow-2xl flex flex-col my-auto max-h-[94dvh] text-slate-900 dark:text-slate-100"
+            >
               {/* Modal Top Bar */}
-              <div className="px-4 sm:px-6 py-4 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3 bg-slate-950/60">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wider text-cyan-400">
-                    <span className="font-mono text-[10px] font-black px-2 py-0.5 rounded-md bg-indigo-500/20 text-cyan-300 border border-cyan-500/30">
+              <div className="px-4 sm:px-6 py-3.5 sm:py-4 border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3 bg-slate-50/90 dark:bg-slate-950/60 shrink-0">
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 text-[11px] font-bold uppercase tracking-wider text-indigo-600 dark:text-cyan-400">
+                    <span className="font-mono text-[10px] font-black px-2 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-500/20 text-indigo-700 dark:text-cyan-300 border border-indigo-200 dark:border-cyan-500/30">
                       Record #{String((selected.displayOrder !== undefined ? selected.displayOrder : 0) + 1).padStart(2, '0')}
                     </span>
-                    <span>{selected.category}</span>
+                    <span className="truncate">{selected.category}</span>
                     {selected.grade && (
                       <>
                         <span>·</span>
-                        <span className="text-amber-400">{selected.grade}</span>
+                        <span className="text-amber-600 dark:text-amber-400">{selected.grade}</span>
                       </>
                     )}
                   </div>
-                  <h3 className="font-black text-base sm:text-xl text-white truncate">{selected.title}</h3>
-                  <p className="text-xs text-slate-400 truncate">{selected.issuer}</p>
+                  <h3 className="font-black text-base sm:text-xl text-slate-900 dark:text-white truncate mt-0.5">{selected.title}</h3>
+                  <p className="text-xs text-slate-600 dark:text-slate-400 truncate">{selected.issuer}</p>
                 </div>
 
-                <div className="flex items-center gap-2 shrink-0">
+                <div className="flex flex-wrap items-center gap-2 shrink-0 ml-auto">
                   {hasPdf && previewImgUrl && (
-                    <div className="flex items-center bg-slate-800 p-1 rounded-xl border border-slate-700">
+                    <div className="flex items-center bg-slate-200/70 dark:bg-slate-800 p-1 rounded-xl border border-slate-300/80 dark:border-slate-700">
                       <button
                         type="button"
                         onClick={() => setViewerMode('image')}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors ${
-                          viewerMode === 'image' ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:text-white'
+                        className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-[11px] sm:text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer ${
+                          viewerMode === 'image' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
                         }`}
                       >
                         <ImageIcon className="w-3.5 h-3.5" />
@@ -775,8 +842,8 @@ export const Certifications: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => setViewerMode('pdf')}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors ${
-                          viewerMode === 'pdf' ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:text-white'
+                        className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-[11px] sm:text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer ${
+                          viewerMode === 'pdf' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
                         }`}
                       >
                         <FileText className="w-3.5 h-3.5" />
@@ -786,31 +853,34 @@ export const Certifications: React.FC = () => {
                   )}
 
                   {viewerMode === 'image' && previewImgUrl && (
-                    <div className="hidden sm:flex items-center gap-1 bg-slate-800 p-1 rounded-xl border border-slate-700">
+                    <div className="flex items-center gap-1 bg-slate-200/70 dark:bg-slate-800 p-1 rounded-xl border border-slate-300/80 dark:border-slate-700">
                       <button
                         type="button"
                         onClick={() => setZoom(z => Math.max(0.75, +(z - 0.25).toFixed(2)))}
-                        className="p-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-slate-700"
+                        className="p-1.5 rounded-lg text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-white dark:hover:bg-slate-700 cursor-pointer"
                         title="Zoom Out"
+                        aria-label="Zoom Out"
                       >
                         <ZoomOut className="w-4 h-4" />
                       </button>
-                      <span className="text-[11px] font-mono text-slate-300 px-1.5 tabular-nums">
+                      <span className="text-[11px] font-mono text-slate-800 dark:text-slate-200 px-1.5 tabular-nums font-bold">
                         {Math.round(zoom * 100)}%
                       </span>
                       <button
                         type="button"
                         onClick={() => setZoom(z => Math.min(2.5, +(z + 0.25).toFixed(2)))}
-                        className="p-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-slate-700"
+                        className="p-1.5 rounded-lg text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-white dark:hover:bg-slate-700 cursor-pointer"
                         title="Zoom In"
+                        aria-label="Zoom In"
                       >
                         <ZoomIn className="w-4 h-4" />
                       </button>
                       <button
                         type="button"
                         onClick={() => setZoom(1)}
-                        className="p-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-slate-700"
+                        className="p-1.5 rounded-lg text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-white dark:hover:bg-slate-700 cursor-pointer"
                         title="Reset Zoom"
+                        aria-label="Reset Zoom"
                       >
                         <RotateCcw className="w-3.5 h-3.5" />
                       </button>
@@ -819,8 +889,8 @@ export const Certifications: React.FC = () => {
 
                   <button
                     type="button"
-                    onClick={() => setSelected(null)}
-                    className="p-2 rounded-xl bg-slate-800 hover:bg-rose-500/20 text-slate-300 hover:text-rose-400 transition-colors"
+                    onClick={() => closeModal()}
+                    className="p-2 rounded-xl bg-slate-200/70 dark:bg-slate-800 hover:bg-rose-500/15 text-slate-700 dark:text-slate-300 hover:text-rose-600 dark:hover:text-rose-400 transition-colors cursor-pointer"
                     aria-label="Close certificate viewer"
                   >
                     <X className="w-5 h-5" />
@@ -829,78 +899,132 @@ export const Certifications: React.FC = () => {
               </div>
 
               {/* Modal Body: Split or Stacked Preview + Metadata */}
-              <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
+              <div className="flex-1 overflow-y-auto p-3.5 sm:p-6 space-y-5 sm:space-y-6 custom-scrollbar">
                 {/* Media Viewport */}
-                <div className="rounded-2xl bg-slate-950 border border-slate-800 p-2 sm:p-4 flex items-center justify-center min-h-[38vh] sm:min-h-[50vh] overflow-auto">
-                  {viewerMode === 'pdf' && hasPdf ? (
-                    <iframe
-                      title={selected.title}
-                      src={originalFileUrl}
-                      className="w-full h-[55vh] rounded-xl bg-white"
-                    />
-                  ) : previewImgUrl ? (
+                <div
+                  className={`rounded-2xl bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-2 sm:p-4 min-h-[30vh] sm:min-h-[48vh] max-h-[64vh] overflow-auto ${
+                    viewerMode === 'pdf' || !previewImgUrl || failedPreviewUrls[previewImgUrl]
+                      ? 'flex flex-col gap-3'
+                      : zoom <= 1
+                      ? 'flex items-center justify-center'
+                      : 'block'
+                  }`}
+                >
+                  {(viewerMode === 'pdf' && hasPdf) || (!previewImgUrl && hasPdf) ? (
+                    <>
+                      <div className="w-full flex flex-wrap items-center justify-between gap-2 px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs">
+                        <span className="text-slate-600 dark:text-slate-300 font-medium">
+                          PDF inline preview not visible on your device?
+                        </span>
+                        <div className="flex flex-wrap items-center gap-2">
+                          {previewImgUrl && !failedPreviewUrls[previewImgUrl] && (
+                            <button
+                              type="button"
+                              onClick={() => setViewerMode('image')}
+                              className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 font-bold hover:bg-slate-200 dark:hover:bg-slate-700 cursor-pointer"
+                            >
+                              HD Image View
+                            </button>
+                          )}
+                          <a
+                            href={originalFileUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-bold"
+                          >
+                            <span>Open Full PDF</span>
+                            <ExternalLink className="w-3 h-3" />
+                          </a>
+                        </div>
+                      </div>
+                      <iframe
+                        title={selected.title}
+                        src={originalFileUrl}
+                        className="w-full h-[42vh] sm:h-[52vh] rounded-xl bg-white border border-slate-200 dark:border-slate-800"
+                      />
+                    </>
+                  ) : previewImgUrl && !failedPreviewUrls[previewImgUrl] ? (
                     <img
                       src={previewImgUrl}
                       alt={selected.title}
                       referrerPolicy="no-referrer"
-                      style={{ transform: `scale(${zoom})`, transformOrigin: 'center center' }}
-                      className="max-w-full max-h-[60vh] object-contain rounded-lg shadow-2xl transition-transform duration-200"
+                      onError={() =>
+                        setFailedPreviewUrls(prev => ({ ...prev, [previewImgUrl]: true }))
+                      }
+                      style={{
+                        width: zoom === 1 ? 'auto' : `${Math.round(zoom * 100)}%`,
+                        maxWidth: zoom > 1 ? 'none' : '100%',
+                        maxHeight: zoom > 1 ? 'none' : '56vh',
+                        height: 'auto',
+                      }}
+                      className="mx-auto block object-contain rounded-lg shadow-xl bg-white transition-all duration-200"
                     />
                   ) : (
-                    <iframe
-                      title={selected.title}
-                      src={originalFileUrl}
-                      className="w-full h-[55vh] rounded-xl bg-white"
-                    />
+                    <div className="w-full min-h-[240px] flex flex-col items-center justify-center text-center p-6 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 gap-3">
+                      <FileText className="w-12 h-12 text-indigo-600 dark:text-cyan-400" />
+                      <p className="text-sm font-bold text-slate-900 dark:text-white">
+                        Certificate preview unavailable
+                      </p>
+                      <a
+                        href={originalFileUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold"
+                      >
+                        <span>Open Original File</span>
+                        <ExternalLink className="w-3.5 h-3.5" />
+                      </a>
+                    </div>
                   )}
                 </div>
 
                 {/* Detailed Credential Information Grid */}
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 sm:gap-6">
                   <div className="lg:col-span-7 space-y-4">
-                    <h4 className="text-xs font-extrabold uppercase tracking-wider text-slate-400">
+                    <h4 className="text-xs font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                       Credential Summary
                     </h4>
-                    <p className="text-sm text-slate-200 leading-relaxed">{selected.description}</p>
+                    <p className="text-sm text-slate-700 dark:text-slate-200 leading-relaxed">{selected.description}</p>
 
                     {selected.skills && selected.skills.length > 0 && (
                       <div className="space-y-2 pt-1">
-                        <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block">
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 block">
                           Verified Competencies & Skills
                         </span>
-                        <p className="text-xs font-semibold text-indigo-300">
+                        <p className="text-xs font-semibold text-indigo-700 dark:text-indigo-300">
                           {selected.skills.join(' · ')}
                         </p>
                       </div>
                     )}
 
                     {selected.coordinator && (
-                      <p className="text-xs text-slate-400">
-                        <strong className="text-slate-300">Authority / Signatory:</strong> {selected.coordinator}
+                      <p className="text-xs text-slate-600 dark:text-slate-400">
+                        <strong className="text-slate-800 dark:text-slate-300">Authority / Signatory:</strong> {selected.coordinator}
                       </p>
                     )}
                   </div>
 
                   {/* Metadata Key-Value Box */}
-                  <div className="lg:col-span-5 rounded-2xl bg-slate-950/80 border border-slate-800 p-4 space-y-3 text-xs">
-                    <h4 className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400 pb-2 border-b border-slate-800">
+                  <div className="lg:col-span-5 rounded-2xl bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 p-4 space-y-3 text-xs">
+                    <h4 className="text-[11px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400 pb-2 border-b border-slate-200 dark:border-slate-800">
                       Official Record Details
                     </h4>
 
                     {selected.credentialId && (
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-slate-400 flex items-center gap-1.5">
-                          <Hash className="w-3.5 h-3.5 text-indigo-400" /> Roll / Credential ID:
+                        <span className="text-slate-500 dark:text-slate-400 flex items-center gap-1.5 shrink-0">
+                          <Hash className="w-3.5 h-3.5 text-indigo-500 dark:text-indigo-400" /> Roll / Credential ID:
                         </span>
-                        <div className="flex items-center gap-1.5 font-mono text-white font-bold">
-                          <span>{selected.credentialId}</span>
+                        <div className="flex items-center gap-1.5 font-mono text-slate-900 dark:text-white font-bold min-w-0">
+                          <span className="truncate">{selected.credentialId}</span>
                           <button
                             type="button"
                             onClick={() => handleCopy(selected.credentialId || '', 'modal-id')}
-                            className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-cyan-400"
+                            className="p-1 rounded bg-slate-200/80 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-indigo-600 dark:text-cyan-400 shrink-0 cursor-pointer"
                             title="Copy Credential ID"
+                            aria-label="Copy Credential ID"
                           >
-                            {copiedKey === 'modal-id' ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                            {copiedKey === 'modal-id' ? <Check className="w-3 h-3 text-emerald-500 dark:text-emerald-400" /> : <Copy className="w-3 h-3" />}
                           </button>
                         </div>
                       </div>
@@ -908,38 +1032,38 @@ export const Certifications: React.FC = () => {
 
                     {selected.verificationCode && (
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-slate-400">Verification Code:</span>
-                        <span className="font-mono font-bold text-cyan-400">{selected.verificationCode}</span>
+                        <span className="text-slate-500 dark:text-slate-400">Verification Code:</span>
+                        <span className="font-mono font-bold text-indigo-600 dark:text-cyan-400 truncate">{selected.verificationCode}</span>
                       </div>
                     )}
 
                     {selected.issueDate && (
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-slate-400 flex items-center gap-1.5">
-                          <Calendar className="w-3.5 h-3.5 text-indigo-400" /> Issue Date:
+                        <span className="text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                          <Calendar className="w-3.5 h-3.5 text-indigo-500 dark:text-indigo-400" /> Issue Date:
                         </span>
-                        <span className="text-slate-200 font-semibold">{formatIssueDate(selected.issueDate)}</span>
+                        <span className="text-slate-900 dark:text-slate-200 font-semibold">{formatIssueDate(selected.issueDate)}</span>
                       </div>
                     )}
 
                     {selected.duration && (
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-slate-400">Course Duration:</span>
-                        <span className="text-slate-200 font-semibold">{selected.duration}</span>
+                        <span className="text-slate-500 dark:text-slate-400">Course Duration:</span>
+                        <span className="text-slate-900 dark:text-slate-200 font-semibold">{selected.duration}</span>
                       </div>
                     )}
 
                     {selected.expiryDate && (
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-slate-400">Valid Until:</span>
-                        <span className="text-emerald-400 font-semibold">{formatIssueDate(selected.expiryDate)}</span>
+                        <span className="text-slate-500 dark:text-slate-400">Valid Until:</span>
+                        <span className="text-emerald-600 dark:text-emerald-400 font-semibold">{formatIssueDate(selected.expiryDate)}</span>
                       </div>
                     )}
 
                     {selected.score && (
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-slate-400">Consolidated Score:</span>
-                        <span className="text-amber-400 font-black tabular-nums">
+                        <span className="text-slate-500 dark:text-slate-400">Consolidated Score:</span>
+                        <span className="text-amber-600 dark:text-amber-400 font-black tabular-nums">
                           {selected.score} {selected.grade ? `(${selected.grade})` : ''}
                         </span>
                       </div>
@@ -947,31 +1071,31 @@ export const Certifications: React.FC = () => {
 
                     {selected.assignmentScore && (
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-slate-400">Online Assignments:</span>
-                        <span className="text-slate-200 font-bold tabular-nums">{selected.assignmentScore}</span>
+                        <span className="text-slate-500 dark:text-slate-400">Online Assignments:</span>
+                        <span className="text-slate-900 dark:text-slate-200 font-bold tabular-nums">{selected.assignmentScore}</span>
                       </div>
                     )}
 
                     {selected.examScore && (
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-slate-400">Proctored Exam:</span>
-                        <span className="text-slate-200 font-bold tabular-nums">{selected.examScore}</span>
+                        <span className="text-slate-500 dark:text-slate-400">Proctored Exam:</span>
+                        <span className="text-slate-900 dark:text-slate-200 font-bold tabular-nums">{selected.examScore}</span>
                       </div>
                     )}
 
                     {selected.credits && (
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-slate-400 flex items-center gap-1.5">
-                          <GraduationCap className="w-3.5 h-3.5 text-emerald-400" /> Academic Credits:
+                        <span className="text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                          <GraduationCap className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" /> Academic Credits:
                         </span>
-                        <span className="text-emerald-400 font-bold">{selected.credits}</span>
+                        <span className="text-emerald-600 dark:text-emerald-400 font-bold">{selected.credits}</span>
                       </div>
                     )}
 
                     {selected.totalCandidates && (
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-slate-400">Candidates Registered:</span>
-                        <span className="text-slate-200 font-bold tabular-nums">{selected.totalCandidates}</span>
+                        <span className="text-slate-500 dark:text-slate-400">Candidates Registered:</span>
+                        <span className="text-slate-900 dark:text-slate-200 font-bold tabular-nums">{selected.totalCandidates}</span>
                       </div>
                     )}
                   </div>
@@ -979,80 +1103,92 @@ export const Certifications: React.FC = () => {
               </div>
 
               {/* Modal Bottom Action Bar */}
-              <div className="px-4 sm:px-6 py-4 border-t border-slate-800 bg-slate-950/80 flex flex-wrap items-center justify-between gap-3">
-                <div className="flex flex-wrap items-center gap-2.5">
+              <div className="px-4 sm:px-6 py-3.5 sm:py-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/80 flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center justify-between gap-2.5 shrink-0">
+                <div className="flex flex-wrap items-center gap-2">
                   {isExternalLiveVerificationUrl(verifyUrl) ? (
                     <>
                       <a
                         href={verifyUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-black transition-all shadow-lg shadow-emerald-500/20 active:scale-95 whitespace-nowrap"
+                        className="flex-1 sm:flex-initial justify-center text-center inline-flex items-center gap-2 px-4 sm:px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black transition-all shadow-md shadow-emerald-600/20 active:scale-95 sm:whitespace-nowrap"
                       >
-                        <ShieldCheck className="w-4 h-4" />
+                        <ShieldCheck className="w-4 h-4 shrink-0" />
                         <span>Verify on External Issuer Portal</span>
-                        <ExternalLink className="w-3.5 h-3.5" />
+                        <ExternalLink className="w-3.5 h-3.5 shrink-0" />
                       </a>
                       <Link
                         to={getInternalVerifyRoute(selected)}
-                        onClick={() => setSelected(null)}
-                        className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 text-xs font-bold transition-colors whitespace-nowrap"
+                        onClick={() => closeModal({ skipHistoryBack: true })}
+                        className="flex-1 sm:flex-initial justify-center text-center inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 text-xs font-bold transition-colors sm:whitespace-nowrap"
                       >
-                        <ShieldCheck className="w-3.5 h-3.5" />
+                        <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
                         <span>Verification Registry Page</span>
                       </Link>
                     </>
                   ) : (
                     <Link
                       to={getInternalVerifyRoute(selected)}
-                      onClick={() => setSelected(null)}
-                      className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-black transition-all shadow-lg shadow-emerald-500/20 active:scale-95 whitespace-nowrap"
+                      onClick={() => closeModal({ skipHistoryBack: true })}
+                      className="flex-1 sm:flex-initial justify-center text-center inline-flex items-center gap-2 px-4 sm:px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black transition-all shadow-md shadow-emerald-600/20 active:scale-95 sm:whitespace-nowrap"
                     >
-                      <ShieldCheck className="w-4 h-4" />
+                      <ShieldCheck className="w-4 h-4 shrink-0" />
                       <span>Open Official Verification Registry</span>
-                      <ExternalLink className="w-3.5 h-3.5" />
+                      <ExternalLink className="w-3.5 h-3.5 shrink-0" />
                     </Link>
                   )}
 
                   <button
                     type="button"
                     onClick={() => handleCopy(getShareableVerifyUrl(selected), 'modal-verify-url')}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl border border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold transition-colors whitespace-nowrap"
+                    className="flex-1 sm:flex-initial justify-center inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold transition-colors sm:whitespace-nowrap cursor-pointer"
                   >
                     {copiedKey === 'modal-verify-url' ? (
                       <>
-                        <Check className="w-3.5 h-3.5 text-emerald-400" />
+                        <Check className="w-3.5 h-3.5 text-emerald-500 dark:text-emerald-400" />
                         <span>Link Copied</span>
                       </>
                     ) : (
                       <>
-                        <Copy className="w-3.5 h-3.5 text-cyan-400" />
+                        <Copy className="w-3.5 h-3.5 text-indigo-600 dark:text-cyan-400" />
                         <span>Copy Verify Link</span>
                       </>
                     )}
                   </button>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-2.5">
+                <div className="flex flex-wrap items-center gap-2">
                   <a
                     href={originalFileUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-700 bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold transition-colors whitespace-nowrap"
+                    className="flex-1 sm:flex-initial justify-center inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-800 dark:text-white text-xs font-bold transition-colors sm:whitespace-nowrap"
                   >
-                    <ExternalLink className="w-3.5 h-3.5 text-indigo-400" />
+                    <ExternalLink className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
                     <span>Open Original {hasPdf ? 'PDF' : 'File'}</span>
                   </a>
-                  <a
-                    href={originalFileUrl}
-                    download
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition-colors whitespace-nowrap"
+                  <button
+                    type="button"
+                    disabled={downloadingId === selected.id}
+                    onClick={async () => {
+                      setDownloadingId(selected.id);
+                      try {
+                        await downloadAssetFile(originalFileUrl, selected.title, {
+                          defaultExt: hasPdf ? 'pdf' : 'jpg',
+                        });
+                      } finally {
+                        setDownloadingId(null);
+                      }
+                    }}
+                    className="flex-1 sm:flex-initial justify-center inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition-colors sm:whitespace-nowrap cursor-pointer disabled:opacity-60"
                   >
                     <Download className="w-3.5 h-3.5" />
-                    <span>Download {hasPdf ? 'PDF' : 'Certificate'}</span>
-                  </a>
+                    <span>
+                      {downloadingId === selected.id
+                        ? 'Downloading...'
+                        : `Download ${hasPdf ? 'PDF' : 'Certificate'}`}
+                    </span>
+                  </button>
                 </div>
               </div>
             </div>

@@ -2,7 +2,8 @@ import { doc, onSnapshot, setDoc } from 'firebase/firestore';
 import { db, auth, isUserAdmin } from './academicFirebase';
 import { EXPERIENCE_DATA, SKILLS_DATA, Experience, SkillCategory } from '../data/portfolio';
 
-const contentRef = (id: 'skills' | 'experience') => doc(db, 'site_content', id);
+const contentRef = (id: 'skills' | 'experience') =>
+  doc(db, 'site_metadata', id === 'skills' ? 'skills_content' : 'experience_content');
 
 export const subscribeToSkills = (callback: (items: SkillCategory[]) => void) =>
   onSnapshot(contentRef('skills'), (snapshot) => {

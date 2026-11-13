@@ -1,10 +1,11 @@
 import { useState, FC, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Github, ExternalLink, Calendar, CheckCircle, Tag, Clock, Rocket, Beaker, LayoutGrid, Archive, Maximize2, Grid } from 'lucide-react';
+import { X, Github, ExternalLink, Calendar, CheckCircle, Tag, Clock, Rocket, Beaker, LayoutGrid, Archive, Maximize2, Grid, ImageOff } from 'lucide-react';
 import { Project, ProjectStatus } from '../data/portfolio';
 import { ImageViewer } from './ImageViewer';
 import { resolveProjectImageUrl } from '../services/projectFirebase';
 import { getProjectScreenshotMetadata, isExcludedProjectScreenshot } from '../data/projectScreenshotCatalog';
+import { useModalHistory } from '../hooks/useModalHistory';
 
 interface ProjectModalProps {
   project: Project | null;
@@ -86,27 +87,37 @@ export const ProjectModal: FC<ProjectModalProps> = ({ project, onClose }) => {
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [isViewerOpen, setIsViewerOpen] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
+  const [failedThumbUrls, setFailedThumbUrls] = useState<Record<string, boolean>>({});
 
-  // Reset image index and category filter when project changes
+  const { closeModal } = useModalHistory(Boolean(project), 'project-modal', onClose);
+
+  // Reset image index and category filter only when selected project ID changes
   useEffect(() => {
     setActiveImageIndex(0);
     setIsViewerOpen(false);
     setSelectedCategory('All');
-  }, [project]);
+    setFailedThumbUrls({});
+  }, [project?.id]);
 
   const projectKey = project ? (project.slug || project.id) : '';
   const bannerTheme = project ? getProjectBannerTheme(projectKey) : null;
 
   useEffect(() => {
+    if (!project) return;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (!project) return;
       if (e.key === 'Escape' && !isViewerOpen) {
-        onClose();
+        closeModal();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [project, isViewerOpen, onClose]);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [project, isViewerOpen, closeModal]);
 
   if (!project || !bannerTheme) return null;
 
@@ -134,17 +145,19 @@ export const ProjectModal: FC<ProjectModalProps> = ({ project, onClose }) => {
   }> = [];
 
   if (project.screenshotMetadata && project.screenshotMetadata.length > 0) {
+    const seenUrls = new Set<string>();
     const published = project.screenshotMetadata
-      .filter(s => s.published !== false && !isExcludedProjectScreenshot(s.url))
-      .sort((a, b) => a.displayOrder - b.displayOrder);
+      .filter((s) => {
+        if (s.published === false || !s.url || isExcludedProjectScreenshot(s.url)) return false;
+        if (seenUrls.has(s.url)) return false;
+        seenUrls.add(s.url);
+        return true;
+      })
+      .sort((a, b) => (a.displayOrder ?? 999) - (b.displayOrder ?? 999));
 
-    // Ensure the project's Poster Cover (mainScreenshot) is always at position #01 (index 0)
     const hasMainInPublished = published.some(s => s.url === project.mainScreenshot);
     const orderedPublished = hasMainInPublished
-      ? [
-          ...published.filter(s => s.url === project.mainScreenshot),
-          ...published.filter(s => s.url !== project.mainScreenshot)
-        ]
+      ? published
       : project.mainScreenshot
       ? [
           {
@@ -178,7 +191,7 @@ export const ProjectModal: FC<ProjectModalProps> = ({ project, onClose }) => {
         category: isGenericCategory ? catalogMeta.category : (item.category || catalogMeta.category),
         caption: item.caption && !item.caption.includes('workflow screenshot view') ? item.caption : catalogMeta.caption,
         altText: item.altText || catalogMeta.title,
-        isCover: idx === 0 || item.isCover
+        isCover: Boolean(item.isCover) || (!orderedPublished.some(o => o.isCover) && idx === 0)
       };
     });
   }
@@ -210,16 +223,17 @@ export const ProjectModal: FC<ProjectModalProps> = ({ project, onClose }) => {
 
   const screenshots = screenshotItems.map(i => i.url);
   const distinctCategories = ['All', ...Array.from(new Set(screenshotItems.map(i => i.category)))];
+  const activeCategory = distinctCategories.includes(selectedCategory) ? selectedCategory : 'All';
   const filteredScreenshotItems =
-    selectedCategory === 'All'
+    activeCategory === 'All'
       ? screenshotItems
-      : screenshotItems.filter(i => i.category === selectedCategory);
+      : screenshotItems.filter(i => i.category === activeCategory);
 
   return (
     <AnimatePresence>
       <div 
         className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-950/90 backdrop-blur-md overflow-y-auto"
-        onClick={onClose}
+        onClick={() => closeModal()}
       >
         <motion.div 
           initial={{ opacity: 0, scale: 0.95, y: 20 }}
@@ -252,8 +266,10 @@ export const ProjectModal: FC<ProjectModalProps> = ({ project, onClose }) => {
               </div>
             </div>
             <button
-              onClick={onClose}
-              className="p-2 sm:p-3 rounded-2xl text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-all active:scale-90 shrink-0"
+              type="button"
+              onClick={() => closeModal()}
+              aria-label="Close project details modal"
+              className="p-2 sm:p-3 rounded-2xl bg-slate-100/80 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-slate-700 transition-all active:scale-90 shrink-0 cursor-pointer"
               title="Close Modal (Esc)"
             >
               <X className="w-5 h-5 sm:w-6 sm:h-6" />
@@ -304,7 +320,7 @@ export const ProjectModal: FC<ProjectModalProps> = ({ project, onClose }) => {
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between border-t border-white/15 pt-4 text-xs font-semibold text-slate-300">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-t border-white/15 pt-4 text-xs font-semibold text-slate-300">
                   <span>{screenshots.length} Verified Screenshots & Workflow Views</span>
                   <span className={`uppercase tracking-[0.2em] font-bold ${bannerTheme.categoryColor}`}>
                     Row-Wise Gallery Below
@@ -314,13 +330,13 @@ export const ProjectModal: FC<ProjectModalProps> = ({ project, onClose }) => {
             </section>
 
             {/* Detailed Description & Key Features */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-12 pt-2">
-              <div className="lg:col-span-2 space-y-10">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 lg:gap-12 pt-2">
+              <div className="lg:col-span-2 space-y-8 sm:space-y-10">
                 <div className="space-y-4">
                   <h4 className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">
                     Detailed Overview
                   </h4>
-                  <p className="text-slate-700 dark:text-slate-300 text-lg leading-relaxed font-medium">
+                  <p className="text-slate-700 dark:text-slate-300 text-base sm:text-lg leading-relaxed font-medium">
                     {project.detailedDescription}
                   </p>
                 </div>
@@ -418,7 +434,7 @@ export const ProjectModal: FC<ProjectModalProps> = ({ project, onClose }) => {
                       cat === 'All'
                         ? screenshotItems.length
                         : screenshotItems.filter((i) => i.category === cat).length;
-                    const isActive = selectedCategory === cat;
+                    const isActive = activeCategory === cat;
                     return (
                       <button
                         key={cat}
@@ -447,7 +463,7 @@ export const ProjectModal: FC<ProjectModalProps> = ({ project, onClose }) => {
               )}
 
               {/* Responsive Row-Wise CSS Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6">
                 {filteredScreenshotItems.map((item) => {
                   const fileNameOnly = item.rawPath.split('/').pop() || '';
                   return (
@@ -460,17 +476,24 @@ export const ProjectModal: FC<ProjectModalProps> = ({ project, onClose }) => {
                       className="group flex flex-col bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm hover:shadow-xl hover:border-indigo-500/50 transition-all duration-300 cursor-pointer"
                     >
                       {/* Thumbnail Preview Area */}
-                      <div className="relative aspect-[16/10] bg-slate-950 overflow-hidden">
-                        <img 
-                          src={item.url} 
-                          alt={item.title}
-                          loading="lazy"
-                          decoding="async"
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                          onError={(e) => { 
-                            (e.target as HTMLImageElement).style.opacity = '0.3'; 
-                          }} 
-                        />
+                      <div className="relative aspect-[16/10] bg-slate-950 overflow-hidden flex items-center justify-center">
+                        {failedThumbUrls[item.url] ? (
+                          <div className="flex flex-col items-center justify-center gap-1.5 text-slate-400 p-4 text-center">
+                            <ImageOff className="w-6 h-6 text-indigo-400" />
+                            <span className="text-[10px] font-bold uppercase tracking-wider">Preview Unavailable</span>
+                          </div>
+                        ) : (
+                          <img 
+                            src={item.url} 
+                            alt={item.title}
+                            loading={item.index < 12 ? 'eager' : 'lazy'}
+                            decoding="async"
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                            onError={() => {
+                              setFailedThumbUrls((prev) => ({ ...prev, [item.url]: true }));
+                            }} 
+                          />
+                        )}
                         {/* Hover Overlay with Icon */}
                         <div className="absolute inset-0 bg-slate-950/0 group-hover:bg-slate-950/40 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
                           <span className="p-3 rounded-2xl bg-indigo-600 text-white shadow-xl transform translate-y-2 group-hover:translate-y-0 transition-all">

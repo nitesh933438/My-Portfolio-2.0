@@ -75,6 +75,7 @@ export interface AuditRecordItem {
  * Initializes Firestore with the initial verified ACADEMIC_DATA if it doesn't already exist.
  */
 export const initializeAcademicDataInFirestore = async () => {
+  if (!isUserAdmin(auth.currentUser)) return;
   try {
     const universityDocRef = doc(db, 'academic_records', 'arka-jain-btech-cse');
     const existingSnap = await getDoc(universityDocRef);
@@ -343,6 +344,7 @@ export interface SiteSettings {
 }
 
 export const initializeSiteSettingsInFirestore = async () => {
+  if (!isUserAdmin(auth.currentUser)) return;
   try {
     const configDocRef = doc(db, 'site_metadata', 'portfolio_config');
     const existingSnap = await getDoc(configDocRef);
