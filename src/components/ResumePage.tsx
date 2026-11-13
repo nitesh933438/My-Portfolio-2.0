@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import { getProjectMetrics, getCertificateMetrics } from '../utils/portfolioMetrics';
 import {
   ArrowLeft,
   Download,
@@ -68,11 +69,10 @@ export const ResumePage: React.FC = () => {
   const semSummary = declaredSemesters.length
     ? declaredSemesters.map((s) => `Sem ${s.semesterNumber}: ${s.sgpa?.toFixed(2)}`).join(' | ') + ' / 10.0'
     : 'Results Scheduled';
-  const featuredProjectsList = projects.filter((p) => p.status !== 'Archived').slice(0, 6);
-  const featuredCertificatesList = (certificates.some((c) => c.featured)
-    ? certificates.filter((c) => c.featured)
-    : certificates
-  ).slice(0, 8);
+  const projectMetrics = getProjectMetrics(projects);
+  const certMetrics = getCertificateMetrics(certificates);
+  const featuredProjectsList = projectMetrics.resumeFeatured;
+  const featuredCertificatesList = certMetrics.resumeFeatured;
 
   const handleDownloadPdf = async () => {
     if (downloading) return;
@@ -591,7 +591,7 @@ export const ResumePage: React.FC = () => {
             <section className="space-y-3">
               <h3 className="text-xs font-black uppercase tracking-[0.2em] text-indigo-600 dark:text-indigo-400 flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-1.5">
                 <Code2 className="w-3.5 h-3.5" />
-                <span>Featured Projects ({projects.length} Total)</span>
+                <span>Featured Projects ({projectMetrics.active.length} Active)</span>
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {featuredProjectsList.map((proj) => (
@@ -609,7 +609,7 @@ export const ResumePage: React.FC = () => {
             <section className="space-y-2.5">
               <h3 className="text-xs font-black uppercase tracking-[0.2em] text-indigo-600 dark:text-indigo-400 flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-1.5">
                 <Award className="w-3.5 h-3.5" />
-                <span>Key Certifications ({certificates.length}+ Verified)</span>
+                <span>Key Certifications ({certMetrics.published.length} Verified)</span>
               </h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
                 {featuredCertificatesList.map((cert) => (

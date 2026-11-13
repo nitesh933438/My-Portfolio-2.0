@@ -22,10 +22,13 @@ import {
   Briefcase
 } from 'lucide-react';
 import { signOut } from 'firebase/auth';
-import { auth } from '../services/academicFirebase';
+import { auth, db } from '../services/academicFirebase';
+import { collection, onSnapshot } from 'firebase/firestore';
 import { AdminToastProvider } from './admin/AdminToastContext';
 import { AIScanner } from './admin/AIScanner';
 import { NKLogo } from './NKLogo';
+import { usePortfolio } from '../context/PortfolioContext';
+import { getPortfolioMetricsSnapshot } from '../utils/portfolioMetrics';
 
 interface AdminLayoutProps {
   theme: 'light' | 'dark' | 'system';
@@ -41,10 +44,33 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ theme, setTheme }) => 
   });
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
+  const [unreadMessages, setUnreadMessages] = useState(0);
   const mainScrollRef = useRef<HTMLElement | null>(null);
   const mobileTabsRef = useRef<HTMLDivElement | null>(null);
   const navigate = useNavigate();
   const location = useLocation();
+  const portfolio = usePortfolio();
+
+  useEffect(() => {
+    const unsub = onSnapshot(
+      collection(db, 'contact_messages'),
+      (snap) => {
+        setUnreadMessages(snap.docs.filter((d) => !d.data().read).length);
+      },
+      () => {}
+    );
+    return () => unsub();
+  }, []);
+
+  const snap = getPortfolioMetricsSnapshot({
+    projects: portfolio.projects,
+    certificates: portfolio.certificates,
+    university: portfolio.university,
+    schooling: portfolio.schooling,
+    skills: portfolio.skills,
+    experience: portfolio.experience,
+    messageUnread: unreadMessages,
+  });
 
   useEffect(() => {
     setMobileMenuOpen(false);
@@ -81,14 +107,14 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ theme, setTheme }) => 
     setTheme(next);
   };
 
-  const navItems = [
+  const navItems: Array<{ path: string; icon: any; label: string; exact?: boolean; badge?: string | number }> = [
     { path: '/admin', icon: LayoutDashboard, label: 'Overview', exact: true },
-    { path: '/admin/projects', icon: FolderKanban, label: 'Projects' },
-    { path: '/admin/certificates', icon: Award, label: 'Certificates' },
-    { path: '/admin/education', icon: GraduationCap, label: 'Education' },
-    { path: '/admin/skills', icon: Wrench, label: 'Skills' },
-    { path: '/admin/experience', icon: Briefcase, label: 'Experience' },
-    { path: '/admin/messages', icon: MessageSquare, label: 'Messages' },
+    { path: '/admin/projects', icon: FolderKanban, label: 'Projects', badge: snap.projects.active.length },
+    { path: '/admin/certificates', icon: Award, label: 'Certificates', badge: snap.certificates.published.length },
+    { path: '/admin/education', icon: GraduationCap, label: 'Education', badge: `${snap.education.declaredSemesters.length}/${snap.education.totalSemesters}` },
+    { path: '/admin/skills', icon: Wrench, label: 'Skills', badge: snap.skills.totalSkills },
+    { path: '/admin/experience', icon: Briefcase, label: 'Experience', badge: snap.experienceCount },
+    { path: '/admin/messages', icon: MessageSquare, label: 'Messages', badge: unreadMessages > 0 ? unreadMessages : undefined },
     { path: '/admin/settings', icon: Settings, label: 'Settings' },
     { path: '/admin/ai', icon: Sparkles, label: 'AI Assistant' },
   ];
@@ -153,7 +179,16 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ theme, setTheme }) => 
             `}
           >
             <item.icon className="w-5 h-5 shrink-0" />
-            {(sidebarOpen || isMobile) && <span className="truncate">{item.label}</span>}
+            {(sidebarOpen || isMobile) && (
+              <div className="flex items-center justify-between flex-1 min-w-0 gap-2">
+                <span className="truncate">{item.label}</span>
+                {item.badge !== undefined && (
+                  <span className="px-1.5 py-0.5 rounded-md text-[10px] font-black tabular-nums bg-slate-200/80 dark:bg-slate-800 text-slate-700 dark:text-slate-300 group-aria-[current=page]:bg-white/20">
+                    {item.badge}
+                  </span>
+                )}
+              </div>
+            )}
           </NavLink>
         ))}
       </nav>
@@ -365,6 +400,11 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ theme, setTheme }) => 
               >
                 <item.icon className="w-3.5 h-3.5 shrink-0" />
                 <span>{item.label}</span>
+                {item.badge !== undefined && (
+                  <span className="px-1.5 py-0.2 rounded text-[9px] font-black tabular-nums bg-slate-200/80 dark:bg-slate-700 text-slate-700 dark:text-slate-200">
+                    {item.badge}
+                  </span>
+                )}
               </NavLink>
             ))}
           </div>

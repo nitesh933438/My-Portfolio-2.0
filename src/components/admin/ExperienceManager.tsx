@@ -35,21 +35,49 @@ export const ExperienceManager: React.FC = () => {
   useEffect(() => {
     if (!pendingResult || pendingResult.detectedModule !== 'experience') return;
     const data = pendingResult.data || {};
-    setEditingIndex(null);
-    setTargetPosition(items.length + 1);
-    setForm({
-      role: data.role || '',
-      company: data.company || '',
-      location: data.location || '',
-      period: data.period || '',
-      description: data.description || '',
-      type: ['Professional', 'Independent', 'Internship'].includes(data.type) ? data.type : 'Professional',
-      highlights: Array.isArray(data.highlights) ? data.highlights : [],
-    });
+    const norm = (v: string) => v.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+    const matchedIdx =
+      pendingResult.matchedId !== undefined && Number.isFinite(Number(pendingResult.matchedId))
+        ? Number(pendingResult.matchedId)
+        : items.findIndex(
+            (e) =>
+              data.role &&
+              data.company &&
+              norm(e.role) === norm(data.role) &&
+              norm(e.company) === norm(data.company)
+          );
+
+    if (matchedIdx >= 0 && items[matchedIdx]) {
+      const existing = items[matchedIdx];
+      setEditingIndex(matchedIdx);
+      setTargetPosition(matchedIdx + 1);
+      setForm({
+        ...existing,
+        period: data.period || existing.period,
+        location: data.location || existing.location,
+        description: data.description || existing.description,
+        highlights: Array.from(
+          new Set([...(existing.highlights || []), ...(Array.isArray(data.highlights) ? data.highlights : [])])
+        ),
+      });
+      showToast(`Loaded existing "${existing.role} @ ${existing.company}" for update.`, 'info');
+    } else {
+      setEditingIndex(null);
+      setTargetPosition(items.length + 1);
+      setForm({
+        role: data.role || '',
+        company: data.company || '',
+        location: data.location || '',
+        period: data.period || '',
+        description: data.description || '',
+        type: ['Professional', 'Independent', 'Internship'].includes(data.type) ? data.type : 'Professional',
+        highlights: Array.isArray(data.highlights) ? data.highlights : [],
+      });
+      showToast('AI experience details loaded. Review and save.', 'success');
+    }
     setFormOpen(true);
-    showToast('AI experience details loaded. Review and save.', 'success');
     setPendingResult(null);
-  }, [pendingResult, items.length, setPendingResult, showToast]);
+  }, [pendingResult, items, setPendingResult, showToast]);
 
   const persistList = async (nextList: Experience[], message: string) => {
     const prev = [...items];

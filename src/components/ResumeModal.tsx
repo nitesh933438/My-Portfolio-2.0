@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { getProjectMetrics, getCertificateMetrics } from '../utils/portfolioMetrics';
 import { 
   X, 
   Download, 
@@ -278,11 +279,10 @@ export const ResumeModal: React.FC<ResumeModalProps> = ({ isOpen, onClose }) => 
   const semSummary = declaredSemesters.length
     ? declaredSemesters.map((s) => `Sem ${s.semesterNumber}: ${s.sgpa?.toFixed(2)}`).join(' | ') + ' / 10.0'
     : 'Results Scheduled';
-  const featuredProjectsList = projects.filter((p) => p.status !== 'Archived').slice(0, 6);
-  const featuredCertificatesList = (certificates.some((c) => c.featured)
-    ? certificates.filter((c) => c.featured)
-    : certificates
-  ).slice(0, 8);
+  const projectMetrics = getProjectMetrics(projects);
+  const certMetrics = getCertificateMetrics(certificates);
+  const featuredProjectsList = projectMetrics.resumeFeatured;
+  const featuredCertificatesList = certMetrics.resumeFeatured;
 
   return (
     <AnimatePresence>
@@ -805,7 +805,7 @@ export const ResumeModal: React.FC<ResumeModalProps> = ({ isOpen, onClose }) => 
                 <section className="space-y-3">
                   <h2 className="text-xs font-black uppercase tracking-[0.2em] text-indigo-600 dark:text-indigo-400 flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-1.5">
                     <Code2 className="w-3.5 h-3.5" />
-                    <span>Featured Engineering Projects ({projects.length} Total)</span>
+                    <span>Featured Engineering Projects ({projectMetrics.active.length} Active)</span>
                   </h2>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     {featuredProjectsList.map((proj) => (
@@ -842,7 +842,7 @@ export const ResumeModal: React.FC<ResumeModalProps> = ({ isOpen, onClose }) => 
                 <section className="space-y-2.5">
                   <h2 className="text-xs font-black uppercase tracking-[0.2em] text-indigo-600 dark:text-indigo-400 flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-1.5">
                     <Award className="w-3.5 h-3.5" />
-                    <span>Key Certifications & Recognitions ({certificates.length}+ Verified Credentials)</span>
+                    <span>Key Certifications &amp; Recognitions ({certMetrics.published.length} Verified)</span>
                   </h2>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
                     {featuredCertificatesList.map((cert) => (

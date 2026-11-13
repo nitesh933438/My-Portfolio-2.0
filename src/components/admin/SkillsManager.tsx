@@ -79,24 +79,46 @@ export const SkillsManager: React.FC = () => {
     const detectedSkills = Array.isArray(data.skills) ? data.skills : [];
     const categoryName = String(data.category || 'Extracted Skills');
     if (detectedSkills.length) {
-      const draft: SkillCategory = {
-        category: categoryName,
-        iconName: 'Code2',
-        skills: detectedSkills
-          .filter((skill: any) => skill && skill.name)
-          .map((skill: any) => ({
-            name: String(skill.name),
-            level: Math.max(0, Math.min(100, Number(skill.level) || 70)),
-          })),
-      };
+      const incoming = detectedSkills
+        .filter((skill: any) => skill && skill.name)
+        .map((skill: any) => ({
+          name: String(skill.name).trim(),
+          level: Math.max(0, Math.min(100, Number(skill.level) || 75)),
+        }));
+      const norm = (v: string) => v.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+      const targetKey = norm(pendingResult.matchedId || categoryName);
+
       setItems((current) => {
-        const next = [...current, draft];
+        const matchIdx = current.findIndex((g) => {
+          const gKey = norm(g.category);
+          return targetKey && (gKey === targetKey || gKey.includes(targetKey) || targetKey.includes(gKey));
+        });
+        let next: SkillCategory[];
+        if (matchIdx >= 0) {
+          const existingGroup = current[matchIdx];
+          const skillMap = new Map(existingGroup.skills.map((s) => [s.name.toLowerCase(), s]));
+          incoming.forEach((s: { name: string; level: number }) => {
+            if (!skillMap.has(s.name.toLowerCase())) {
+              skillMap.set(s.name.toLowerCase(), s);
+            }
+          });
+          next = current.map((g, i) =>
+            i === matchIdx ? { ...g, skills: Array.from(skillMap.values()) } : g
+          );
+        } else {
+          const draft: SkillCategory = {
+            category: categoryName,
+            iconName: 'Code2',
+            skills: incoming,
+          };
+          next = [...current, draft];
+        }
         latestItemsRef.current = next;
         saveSkills(cleanCategories(next)).catch(() => {});
         return next;
       });
       setSyncStatus('synced');
-      showToast('AI skills added and serial numbers synced automatically!', 'success');
+      showToast('AI skills merged and synced automatically without duplicates!', 'success');
     } else {
       showToast('AI did not find a usable skills list.', 'error');
     }

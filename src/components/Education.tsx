@@ -239,7 +239,18 @@ export const Education: React.FC = () => {
 
               {/* Academic Highlights Bullet Points */}
               <div className="mt-8 pt-6 border-t border-slate-100 dark:border-slate-800/80 grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {university.highlights.map((highlight, hIdx) => (
+                {university.highlights
+                  .filter((h) => {
+                    if (!h || /\b(undefined|null|NaN)\b/i.test(h)) return false;
+                    const semMatch = h.match(/Semester\s+(\d+)/i);
+                    if (semMatch) {
+                      const num = Number(semMatch[1]);
+                      const semObj = university.semesters.find((s) => s.semesterNumber === num);
+                      if (semObj && !semObj.isDeclared) return false;
+                    }
+                    return true;
+                  })
+                  .map((highlight, hIdx) => (
                   <div key={hIdx} className="flex items-start gap-2.5">
                     <div className="w-4 h-4 rounded-full bg-emerald-500/10 flex items-center justify-center shrink-0 mt-0.5">
                       <CheckCircle2 className="w-3 h-3 text-emerald-500" />

@@ -270,12 +270,22 @@ export const publishSemesterResult = async (
     return sem;
   });
 
-  // Update highlights: remove old for this semester, add new, then sort by semester number
-  let updatedHighlights = currentUniversity.highlights.filter((h: string) => !h.includes(`Semester ${semesterData.semesterNumber}`));
+  // Update highlights: remove old for this semester or any malformed undefined/null entries, add new if sgpa valid, then sort
+  let updatedHighlights = currentUniversity.highlights.filter(
+    (h: string) =>
+      h &&
+      !h.includes('undefined') &&
+      !h.includes('null') &&
+      !h.includes(`Semester ${semesterData.semesterNumber}`)
+  );
   
-  if (semesterData.status !== 'UPCOMING') {
+  if (
+    semesterData.status !== 'UPCOMING' &&
+    typeof semesterData.sgpa === 'number' &&
+    Number.isFinite(semesterData.sgpa)
+  ) {
     updatedHighlights.push(
-      `Semester ${semesterData.semesterNumber} SGPA: ${semesterData.sgpa?.toFixed(2)} (Declared ${semesterData.resultDeclarationDate || 'Recently'})`
+      `Semester ${semesterData.semesterNumber} SGPA: ${semesterData.sgpa.toFixed(2)} (Declared ${semesterData.resultDeclarationDate || 'Recently'})`
     );
   }
 

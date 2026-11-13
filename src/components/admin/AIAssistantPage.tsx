@@ -18,6 +18,8 @@ import { auth } from '../../services/academicFirebase';
 import { useAdminToast } from './AdminToastContext';
 import { AIScanner } from './AIScanner';
 import { apiUrl, chatWithAssistantSmart } from '../../services/api';
+import { usePortfolio } from '../../context/PortfolioContext';
+import { getPortfolioMetricsSnapshot } from '../../utils/portfolioMetrics';
 
 interface Message {
   id: string;
@@ -41,6 +43,7 @@ export const AIAssistantPage: React.FC = () => {
   const [aiStatus, setAiStatus] = useState<'checking' | 'online' | 'offline'>('online');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { showToast } = useAdminToast();
+  const portfolio = usePortfolio();
 
   React.useEffect(() => {
     let active = true;
@@ -74,7 +77,39 @@ export const AIAssistantPage: React.FC = () => {
 
     try {
       const idToken = (await auth.currentUser?.getIdToken()) || '';
-      const data = await chatWithAssistantSmart({ message: userText, idToken });
+      const snap = getPortfolioMetricsSnapshot({
+        projects: portfolio.projects,
+        certificates: portfolio.certificates,
+        university: portfolio.university,
+        schooling: portfolio.schooling,
+        skills: portfolio.skills,
+        experience: portfolio.experience,
+      });
+      const portfolioSummary = {
+        projects: {
+          total: snap.projects.total,
+          active: snap.projects.active.length,
+          featured: snap.projects.featured.length,
+          archived: snap.projects.archivedCount,
+          githubRepos: snap.projects.githubRepoCount,
+        },
+        certificates: {
+          published: snap.certificates.published.length,
+          featured: snap.certificates.featured.length,
+          verified: snap.certificates.verifiedCount,
+        },
+        education: {
+          semestersDeclared: snap.education.declaredSemesters.length,
+          latestSgpa: snap.education.latestSgpa,
+          schoolRecords: snap.education.schoolingCount,
+        },
+        skills: {
+          categories: snap.skills.categoryCount,
+          totalSkills: snap.skills.totalSkills,
+        },
+        experienceCount: snap.experienceCount,
+      };
+      const data = await chatWithAssistantSmart({ message: userText, idToken, portfolioSummary });
 
       const aiMsg: Message = {
         id: (Date.now() + 1).toString(),

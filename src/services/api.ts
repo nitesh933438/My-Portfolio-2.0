@@ -84,6 +84,34 @@ export async function analyzeAndExtractClientFallback(params: {
   const lower = combined.toLowerCase();
   const routeHint = (hintModule || inferModuleFromCurrentRoute()).toLowerCase();
 
+  // 0. Guard against private, financial, or irrelevant documents
+  const irrelevantMatch =
+    /\b(aadhaar|aadhar|uidai|pan\s*card|permanent\s*account\s*number|voter\s*id|driving\s*licen[cs]e|passport\s*no)\b/i.test(lower)
+      ? 'Private Identity Document (Aadhaar / PAN / ID)'
+      : /\b(bank\s*statement|ifsc|passbook|upi\s*(?:ref|id)|transaction\s*receipt|payment\s*receipt|phonepe|gpay|paytm)\b/i.test(lower)
+      ? 'Financial / UPI Payment Receipt'
+      : /\b(tax\s*invoice|gstin|amazon\s*order|flipkart\s*order|zomato|swiggy|pnr\s*no|boarding\s*pass|irctc|medical\s*report)\b/i.test(lower)
+      ? 'Shopping Bill / Ticket / Medical Document'
+      : /\b(meme|wallpaper|wedding|birthday\s*party)\b/i.test(lower)
+      ? 'Non-Portfolio Personal Media'
+      : null;
+
+  if (irrelevantMatch) {
+    return {
+      success: true,
+      fallback: true,
+      data: {
+        detectedModule: 'irrelevant',
+        detectedType: irrelevantMatch,
+        shouldAddToPortfolio: false,
+        rejectionReason: `Blocked "${irrelevantMatch}": Private/financial or unrelated files must NOT be added to your portfolio.`,
+        confidence: 0.2,
+        suggestion: `Blocked "${irrelevantMatch}" — not a valid portfolio record.`,
+        data: {}
+      }
+    };
+  }
+
   // 1. Check if URL is a GitHub repository -> fetch live metadata from GitHub public API
   const ghMatch = (url || text).match(/github\.com\/([^/\s]+)\/([^/\s#?]+)/i);
   if (ghMatch) {
@@ -104,6 +132,7 @@ export async function analyzeAndExtractClientFallback(params: {
           data: {
             detectedModule: 'project',
             detectedType: 'GitHub Repository Project',
+            shouldAddToPortfolio: true,
             confidence: 0.96,
             suggestion: `Extracted live repository details from github.com/${owner}/${repo}.`,
             data: {
@@ -148,12 +177,20 @@ export async function analyzeAndExtractClientFallback(params: {
   const isSkills =
     /\b(skill\s*set|technical\s*skills|proficiency|competencies)\b/i.test(lower) || routeHint === 'skills';
 
+  const isProfilePhoto =
+    /\b(headshot|profile[_\s-]*photo|profile[_\s-]*pic|portrait|avatar)\b/i.test(lower);
+
   const isProfile =
     /\b(curriculum\s*vitae|resume|bio|about\s*me|contact\s*info)\b/i.test(lower) || routeHint === 'settings';
 
+  const isCertificate =
+    /\b(certificat|nptel|coursera|udemy|infosys|springboard|hackerrank|letsupgrade|aws\s*certified|microsoft\s*learn|credential|verified|badge|completion)\b/i.test(
+      lower
+    ) || routeHint === 'certificate';
+
   const isProject =
     Boolean(ghMatch) ||
-    /\b(github\.com|vercel\.app|netlify\.app|live\s*demo|repository|tech\s*stack|full-stack|saas)\b/i.test(lower) ||
+    /\b(github\.com|vercel\.app|netlify\.app|live\s*demo|repository|tech\s*stack|full-stack|saas|dashboard|screenshot|project)\b/i.test(lower) ||
     routeHint === 'project';
 
   // Academic / Marksheet Extraction
@@ -339,39 +376,71 @@ export async function analyzeAndExtractClientFallback(params: {
     };
   }
 
-  // Default & Certificate Extraction (NPTEL, Infosys, Coursera, Udemy, AWS, HackerRank, Workshops, etc.)
+  if (isProfilePhoto) {
+    return {
+      success: true,
+      fallback: true,
+      data: {
+        detectedModule: 'profile_photo',
+        detectedType: 'Profile Photo',
+        shouldAddToPortfolio: true,
+        confidence: 0.9,
+        suggestion: 'Detected profile portrait image. Ready to update Profile Photo.',
+        data: { updatedAsset: 'profilePhoto' }
+      }
+    };
+  }
+
+  if (!isCertificate) {
+    return {
+      success: true,
+      fallback: true,
+      data: {
+        detectedModule: 'unknown',
+        detectedType: 'Unclear / Unverified Input',
+        shouldAddToPortfolio: false,
+        rejectionReason:
+          'Could not reliably identify whether this file/text is a Certificate, Marksheet, Project, Skills, Experience, or Resume. Add clear text or use descriptive naming so unrelated files are not added.',
+        confidence: 0.4,
+        suggestion: 'Skipped auto-add because document type could not be verified safely.',
+        data: {}
+      }
+    };
+  }
+
+  // Certificate Extraction (NPTEL, Infosys, Coursera, Udemy, AWS, HackerRank, Workshops, etc.)
   let issuer = 'Official Issuing Authority';
   let category = 'Other';
   if (/nptel|iit|swayam/i.test(lower)) {
     issuer = 'NPTEL · IIT Kharagpur (Ministry of Education, Govt. of India)';
-    category = 'Computer Science';
+    category = 'Data Science';
   } else if (/infosys|springboard/i.test(lower)) {
     issuer = 'Infosys Springboard';
-    category = 'Programming';
+    category = 'Web & Software Development';
   } else if (/coursera/i.test(lower)) {
     issuer = 'Coursera';
-    category = 'Web Development';
+    category = 'Web & Software Development';
   } else if (/udemy/i.test(lower)) {
     issuer = 'Udemy';
-    category = 'Web Development';
+    category = 'Web & Software Development';
   } else if (/aws|amazon/i.test(lower)) {
     issuer = 'Amazon Web Services (AWS)';
-    category = 'Cloud & DevOps';
+    category = 'AWS & Cloud';
   } else if (/google/i.test(lower)) {
     issuer = 'Google Cloud / Google Developers';
-    category = 'Cloud & DevOps';
+    category = 'AWS & Cloud';
   } else if (/microsoft|azure/i.test(lower)) {
-    issuer = 'Microsoft';
-    category = 'AI & Data Science';
+    issuer = 'Microsoft Learn';
+    category = 'Microsoft & Productivity';
   } else if (/hackerrank/i.test(lower)) {
     issuer = 'HackerRank';
-    category = 'Programming';
-  } else if (/cisco/i.test(lower)) {
-    issuer = 'Cisco Networking Academy';
-    category = 'Cybersecurity';
+    category = 'Web & Software Development';
+  } else if (/github/i.test(lower)) {
+    issuer = 'GitHub';
+    category = 'GitHub & Developer Tools';
   } else if (/letsupgrade/i.test(lower)) {
     issuer = 'LetsUpgrade';
-    category = 'Web Development';
+    category = 'Web & Software Development';
   }
 
   const credMatch =
@@ -410,8 +479,9 @@ export async function analyzeAndExtractClientFallback(params: {
     data: {
       detectedModule: 'certificate',
       detectedType: 'Professional Certificate',
-      confidence: 0.94,
-      suggestion: `Detected Certificate "${rawTitle}". Auto-filling Certificate Manager.`,
+      shouldAddToPortfolio: true,
+      confidence: 0.92,
+      suggestion: `Detected Certificate "${rawTitle}".`,
       data: {
         title: rawTitle,
         issuer,
@@ -444,6 +514,7 @@ export async function analyzeAndExtractSmart(params: {
   if (file) formData.append('file', file);
   if (text) formData.append('text', text);
   if (url) formData.append('url', url);
+  if (hintModule) formData.append('hintModule', hintModule);
 
   try {
     const response = await fetch(apiUrl('/api/ai/analyze-and-extract'), {
@@ -455,7 +526,7 @@ export async function analyzeAndExtractSmart(params: {
     const contentType = response.headers.get('content-type') || '';
     if (response.ok && contentType.toLowerCase().includes('application/json')) {
       const json = await response.json();
-      if (json && json.success && json.data && (Number(json.data.confidence) || 0) >= 0.55) {
+      if (json && json.success && json.data) {
         return json;
       }
     }
@@ -544,7 +615,13 @@ export async function generateProjectDescriptionSmart(params: {
         'Content-Type': 'application/json',
         ...(idToken ? { Authorization: `Bearer ${idToken}` } : {})
       },
-      body: JSON.stringify({ title, category, techStack })
+      body: JSON.stringify({
+        type: 'project',
+        context: { title, category, techStack },
+        title,
+        category,
+        techStack,
+      })
     });
     const contentType = response.headers.get('content-type') || '';
     if (response.ok && contentType.toLowerCase().includes('application/json')) {
@@ -579,8 +656,9 @@ export async function generateProjectDescriptionSmart(params: {
 export async function chatWithAssistantSmart(params: {
   message: string;
   idToken?: string;
+  portfolioSummary?: Record<string, any>;
 }): Promise<{ success: boolean; reply: string }> {
-  const { message, idToken } = params;
+  const { message, idToken, portfolioSummary } = params;
   try {
     const response = await fetch(apiUrl('/api/ai/chat'), {
       method: 'POST',
@@ -588,7 +666,7 @@ export async function chatWithAssistantSmart(params: {
         'Content-Type': 'application/json',
         ...(idToken ? { Authorization: `Bearer ${idToken}` } : {})
       },
-      body: JSON.stringify({ message })
+      body: JSON.stringify({ message, portfolioSummary })
     });
     const contentType = response.headers.get('content-type') || '';
     if (response.ok && contentType.toLowerCase().includes('application/json')) {
@@ -600,31 +678,34 @@ export async function chatWithAssistantSmart(params: {
   }
 
   const q = message.toLowerCase();
+  const projCount = portfolioSummary?.projects?.active ?? 'all live';
+  const certCount = portfolioSummary?.certificates?.published ?? 'all published';
+
   if (q.includes('certificate') || q.includes('verify')) {
     return {
       success: true,
       reply:
-        'You can manage all 43+ certificates in the **Certificates Manager**:\n• Upload any Certificate image or PDF (or scan it via **Universal AI Scanner**).\n• Use the **Top (#01)**, **Up (↑)**, and **Down (↓)** buttons or edit the **Serial #** field to reorder — all serial numbers (#01, #02, #03...) recalculate automatically.\n• Paste an official issuer URL or use the built-in `/verify/:id` verification page.'
+        `You currently have **${certCount} published certificates** tracked in the **Certificates Manager**:\n• Upload or multi-scan any Certificate image/PDF via **Universal AI Scanner** — duplicates are skipped or merged automatically.\n• Use **Top (#01)**, **Up (↑)**, and **Down (↓)** or edit **Serial #** to reorder; serial numbers (#01, #02, ...) auto-sync across Admin & Public Portfolio.`
     };
   }
   if (q.includes('project') || q.includes('screenshot')) {
     return {
       success: true,
       reply:
-        'In the **Projects Manager**, you can:\n• Add or edit projects and click **AI Generate** to auto-write descriptions and key features.\n• Open **Screenshots** on any project card to upload, drag-and-drop reorder, set cover images, and auto-number (`01 – ...`, `02 – ...`) all screenshots.\n• Reorder projects with the **#01 Top / Up / Down** buttons.'
+        `You currently have **${projCount} active projects** synced between Admin & Portfolio:\n• Click **AI Generate** inside the Project Editor to auto-write descriptions and key features.\n• Open **Screenshots** on any project card to upload, reorder, and set cover images.\n• Reorder projects with **#01 Top / Up / Down** and toggle **Featured** to spotlight projects cleanly.`
     };
   }
   if (q.includes('scanner') || q.includes('scan') || q.includes('auto-fill')) {
     return {
       success: true,
       reply:
-        'The **Universal AI Scanner** accepts PDF/JPG/PNG/WEBP files, pasted text, or GitHub URLs. It automatically detects whether the input is a Certificate, Project, Academic Marksheet, Experience, or Skill list, extracts the structured fields, and opens the matching Admin editor pre-filled for you!'
+        'The **Universal AI Scanner** supports multi-file uploads, pasted text, and GitHub URLs. It decides **what the file is**, **checks your live portfolio for duplicates**, blocks irrelevant/private files (Aadhaar, PAN, payment receipts), and can **Auto-Apply** updates directly or open the pre-filled Admin form for review.'
     };
   }
 
   return {
     success: true,
     reply:
-      `Here is a quick summary for **"${message}"**:\n• **Projects & Screenshots:** Manage featured projects, tech stacks, and ordered screenshot galleries in **Projects Manager**.\n• **Certificates (#01–#43+):** Add, verify, or reorder credentials with automatic serial numbering in **Certificates Manager**.\n• **Academic Records:** Update B.Tech semesters, SGPA, and school marksheets in **Education & Academic CMS**.\n• **Universal AI Scanner:** Click **Launch AI Scanner** above to extract data from any file, text, or GitHub link.`
+      `Here is a quick live summary for **"${message}"**:\n• **Projects (${projCount} active):** Managed in **Projects Manager**; Featured active items sync to the Hero & Featured showcase.\n• **Certificates (${certCount} published):** Ordered dynamically with automatic #01..#NN serial indexing.\n• **Education, Skills & Experience:** Managed in their CMS tabs and auto-synced into your Public Portfolio & ATS Resume.\n• **Universal AI Scanner:** Launch **AI Scan** in the top bar for multi-file smart detection & safe Auto-Apply.`
   };
 }

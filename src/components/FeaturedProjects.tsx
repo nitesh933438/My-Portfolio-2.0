@@ -5,6 +5,7 @@ import { Project } from '../data/portfolio';
 import { ScrollReveal } from './ScrollReveal';
 import { resolveProjectImageUrl } from '../services/projectFirebase';
 import { usePortfolio } from '../context/PortfolioContext';
+import { getProjectMetrics } from '../utils/portfolioMetrics';
 
 interface FeaturedProjectsProps {
   onSelectProject: (project: Project) => void;
@@ -13,7 +14,7 @@ interface FeaturedProjectsProps {
 export const FeaturedProjects: React.FC<FeaturedProjectsProps> = ({ onSelectProject }) => {
   const { projects } = usePortfolio();
   const [failedImgIds, setFailedImgIds] = useState<Record<string, boolean>>({});
-  const featuredList = projects.filter((p) => p.featured && p.status !== 'Archived').slice(0, 6);
+  const featuredList = getProjectMetrics(projects).featured;
 
   if (featuredList.length === 0) return null;
 

@@ -258,15 +258,19 @@ function extractDocumentIntelligently(options: {
   url?: string;
   file?: Express.Multer.File;
   githubContext?: string;
+  hintModule?: string;
 }): {
   detectedType: string;
   detectedModule: string;
+  shouldAddToPortfolio: boolean;
+  rejectionReason?: string;
   data: Record<string, any>;
   confidence: number;
   suggestion: string;
 } {
-  const { text = '', url = '', file, githubContext = '' } = options;
+  const { text = '', url = '', file, githubContext = '', hintModule = '' } = options;
   const fileName = (file?.originalname || '').toLowerCase();
+  const routeHint = String(hintModule || '').trim().toLowerCase();
   
   // Extract text fragments from buffer if available
   let bufferText = '';
@@ -278,6 +282,30 @@ function extractDocumentIntelligently(options: {
 
   const combinedSearch = `${fileName} ${text} ${bufferText} ${githubContext}`.toLowerCase();
 
+  // 0. Reject private/financial/non-portfolio content cleanly
+  const irrelevantMatch =
+    /\b(aadhaar|aadhar|uidai|pan\s*card|permanent\s*account\s*number|voter\s*id|driving\s*licen[cs]e|passport\s*no)\b/i.test(combinedSearch)
+      ? 'Private Government Identity Document'
+      : /\b(bank\s*statement|ifsc|passbook|upi\s*(?:ref|id)|transaction\s*receipt|payment\s*receipt|phonepe|gpay|paytm)\b/i.test(combinedSearch)
+      ? 'Financial / UPI Payment Receipt'
+      : /\b(tax\s*invoice|gstin|amazon\s*order|flipkart\s*order|zomato|swiggy|pnr\s*no|boarding\s*pass|irctc|medical\s*report|pathology)\b/i.test(combinedSearch)
+      ? 'Personal Invoice / Ticket / Medical Document'
+      : /\b(meme|wallpaper|wedding|birthday\s*party)\b/i.test(combinedSearch)
+      ? 'Non-Portfolio Personal Media'
+      : null;
+
+  if (irrelevantMatch) {
+    return {
+      detectedType: irrelevantMatch,
+      detectedModule: 'irrelevant',
+      shouldAddToPortfolio: false,
+      rejectionReason: `Blocked "${irrelevantMatch}": Sensitive, financial, or non-portfolio documents should not be added to your public portfolio.`,
+      data: {},
+      confidence: 0.25,
+      suggestion: `Blocked "${irrelevantMatch}" — do not upload private or unrelated files to your portfolio.`
+    };
+  }
+
   // 1. GitHub Repository URL detection
   if (url.includes('github.com') || githubContext) {
     const repoMatch = url.match(/github\.com\/([^\/]+)\/([^\/]+)/);
@@ -287,6 +315,7 @@ function extractDocumentIntelligently(options: {
     return {
       detectedType: 'github_repository',
       detectedModule: 'project',
+      shouldAddToPortfolio: true,
       confidence: 0.95,
       data: {
         title: cleanTitle,
@@ -333,25 +362,26 @@ function extractDocumentIntelligently(options: {
     return {
       detectedType: 'marksheet',
       detectedModule: 'education',
+      shouldAddToPortfolio: true,
       confidence: 0.94,
       data: {
-        institution: 'Government Engineering College / AKU',
+        institution: 'Arka Jain University',
         degree: 'B.Tech in Computer Science and Engineering',
         branch: 'Computer Science and Engineering',
-        passingYear: '2026',
+        passingYear: '2029',
         percentage,
         totalMarks: 750,
         obtainedMarks: Math.round(750 * (percentage / 100)),
         sgpa,
         semesterNumber: semNum,
-        resultDeclarationDate: '24 July 2024',
+        resultDeclarationDate: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' }),
         qualificationTitle: `B.Tech CSE - Semester ${semNum}`,
         standard: 'Undergraduate',
-        board: 'Aryabhatta Knowledge University (AKU)',
-        location: 'Patna, Bihar',
+        board: 'Arka Jain University',
+        location: 'Jharkhand, India',
         highlights: [
           `Semester ${semNum} Distinction achieved with SGPA ${sgpa}`,
-          'Consistent top-percentile academic standing in engineering core courses',
+          'Consistent academic standing in engineering core courses',
           'Comprehensive practical lab assessments and theoretical credits cleared'
         ]
       },
@@ -371,7 +401,8 @@ function extractDocumentIntelligently(options: {
                  combinedSearch.includes('credential') ||
                  combinedSearch.includes('badge') ||
                  combinedSearch.includes('course') ||
-                 combinedSearch.includes('awarded');
+                 combinedSearch.includes('awarded') ||
+                 routeHint === 'certificate';
 
   if (isCert) {
     let issuer = 'Accredited Technical Institute';
@@ -396,45 +427,63 @@ function extractDocumentIntelligently(options: {
       if (clean.length > 3) title = clean.replace(/\b\w/g, c => c.toUpperCase());
     }
 
-    const credId = `ID-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+    const credMatch =
+      combinedSearch.match(/\b(NPTEL\d{2}[A-Z0-9]{8,20})\b/i) ||
+      combinedSearch.match(/(?:credential|certificate|verification|id|code)\s*[:#-]?\s*([A-Z0-9-]{6,28})/i);
+    const credId = credMatch ? credMatch[1].toUpperCase() : '';
 
     return {
       detectedType: 'certificate',
       detectedModule: 'certificate',
+      shouldAddToPortfolio: true,
       confidence: 0.93,
       data: {
         title,
         issuer,
-        issueDate: '2024-05-15',
+        issueDate: new Date().toISOString().split('T')[0],
         credentialId: credId,
         credentialUrl: '',
-        category: 'Computer Science',
-        skills: ['Software Engineering', 'Technical Architecture', 'Data Structures & Algorithms'],
+        category: 'Web & Software Development',
+        skills: ['Software Engineering', 'Technical Architecture', 'Problem Solving'],
         description: `Verified certificate awarded by ${issuer} demonstrating validated practical competencies and technical mastery.`
       },
       suggestion: `Certificate detected from ${issuer}. Auto-filled metadata and ready for saving.`
     };
   }
 
-  // 4. Resume / CV / Profile settings detection
+  // 4. Profile Photo detection
+  if (/\b(headshot|profile_photo|profilepic|portrait|avatar)\b/i.test(combinedSearch)) {
+    return {
+      detectedType: 'profile_photo',
+      detectedModule: 'profile_photo',
+      shouldAddToPortfolio: true,
+      confidence: 0.91,
+      data: { updatedAsset: 'profilePhoto' },
+      suggestion: 'Detected a profile portrait photo. Ready to update Portfolio Settings.'
+    };
+  }
+
+  // 5. Resume / CV / Profile settings detection
   const isResume = combinedSearch.includes('resume') ||
                    combinedSearch.includes('curriculum vitae') ||
-                   combinedSearch.includes('cv') ||
+                   /\bcv\b/i.test(combinedSearch) ||
                    combinedSearch.includes('bio') ||
-                   combinedSearch.includes('experience summary');
+                   combinedSearch.includes('experience summary') ||
+                   routeHint === 'settings';
 
   if (isResume) {
     return {
       detectedType: 'resume',
       detectedModule: 'settings',
+      shouldAddToPortfolio: true,
       confidence: 0.91,
       data: {
         name: 'Nitesh Kumar',
         title: 'Full Stack Software Developer & AI Engineer',
         bio: 'Passionate Software Engineer skilled in React, Node.js, TypeScript, Cloud Architecture, and AI Integrations.',
-        location: 'Patna, Bihar, India',
+        location: 'Rohtas, Bihar, India',
         email: 'nitesh933438@gmail.com',
-        whatsapp: '+91 9334389204',
+        whatsapp: '+91 9334387983',
         aboutQuote: 'Building high-performance, intelligent software systems with clean craftsmanship.',
         experienceSummary: 'Full-stack software developer with proven experience building production-grade web applications, interactive dashboards, and AI-powered interfaces.'
       },
@@ -442,8 +491,25 @@ function extractDocumentIntelligently(options: {
     };
   }
 
-  // 5. Project Screenshot / Project info detection (Default for images and screenshots)
+  // 6. Explicit Project detection (require real project signals or project hint; never blindly force unknown files)
   const isImage = file && ['image/jpeg', 'image/png', 'image/webp'].includes(file.mimetype);
+  const hasProjectSignals =
+    Boolean(url) ||
+    /\b(project|app|dashboard|portal|platform|website|saas|repo|stack|react|node|firebase|vite|typescript|screenshot|ui|demo|frontend|backend)\b/i.test(combinedSearch) ||
+    routeHint === 'project';
+
+  if (!hasProjectSignals) {
+    return {
+      detectedType: 'unknown_document',
+      detectedModule: 'unknown',
+      shouldAddToPortfolio: false,
+      rejectionReason: 'Could not verify what portfolio category this belongs to from the file/text alone. Add a descriptive filename, paste short context text, or check if AI key is active.',
+      confidence: 0.42,
+      data: {},
+      suggestion: 'Unclear content — skipped auto-add so unrelated files do not enter your portfolio.'
+    };
+  }
+
   const cleanName = (file?.originalname || 'Project')
     .replace(/\.[^/.]+$/, '')
     .replace(/[-_]/g, ' ')
@@ -453,6 +519,7 @@ function extractDocumentIntelligently(options: {
   return {
     detectedType: isImage ? 'project_screenshot' : 'project',
     detectedModule: 'project',
+    shouldAddToPortfolio: true,
     confidence: 0.90,
     data: {
       title: cleanName.length > 2 ? cleanName : 'Modern Full-Stack Project',
@@ -467,7 +534,7 @@ function extractDocumentIntelligently(options: {
         'Responsive mobile-first user interface with smooth transitions'
       ],
       githubUrl: '',
-      liveDemoUrl: '',
+      liveDemoUrl: url && !url.includes('github.com') ? url : '',
       status: 'Completed'
     },
     suggestion: `Analyzed "${cleanName}". Auto-filled as a portfolio project ready for review.`
@@ -480,7 +547,7 @@ function extractDocumentIntelligently(options: {
 
 app.post('/api/ai/analyze-and-extract', verifyAdmin, upload.single('file'), async (req: any, res) => {
   try {
-    const { text, url } = req.body;
+    const { text, url, hintModule } = req.body;
     const file = req.file;
 
     if (file && !['application/pdf', 'image/jpeg', 'image/png', 'image/webp'].includes(file.mimetype)) {
@@ -511,17 +578,23 @@ app.post('/api/ai/analyze-and-extract', verifyAdmin, upload.single('file'), asyn
           Object.entries(extractionSchemas).map(([name, schema]) => [name, Object.keys(schema.properties || {})])
         );
 
-        let promptText = `Analyze the provided content to:
-1. Identify the document type (e.g., certificate, resume, marksheet, project screenshot).
-2. Select exactly one supported Admin Module: project, certificate, education, settings, experience, skills, or unknown.
-3. Extract only fields supported by the selected module schema. Exact field names by module: ${JSON.stringify(moduleFieldGuide)}.
-Return a JSON object in the format:
+        let promptText = `You are an automated Portfolio CMS classifier and structured data extractor for Nitesh Kumar's developer portfolio.
+Analyze the provided image, PDF, text, or URL carefully and decide:
+1. Is this genuinely portfolio-worthy (a Certificate, University/School Marksheet, Software Project or App Screenshot, Experience/Internship letter, Skills list, Resume/CV, or Developer Profile Photo)?
+2. Set "shouldAddToPortfolio": false and "detectedModule": "irrelevant" if the input is a private ID (Aadhaar, PAN, Passport), bank/UPI payment receipt, shopping bill/invoice, ticket, medical report, meme/wallpaper/unrelated personal photo, or unreadable noise. Clearly explain why in "rejectionReason".
+3. Otherwise set "shouldAddToPortfolio": true and pick exactly one supported Admin Module: project, certificate, education, settings, experience, skills, or profile_photo.
+4. Extract accurate fields matching the selected module schema: ${JSON.stringify(moduleFieldGuide)}.
+${hintModule ? `Context hint (user triggered scan from module): ${hintModule}` : ''}
+
+Return STRICT JSON matching:
 {
   "detectedType": "string",
-  "detectedModule": "string",
+  "detectedModule": "project | certificate | education | settings | experience | skills | profile_photo | irrelevant | unknown",
+  "shouldAddToPortfolio": boolean,
+  "rejectionReason": "string (empty if shouldAddToPortfolio is true)",
   "data": { ...extractedFields... },
-  "confidence": number (0-1),
-  "suggestion": "string"
+  "confidence": number (0 to 1),
+  "suggestion": "string summarizing what was found and what action to take"
 }`;
 
         if (text) promptText += `\n\nTEXT CONTENT:\n${text}`;
@@ -538,25 +611,27 @@ Return a JSON object in the format:
         }
 
         const response = await ai.models.generateContent({
-          model: process.env.GEMINI_MODEL || 'gemini-3.8-flash',
+          model: process.env.GEMINI_MODEL || 'gemini-4-hydrogen',
           contents: [{ role: 'user', parts }],
           config: { responseMimeType: "application/json" },
         });
 
         const rawText = response.text || '';
         const parsed = JSON.parse(rawText);
-        const allowedModules = new Set(['project', 'certificate', 'education', 'settings', 'experience', 'skills', 'unknown']);
+        const allowedModules = new Set(['project', 'certificate', 'education', 'settings', 'experience', 'skills', 'profile_photo', 'irrelevant', 'unknown']);
         const detectedModule = String(parsed.detectedModule || 'unknown').trim().toLowerCase();
 
-        if (allowedModules.has(detectedModule) && parsed.data && typeof parsed.data === 'object') {
+        if (allowedModules.has(detectedModule)) {
           return res.json({
             success: true,
             data: {
               ...parsed,
               detectedModule,
-              detectedType: String(parsed.detectedType || 'unknown'),
-              confidence: Math.max(0, Math.min(1, Number(parsed.confidence) || 0.9)),
-              data: parsed.data,
+              shouldAddToPortfolio: parsed.shouldAddToPortfolio !== false && detectedModule !== 'irrelevant' && detectedModule !== 'unknown',
+              rejectionReason: parsed.rejectionReason ? String(parsed.rejectionReason) : undefined,
+              detectedType: String(parsed.detectedType || detectedModule),
+              confidence: Math.max(0, Math.min(1, Number(parsed.confidence) || 0.85)),
+              data: parsed.data && typeof parsed.data === 'object' ? parsed.data : {},
             }
           });
         }
@@ -567,7 +642,7 @@ Return a JSON object in the format:
 
     // High-performance intelligent extractor engine fallback
     console.log('[AI Scanner] Running built-in intelligent document analysis engine');
-    const fallbackResult = extractDocumentIntelligently({ text, url, file, githubContext });
+    const fallbackResult = extractDocumentIntelligently({ text, url, file, githubContext, hintModule });
 
     return res.json({
       success: true,
@@ -609,7 +684,7 @@ Return a strict JSON object:
 }`;
 
         const response = await ai.models.generateContent({
-          model: process.env.GEMINI_MODEL || 'gemini-3.8-flash',
+          model: process.env.GEMINI_MODEL || 'gemini-4-hydrogen',
           contents: [{
             role: 'user',
             parts: [
@@ -673,16 +748,19 @@ Return a strict JSON object:
 // AI Assistant Chat Route
 app.post('/api/ai/chat', verifyAdmin, async (req: any, res) => {
   try {
-    const { message } = req.body;
+    const { message, portfolioSummary } = req.body;
     if (!message) return res.status(400).json({ error: 'Message is required' });
 
     if (ai) {
       try {
+        const liveContextBlock = portfolioSummary
+          ? `\nLive Portfolio Metrics Snapshot (read-only context from client): ${JSON.stringify(portfolioSummary)}`
+          : '';
         const systemInstruction = `You are the intelligent AI Assistant for Nitesh Kumar's Portfolio Admin CMS.
-You help the administrator understand the CMS and draft or improve portfolio content. You do not have direct database or storage write access in this chat endpoint. Never claim that you have saved, edited, deleted, published, or inspected live Firestore records. Give clear instructions or draft content for the administrator to review and apply in the relevant manager. Be concise, helpful, professional, and knowledgeable about full-stack development, MERN, AI, and portfolio content management.`;
+You help the administrator understand live counts, scan rules, and draft or improve portfolio content. Never claim that you have saved, edited, deleted, or modified Firestore directly from chat. Be concise, accurate, and practical.${liveContextBlock}`;
 
         const response = await ai.models.generateContent({
-          model: process.env.GEMINI_MODEL || 'gemini-3.8-flash',
+          model: process.env.GEMINI_MODEL || 'gemini-4-hydrogen',
           contents: [{ role: 'user', parts: [{ text: `${systemInstruction}\n\nUser Question: ${message}` }] }],
         });
 
@@ -721,8 +799,16 @@ You help the administrator understand the CMS and draft or improve portfolio con
 // AI Description Generation Route for Projects & Certificates
 app.post('/api/ai/generate-description', verifyAdmin, async (req: any, res) => {
   try {
-    const { type, context } = req.body;
-    if (!type || !context) return res.status(400).json({ error: 'Type and context are required' });
+    const body = req.body || {};
+    const type = body.type || 'project';
+    const context = body.context || (body.title ? {
+      title: body.title,
+      category: body.category || 'Full-Stack Development',
+      techStack: Array.isArray(body.techStack) ? body.techStack : []
+    } : null);
+    if (!context || (!context.title && Object.keys(context).length === 0)) {
+      return res.status(400).json({ error: 'Project title or context is required' });
+    }
 
     if (ai) {
       try {
@@ -740,7 +826,7 @@ Return a strict JSON object with:
 }`;
 
         const response = await ai.models.generateContent({
-          model: process.env.GEMINI_MODEL || 'gemini-3.8-flash',
+          model: process.env.GEMINI_MODEL || 'gemini-4-hydrogen',
           contents: [{ role: 'user', parts: [{ text: promptText }] }],
           config: { responseMimeType: "application/json" },
         });

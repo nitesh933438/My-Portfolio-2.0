@@ -4,6 +4,7 @@ import { Github, Linkedin, MessageSquare, ArrowRight, Download, Code, Sparkles, 
 import { SOCIAL_LINKS } from '../data/portfolio';
 import { usePortfolio } from '../context/PortfolioContext';
 import { resolveAssetUrl } from '../services/supabaseStorage';
+import { getProjectMetrics, getCertificateMetrics } from '../utils/portfolioMetrics';
 
 interface HeroProps {
   onOpenResume: () => void;
@@ -11,6 +12,8 @@ interface HeroProps {
 
 export const Hero: React.FC<HeroProps> = ({ onOpenResume }) => {
   const { settings, university, projects, certificates } = usePortfolio();
+  const projectMetrics = getProjectMetrics(projects);
+  const certMetrics = getCertificateMetrics(certificates);
   const githubUrl = settings.github || SOCIAL_LINKS.find(s => s.platform === 'GitHub')?.url || '#';
   const linkedinUrl = settings.linkedin || SOCIAL_LINKS.find(s => s.platform === 'LinkedIn')?.url || '#';
   const whatsappDigits = (settings.whatsapp || '').replace(/[^0-9]/g, '') || '919334387983';
@@ -77,7 +80,7 @@ export const Hero: React.FC<HeroProps> = ({ onOpenResume }) => {
                 onClick={() => document.getElementById('certifications')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
                 className="inline-flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50/70 dark:bg-indigo-950/40 text-indigo-700 dark:text-cyan-300 font-semibold text-xs sm:text-sm hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-all active:scale-95 whitespace-nowrap shadow-xs min-h-[44px] cursor-pointer"
               >
-                <span>{certificates.length}+ Certifications</span>
+                <span>{certMetrics.published.length}+ Certifications</span>
               </button>
 
               <button
@@ -156,7 +159,7 @@ export const Hero: React.FC<HeroProps> = ({ onOpenResume }) => {
                   <Code className="w-3.5 h-3.5 sm:w-4 sm:h-4 md:w-4.5 md:h-4.5" />
                 </div>
                 <div>
-                  <div className="text-[10px] sm:text-[11px] md:text-xs font-semibold text-slate-900 dark:text-white">{projects.length}+ Projects</div>
+                  <div className="text-[10px] sm:text-[11px] md:text-xs font-semibold text-slate-900 dark:text-white">{projectMetrics.active.length}+ Projects</div>
                   <div className="text-[9px] sm:text-[10px] md:text-[11px] text-slate-500 dark:text-slate-400">Full-Stack & AI</div>
                 </div>
               </div>
@@ -178,7 +181,7 @@ export const Hero: React.FC<HeroProps> = ({ onOpenResume }) => {
             <div className="text-[9px] sm:text-xs lg:text-sm text-slate-500 dark:text-slate-400 mt-0.5 sm:mt-1 uppercase tracking-wider font-semibold">Education</div>
           </div>
           <div className="p-3 sm:p-4 rounded-xl sm:rounded-2xl bg-white dark:bg-slate-900/50 border border-slate-200/80 dark:border-slate-800/80 shadow-sm">
-            <div className="text-lg sm:text-2xl lg:text-3xl font-extrabold text-indigo-600 dark:text-indigo-400 tabular-nums">{projects.length}+</div>
+            <div className="text-lg sm:text-2xl lg:text-3xl font-extrabold text-indigo-600 dark:text-indigo-400 tabular-nums">{projectMetrics.active.length}+</div>
             <div className="text-[9px] sm:text-xs lg:text-sm text-slate-500 dark:text-slate-400 mt-0.5 sm:mt-1 uppercase tracking-wider font-semibold">Projects</div>
           </div>
           <div className="p-3 sm:p-4 rounded-xl sm:rounded-2xl bg-white dark:bg-slate-900/50 border border-slate-200/80 dark:border-slate-800/80 shadow-sm">

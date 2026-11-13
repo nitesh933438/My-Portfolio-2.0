@@ -95,10 +95,23 @@ export const SettingsManager: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (pendingResult && (pendingResult.detectedModule === 'settings' || pendingResult.detectedModule === 'profile')) {
+    if (pendingResult && (pendingResult.detectedModule === 'settings' || pendingResult.detectedModule === 'profile' || pendingResult.detectedModule === 'profile_photo')) {
       handleAIExtractedData(pendingResult);
-      if (pendingResult.sourceFile && pendingResult.sourceFile.type === 'application/pdf') {
-        setPendingResumeFile(pendingResult.sourceFile);
+      if (pendingResult.sourceFile) {
+        if (pendingResult.sourceFile.type === 'application/pdf') {
+          setPendingResumeFile(pendingResult.sourceFile);
+        } else if (pendingResult.sourceFile.type.startsWith('image/') && isUserAdmin(auth.currentUser)) {
+          const scannedImg = pendingResult.sourceFile;
+          setUploadingPhoto(true);
+          (auth.currentUser?.getIdToken() || Promise.resolve(''))
+            .then((token) => uploadFileProxy(scannedImg, 'profile', token || ''))
+            .then((res) => {
+              handleChange('profilePhoto', res.url);
+              showToast('Profile photo uploaded & synced cleanly!', 'success');
+            })
+            .catch(() => {})
+            .finally(() => setUploadingPhoto(false));
+        }
       }
       setPendingResult(null);
     }

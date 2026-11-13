@@ -3,9 +3,11 @@ import { motion } from 'motion/react';
 import { Github, ExternalLink, GitBranch, GitCommit, Code, Star } from 'lucide-react';
 import { usePortfolio } from '../context/PortfolioContext';
 import { ScrollReveal } from './ScrollReveal';
+import { getProjectMetrics } from '../utils/portfolioMetrics';
 
 export const GithubSection: React.FC = () => {
-  const { settings } = usePortfolio();
+  const { settings, projects } = usePortfolio();
+  const { githubRepoCount } = getProjectMetrics(projects);
   const githubUser = (settings.github || '').replace(/\/+$/, '').split('/').pop() || 'nitesh933438';
   return (
     <section className="py-20 bg-slate-50 dark:bg-slate-950 border-t border-slate-200 dark:border-slate-800 overflow-hidden">
@@ -35,7 +37,7 @@ export const GithubSection: React.FC = () => {
             <div className="flex flex-wrap gap-6 pt-2 text-xs sm:text-sm font-bold uppercase tracking-wider text-slate-400">
               <div className="flex items-center gap-2">
                 <GitBranch className="w-4 h-4 text-indigo-400" />
-                <span>8+ Repositories</span>
+                <span>{githubRepoCount}+ Public Repositories</span>
               </div>
               <div className="flex items-center gap-2">
                 <Code className="w-4 h-4 text-indigo-400" />

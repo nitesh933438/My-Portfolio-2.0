@@ -138,32 +138,83 @@ export const ProjectsManager: React.FC = () => {
 
   // Listen for AI Scanner Auto-fill results
   useEffect(() => {
-    if (pendingResult && pendingResult.detectedModule === 'project') {
-      const { data } = pendingResult;
-      const newProj: Project = {
-        id: '',
-        slug: (data.title || 'untitled').toLowerCase().replace(/[^a-z0-9]+/g, '-'),
-        title: data.title || '',
-        category: data.category || 'Full-Stack Development',
-        shortDescription: data.shortDescription || '',
-        detailedDescription: data.detailedDescription || data.fullDescription || '',
-        techStack: Array.isArray(data.techStack) ? data.techStack : ['React', 'TypeScript'],
-        keyFeatures: Array.isArray(data.keyFeatures) ? data.keyFeatures : [],
-        githubUrl: data.githubUrl || '',
-        liveDemoUrl: data.liveDemoUrl || '',
-        featured: false,
-        status: 'Completed',
-        displayOrder: projects.length + 1,
-        mainScreenshot: '',
-        additionalScreenshots: []
-      };
-      setEditingProject(newProj);
-      setTechStackInput(newProj.techStack.join(', '));
-      setKeyFeaturesInput(newProj.keyFeatures.join('\n'));
-      showToast('AI Scanner auto-filled new project details!', 'info');
-      setPendingResult(null);
+    if (!pendingResult || pendingResult.detectedModule !== 'project') return;
+    const { data, sourceFile, matchedId } = pendingResult;
+    const matchedExisting = matchedId ? projects.find((p) => p.id === matchedId) : undefined;
+
+    const baseProject: Project = matchedExisting
+      ? {
+          ...matchedExisting,
+          techStack: Array.from(
+            new Set([
+              ...(matchedExisting.techStack || []),
+              ...(Array.isArray(data.techStack) ? data.techStack : []),
+            ])
+          ),
+          githubUrl: matchedExisting.githubUrl || data.githubUrl || '',
+          liveDemoUrl: matchedExisting.liveDemoUrl || data.liveDemoUrl || '',
+          shortDescription: matchedExisting.shortDescription || data.shortDescription || '',
+          detailedDescription:
+            matchedExisting.detailedDescription || data.detailedDescription || data.fullDescription || '',
+          keyFeatures: matchedExisting.keyFeatures?.length
+            ? matchedExisting.keyFeatures
+            : Array.isArray(data.keyFeatures)
+            ? data.keyFeatures
+            : [],
+        }
+      : {
+          id: '',
+          slug: (data.title || 'untitled').toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+          title: data.title || '',
+          category: data.category || 'Full-Stack Development',
+          shortDescription: data.shortDescription || '',
+          detailedDescription: data.detailedDescription || data.fullDescription || '',
+          techStack: Array.isArray(data.techStack) ? data.techStack : ['React', 'TypeScript'],
+          keyFeatures: Array.isArray(data.keyFeatures) ? data.keyFeatures : [],
+          githubUrl: data.githubUrl || '',
+          liveDemoUrl: data.liveDemoUrl || '',
+          featured: false,
+          status: 'Completed',
+          displayOrder: projects.length + 1,
+          mainScreenshot: '',
+          additionalScreenshots: [],
+        };
+
+    setEditingProject(baseProject);
+    setTechStackInput(baseProject.techStack.join(', '));
+    setKeyFeaturesInput(baseProject.keyFeatures.join('\n'));
+    showToast(
+      matchedExisting
+        ? `Loaded existing project "${matchedExisting.title}" for update!`
+        : 'AI Scanner auto-filled new project details!',
+      'info'
+    );
+
+    if (sourceFile && sourceFile.type.startsWith('image/')) {
+      setUploadStatus('Uploading scanned screenshot...');
+      (auth.currentUser?.getIdToken() || Promise.resolve(''))
+        .then((token) => uploadFileProxy(sourceFile, 'projects', token || ''))
+        .then((res) => {
+          setEditingProject((curr) =>
+            curr
+              ? {
+                  ...curr,
+                  mainScreenshot: curr.mainScreenshot || res.url,
+                  additionalScreenshots:
+                    curr.mainScreenshot && curr.mainScreenshot !== res.url
+                      ? Array.from(new Set([...(curr.additionalScreenshots || []), res.url]))
+                      : curr.additionalScreenshots || [],
+                }
+              : curr
+          );
+          showToast('Scanned image uploaded & attached to project!', 'success');
+        })
+        .catch(() => {})
+        .finally(() => setUploadStatus(null));
     }
-  }, [pendingResult, projects.length, showToast, setPendingResult]);
+
+    setPendingResult(null);
+  }, [pendingResult, projects, showToast, setPendingResult]);
 
   const orderedProjects = [...projects].sort((a, b) => (a.displayOrder ?? 9999) - (b.displayOrder ?? 9999));
 

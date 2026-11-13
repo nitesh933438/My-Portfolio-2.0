@@ -1,11 +1,16 @@
 import React, { createContext, useContext, useState } from 'react';
+import type { ScanAction } from '../utils/scannerDecisions';
 
-interface AIResult {
+export interface AIResult {
   detectedModule: string;
   detectedType?: string;
   sourceFile?: File;
   data: any;
   confidence: number;
+  action?: ScanAction;
+  matchedId?: string;
+  matchedLabel?: string;
+  reason?: string;
 }
 
 interface AIScannerContextType {
