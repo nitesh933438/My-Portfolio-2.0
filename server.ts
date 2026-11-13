@@ -11,6 +11,14 @@ import { createClient } from '@supabase/supabase-js';
 import { initializeApp, getApps } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { GoogleGenAI, Type } from '@google/genai';
+import sharp from 'sharp';
+import { extractText } from 'unpdf';
+import { createWorker } from 'tesseract.js';
+import {
+  parseDocumentContent,
+  GitHubRepoContextData,
+  WebPageContextData,
+} from './src/utils/documentParser';
 
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
@@ -121,14 +129,132 @@ const verifyAdmin = async (req: any, res: any, next: any) => {
 };
 
 // ---------------------------------------------------------------------------
-// 1. AI Extraction Logic & Intelligent Fallback Engine
+// 1. AI Extraction Logic, Real OCR / PDF Parsing & Intelligent Engine
 // ---------------------------------------------------------------------------
 
-async function fetchPublicGitHubRepositoryContext(rawUrl: string): Promise<string> {
+let ocrWorkerPromise: Promise<any> | null = null;
+let ocrQueue: Promise<any> = Promise.resolve();
+
+async function getOcrWorker() {
+  if (!ocrWorkerPromise) {
+    ocrWorkerPromise = createWorker('eng').catch((err) => {
+      ocrWorkerPromise = null;
+      throw err;
+    });
+  }
+  return ocrWorkerPromise;
+}
+
+async function runOcrSerialized(imageBuffer: Buffer): Promise<string> {
+  const task = async () => {
+    const worker = await getOcrWorker();
+    const timeoutPromise = new Promise<string>((_, reject) =>
+      setTimeout(() => reject(new Error('OCR timeout')), 20000)
+    );
+    const recognizePromise = worker.recognize(imageBuffer).then((res: any) => String(res?.data?.text || ''));
+    return Promise.race([recognizePromise, timeoutPromise]);
+  };
+
+  const resultPromise = ocrQueue.then(task, task);
+  ocrQueue = resultPromise.catch(() => '');
+  return resultPromise;
+}
+
+async function extractTextFromBuffer(buffer: Buffer, mimeType: string): Promise<string> {
+  if (!buffer || buffer.length === 0) return '';
+  const type = String(mimeType || '').toLowerCase();
+
+  if (type === 'application/pdf') {
+    try {
+      const pdfTask = extractText(new Uint8Array(buffer), { mergePages: true });
+      const timeoutTask = new Promise<any>((_, reject) =>
+        setTimeout(() => reject(new Error('PDF extract timeout')), 15000)
+      );
+      const result: any = await Promise.race([pdfTask, timeoutTask]);
+      return String(result?.text || '').trim().slice(0, 25000);
+    } catch (pdfErr: any) {
+      console.warn('[Scanner] PDF text extraction warning:', pdfErr?.message || pdfErr);
+      return '';
+    }
+  }
+
+  if (type.startsWith('image/')) {
+    try {
+      const preprocessed = await sharp(buffer)
+        .rotate()
+        .resize({ width: 1800, withoutEnlargement: false })
+        .grayscale()
+        .normalize()
+        .png()
+        .toBuffer();
+      const text = await runOcrSerialized(preprocessed);
+      return text.trim().slice(0, 15000);
+    } catch (ocrErr: any) {
+      console.warn('[Scanner] Image OCR warning:', ocrErr?.message || ocrErr);
+      return '';
+    }
+  }
+
+  if (type.startsWith('text/') || type === 'application/json') {
+    return buffer.toString('utf8', 0, Math.min(buffer.length, 30000)).trim();
+  }
+
+  return '';
+}
+
+function parseJsonSafe(rawText: string): Record<string, any> | null {
+  const cleaned = String(rawText || '').trim();
+  if (!cleaned) return null;
+  try {
+    return JSON.parse(cleaned);
+  } catch {
+    const fenced = cleaned.match(/```(?:json)?\s*([\s\S]*?)```/i);
+    const candidate = fenced ? fenced[1].trim() : cleaned;
+    const firstBrace = candidate.indexOf('{');
+    const lastBrace = candidate.lastIndexOf('}');
+    if (firstBrace >= 0 && lastBrace > firstBrace) {
+      try {
+        return JSON.parse(candidate.slice(firstBrace, lastBrace + 1));
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  }
+}
+
+function isSafePublicHttpUrl(rawUrl: string): boolean {
+  try {
+    const parsed = new URL(rawUrl);
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return false;
+    const host = parsed.hostname.toLowerCase();
+    if (
+      host === 'localhost' ||
+      host.endsWith('.local') ||
+      host.endsWith('.internal') ||
+      host === '::1' ||
+      /^127\./.test(host) ||
+      /^10\./.test(host) ||
+      /^192\.168\./.test(host) ||
+      /^169\.254\./.test(host) ||
+      /^172\.(1[6-9]|2\d|3[0-1])\./.test(host)
+    ) {
+      return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function fetchPublicGitHubRepositoryData(rawUrl: string): Promise<{
+  promptContext: string;
+  repoData: GitHubRepoContextData;
+}> {
   let parsed: URL;
   try { parsed = new URL(rawUrl); } catch { throw new Error('Please provide a valid HTTPS GitHub repository URL.'); }
   if (parsed.protocol !== 'https:' || parsed.hostname.toLowerCase() !== 'github.com') {
-    throw new Error('URL analysis currently supports public GitHub repository URLs only.');
+    throw new Error('Not a GitHub repository URL.');
   }
   const segments = parsed.pathname.split('/').filter(Boolean);
   if (segments.length < 2) throw new Error('Please provide a GitHub repository URL in the format https://github.com/owner/repository.');
@@ -151,8 +277,8 @@ async function fetchPublicGitHubRepositoryContext(rawUrl: string): Promise<strin
   } catch (readmeErr) {
     console.warn('Could not fetch readme:', readmeErr);
   }
-  return [
-    `Repository: ${repo.full_name || `${owner}/${repository}`}`,
+  const promptContext = [
+    `Repository: ${repo.full_name || `${owner}/${repoName}`}`,
     `Description: ${repo.description || 'Not provided'}`,
     `Homepage: ${repo.homepage || 'Not provided'}`,
     `Default branch: ${repo.default_branch || 'Unknown'}`,
@@ -161,6 +287,53 @@ async function fetchPublicGitHubRepositoryContext(rawUrl: string): Promise<strin
     `Stars: ${repo.stargazers_count ?? 0}`,
     `README:\n${readmeText || 'No README available.'}`
   ].join('\n\n');
+
+  return {
+    promptContext,
+    repoData: {
+      name: repo.name || repoName,
+      fullName: repo.full_name || `${owner}/${repoName}`,
+      description: repo.description || '',
+      homepage: repo.homepage || '',
+      language: repo.language || '',
+      topics: Array.isArray(repo.topics) ? repo.topics : [],
+      readmeText,
+      htmlUrl: repo.html_url || rawUrl,
+    },
+  };
+}
+
+async function fetchPublicWebPageMetadata(rawUrl: string): Promise<WebPageContextData | null> {
+  if (!isSafePublicHttpUrl(rawUrl)) return null;
+  try {
+    const resp = await fetch(rawUrl, {
+      headers: { 'User-Agent': 'Portfolio-CMS-AI-Scanner/1.0', Accept: 'text/html,application/xhtml+xml' },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!resp.ok) return null;
+    const html = (await resp.text()).slice(0, 160000);
+    const titleMatch =
+      html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i) ||
+      html.match(/<title[^>]*>([^<]+)<\/title>/i);
+    const descMatch =
+      html.match(/<meta[^>]+(?:name|property)=["'](?:description|og:description)["'][^>]+content=["']([^"']+)["']/i);
+    const strippedBody = html
+      .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+      .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 2000);
+
+    return {
+      url: rawUrl,
+      title: titleMatch ? titleMatch[1].trim() : undefined,
+      description: descMatch ? descMatch[1].trim() : undefined,
+      textSnippet: strippedBody,
+    };
+  } catch {
+    return null;
+  }
 }
 
 const extractionSchemas: Record<string, any> = {
@@ -559,16 +732,47 @@ app.post('/api/ai/analyze-and-extract', verifyAdmin, upload.single('file'), asyn
     }
 
     if (!file && !text && !url) {
-      return res.status(400).json({ success: false, error: 'Upload a file, paste text, or provide a public GitHub repository URL.' });
+      return res.status(400).json({ success: false, error: 'Upload a file, paste text, or provide a public GitHub or web URL.' });
     }
 
     let githubContext = '';
+    let githubRepoData: GitHubRepoContextData | undefined;
+    let webPageData: WebPageContextData | undefined;
+
     if (url) {
-      try {
-        githubContext = await fetchPublicGitHubRepositoryContext(String(url));
-      } catch (ghErr: any) {
-        console.warn('GitHub repo fetch note:', ghErr.message);
+      const trimmedUrl = String(url).trim();
+      if (/github\.com\//i.test(trimmedUrl)) {
+        try {
+          const gh = await fetchPublicGitHubRepositoryData(trimmedUrl);
+          githubContext = gh.promptContext;
+          githubRepoData = gh.repoData;
+        } catch (ghErr: any) {
+          console.warn('GitHub repo fetch note:', ghErr.message);
+        }
+      } else {
+        const page = await fetchPublicWebPageMetadata(trimmedUrl);
+        if (page) webPageData = page;
       }
+    }
+
+    // Real OCR (images) and PDF text extraction up front
+    const extractedFileText = file ? await extractTextFromBuffer(file.buffer, file.mimetype) : '';
+
+    // Deterministic intelligent parse result (also used to merge missing fields or run offline/without Gemini key)
+    const intelligentParsed = parseDocumentContent({
+      fileName: file?.originalname || '',
+      mimeType: file?.mimetype || '',
+      extractedText: extractedFileText,
+      pastedText: text ? String(text) : '',
+      url: url ? String(url).trim() : '',
+      hintModule: hintModule ? String(hintModule) : '',
+      githubRepo: githubRepoData,
+      webPage: webPageData,
+    });
+
+    // Immediately block confirmed private IDs / financial receipts / invoices without exposing files externally
+    if (intelligentParsed.detectedModule === 'irrelevant') {
+      return res.json({ success: true, data: intelligentParsed });
     }
 
     // Try Gemini if configured
@@ -579,12 +783,12 @@ app.post('/api/ai/analyze-and-extract', verifyAdmin, upload.single('file'), asyn
         );
 
         let promptText = `You are an automated Portfolio CMS classifier and structured data extractor for Nitesh Kumar's developer portfolio.
-Analyze the provided image, PDF, text, or URL carefully and decide:
+Analyze the provided image, PDF, extracted OCR text, pasted text, or URL carefully and decide:
 1. Is this genuinely portfolio-worthy (a Certificate, University/School Marksheet, Software Project or App Screenshot, Experience/Internship letter, Skills list, Resume/CV, or Developer Profile Photo)?
 2. Set "shouldAddToPortfolio": false and "detectedModule": "irrelevant" if the input is a private ID (Aadhaar, PAN, Passport), bank/UPI payment receipt, shopping bill/invoice, ticket, medical report, meme/wallpaper/unrelated personal photo, or unreadable noise. Clearly explain why in "rejectionReason".
 3. Otherwise set "shouldAddToPortfolio": true and pick exactly one supported Admin Module: project, certificate, education, settings, experience, skills, or profile_photo.
 4. Extract accurate fields matching the selected module schema: ${JSON.stringify(moduleFieldGuide)}.
-${hintModule ? `Context hint (user triggered scan from module): ${hintModule}` : ''}
+${hintModule && String(hintModule).toLowerCase() !== 'auto' ? `Explicit user target module override: ${hintModule}` : ''}
 
 Return STRICT JSON matching:
 {
@@ -597,8 +801,12 @@ Return STRICT JSON matching:
   "suggestion": "string summarizing what was found and what action to take"
 }`;
 
-        if (text) promptText += `\n\nTEXT CONTENT:\n${text}`;
+        if (text) promptText += `\n\nPASTED TEXT CONTENT:\n${text}`;
+        if (extractedFileText) promptText += `\n\nEXTRACTED FILE TEXT (OCR / PDF):\n${extractedFileText}`;
         if (githubContext) promptText += `\n\nGITHUB REPOSITORY CONTENT:\n${githubContext}`;
+        if (webPageData) {
+          promptText += `\n\nWEB PAGE METADATA:\nURL: ${webPageData.url}\nTitle: ${webPageData.title || ''}\nDescription: ${webPageData.description || ''}\nContent: ${webPageData.textSnippet || ''}`;
+        }
 
         const parts: any[] = [{ text: promptText }];
         if (file) {
@@ -613,15 +821,20 @@ Return STRICT JSON matching:
         const response = await ai.models.generateContent({
           model: process.env.GEMINI_MODEL || 'gemini-4-hydrogen',
           contents: [{ role: 'user', parts }],
-          config: { responseMimeType: "application/json" },
+          config: { responseMimeType: 'application/json' },
         });
 
-        const rawText = response.text || '';
-        const parsed = JSON.parse(rawText);
+        const parsed = parseJsonSafe(response.text || '');
         const allowedModules = new Set(['project', 'certificate', 'education', 'settings', 'experience', 'skills', 'profile_photo', 'irrelevant', 'unknown']);
-        const detectedModule = String(parsed.detectedModule || 'unknown').trim().toLowerCase();
+        const detectedModule = String(parsed?.detectedModule || 'unknown').trim().toLowerCase();
 
-        if (allowedModules.has(detectedModule)) {
+        if (parsed && allowedModules.has(detectedModule)) {
+          const geminiData = parsed.data && typeof parsed.data === 'object' ? parsed.data : {};
+          const mergedData =
+            detectedModule === intelligentParsed.detectedModule
+              ? { ...intelligentParsed.data, ...Object.fromEntries(Object.entries(geminiData).filter(([, v]) => v !== '' && v !== null && v !== undefined)) }
+              : geminiData;
+
           return res.json({
             success: true,
             data: {
@@ -631,22 +844,19 @@ Return STRICT JSON matching:
               rejectionReason: parsed.rejectionReason ? String(parsed.rejectionReason) : undefined,
               detectedType: String(parsed.detectedType || detectedModule),
               confidence: Math.max(0, Math.min(1, Number(parsed.confidence) || 0.85)),
-              data: parsed.data && typeof parsed.data === 'object' ? parsed.data : {},
+              data: mergedData,
             }
           });
         }
       } catch (geminiErr: any) {
-        console.warn('[AI Scanner] Gemini attempt failed, using intelligent fallback analyzer:', geminiErr.message);
+        console.warn('[AI Scanner] Gemini attempt failed, using OCR + documentParser result:', geminiErr.message);
       }
     }
 
-    // High-performance intelligent extractor engine fallback
-    console.log('[AI Scanner] Running built-in intelligent document analysis engine');
-    const fallbackResult = extractDocumentIntelligently({ text, url, file, githubContext, hintModule });
-
+    console.log(`[AI Scanner] Analyzed via OCR/PDF + documentParser -> module=${intelligentParsed.detectedModule} (ocrChars=${extractedFileText.length})`);
     return res.json({
       success: true,
-      data: fallbackResult
+      data: intelligentParsed
     });
 
   } catch (error: any) {
@@ -663,19 +873,25 @@ app.post('/api/academic/extract-marksheet', async (req: any, res) => {
       return res.status(400).json({ success: false, error: 'Marksheet file or filename required.' });
     }
 
+    const cleanBase64 = fileBase64 ? String(fileBase64).replace(/^data:[^;]+;base64,/, '') : '';
+    const fileBuffer = cleanBase64 ? Buffer.from(cleanBase64, 'base64') : null;
+    const extractedMarksheetText = fileBuffer
+      ? await extractTextFromBuffer(fileBuffer, String(mimeType || 'application/pdf'))
+      : '';
+
     // 1. Try Gemini Multimodal if available
-    if (ai && fileBase64) {
+    if (ai && cleanBase64) {
       try {
-        const cleanBase64 = fileBase64.replace(/^data:[^;]+;base64,/, '');
-        const promptText = `You are an expert academic transcript parser. Extract academic details from this Indian engineering marksheet.
+        const promptText = `You are an expert academic transcript parser. Extract academic details from this Indian engineering or school marksheet.
+${extractedMarksheetText ? `Extracted OCR/PDF text:\n${extractedMarksheetText}\n` : ''}
 Return a strict JSON object:
 {
-  "semesterNumber": number (1-8),
-  "sgpa": number (e.g. 8.74),
-  "officialCGPA": number or string,
+  "semesterNumber": number (1-8, or null for school 10th/12th),
+  "sgpa": number or null,
+  "officialCGPA": number or null,
   "resultDeclarationDate": string,
   "passFailStatus": "PASS" or "FAIL",
-  "academicSession": string (e.g. "2024–2025"),
+  "academicSession": string (e.g. "2025–2026"),
   "studentName": string,
   "registrationNumber": string,
   "rollNumber": string,
@@ -692,11 +908,11 @@ Return a strict JSON object:
               { inlineData: { data: cleanBase64, mimeType: mimeType || 'application/pdf' } }
             ]
           }],
-          config: { responseMimeType: "application/json" }
+          config: { responseMimeType: 'application/json' }
         });
 
-        const parsed = JSON.parse(response.text || '{}');
-        if (parsed.semesterNumber || parsed.sgpa) {
+        const parsed = parseJsonSafe(response.text || '');
+        if (parsed && (parsed.semesterNumber || parsed.sgpa !== undefined)) {
           return res.json({
             success: true,
             extractedData: parsed
@@ -707,33 +923,28 @@ Return a strict JSON object:
       }
     }
 
-    // 2. Intelligent Marksheet Extractor Fallback
-    const lowerName = String(fileName).toLowerCase();
-    let detectedSemester = 5;
-    const semMatch = lowerName.match(/sem(?:ester)?[_-]?\s*([1-8])/i) || lowerName.match(/([1-8])/);
-    if (semMatch) detectedSemester = parseInt(semMatch[1], 10);
+    // 2. Real OCR / PDF Marksheet Extractor
+    const parsedEdu = parseDocumentContent({
+      fileName: String(fileName),
+      mimeType: String(mimeType || 'application/pdf'),
+      extractedText: extractedMarksheetText,
+      hintModule: 'education',
+    });
 
-    let detectedSgpa = 8.65;
-    const sgpaMatch = lowerName.match(/([6789]\.[0-9]{1,2})/);
-    if (sgpaMatch) detectedSgpa = parseFloat(sgpaMatch[1]);
-
+    const d = parsedEdu.data || {};
     const extractedData = {
-      semesterNumber: detectedSemester,
-      sgpa: detectedSgpa,
-      officialCGPA: 8.52,
-      resultDeclarationDate: '24 July 2024',
-      passFailStatus: 'PASS',
-      academicSession: '2024–2025',
+      semesterNumber: d.semesterNumber ?? 1,
+      sgpa: d.sgpa ?? null,
+      officialCGPA: d.officialCGPA ?? null,
+      resultDeclarationDate: d.resultDeclarationDate || '',
+      passFailStatus: d.passFailStatus || 'PASS',
+      academicSession: '2025–2026',
       studentName: 'Nitesh Kumar',
-      registrationNumber: '22105128001',
-      rollNumber: '22105128001',
-      institution: 'Government Engineering College / AKU',
-      branch: 'Computer Science & Engineering',
-      creditsSecured: 22,
-      totalSubjects: 6
+      institution: d.institution || 'Arka Jain University',
+      branch: d.branch || 'Computer Science & Engineering',
     };
 
-    console.log(`[Marksheet AI] Successfully extracted details for Semester ${detectedSemester} (SGPA: ${detectedSgpa})`);
+    console.log(`[Marksheet AI] Extracted via OCR/PDF (${extractedMarksheetText.length} chars) -> Sem ${extractedData.semesterNumber}, SGPA: ${extractedData.sgpa ?? 'unread'}`);
     return res.json({
       success: true,
       extractedData

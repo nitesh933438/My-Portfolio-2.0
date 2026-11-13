@@ -280,11 +280,16 @@ export function evaluateScanDecision(params: {
 
     if (matched) {
       const hasNewAsset = Boolean(fileName) && (!matched.fileUrl || matched.fileUrl.includes('placeholder'));
+      const hasNewCredId = Boolean(data.credentialId && !matched.credentialId);
       const hasNewCredUrl = Boolean(data.credentialUrl && !matched.credentialUrl);
+      const hasNewDate = Boolean(data.issueDate && !matched.issueDate);
+      const hasNewSkills =
+        Array.isArray(data.skills) &&
+        data.skills.some((s: string) => !(matched.skills || []).some((m) => m.toLowerCase() === String(s).toLowerCase()));
       const hasBetterDesc = Boolean(data.description && String(data.description).length > String(matched.description || '').length + 20);
       const hasNewGrade = Boolean(data.grade && !matched.grade) || Boolean(data.score && !matched.score);
 
-      if (hasNewAsset || hasNewCredUrl || hasBetterDesc || hasNewGrade) {
+      if (hasNewAsset || hasNewCredId || hasNewCredUrl || hasNewDate || hasNewSkills || hasBetterDesc || hasNewGrade) {
         return {
           shouldAdd: true,
           action: 'update_existing',
@@ -331,25 +336,37 @@ export function evaluateScanDecision(params: {
   // 2. Project Duplicate / Merge Match
   if (detectedModule === 'project') {
     const existingProjects = portfolio.projects || [];
-    const incomingGh = normalizeUrlForMatch(data.githubUrl || url || '');
+    const incomingGh = normalizeUrlForMatch(data.githubUrl || (String(url).includes('github.com') ? url : '') || '');
+    const incomingLive = normalizeUrlForMatch(data.liveDemoUrl || (url && !String(url).includes('github.com') ? url : '') || '');
     const incomingTitleKey = normalizeMatchKey(data.title || '');
+    const incomingBaseTitleKey = incomingTitleKey.replace(/\s+demo$/, '').trim();
 
     const matched = existingProjects.find((p) => {
       const pGh = normalizeUrlForMatch(p.githubUrl || '');
       if (incomingGh && pGh && incomingGh === pGh) return true;
+      const pLive = normalizeUrlForMatch(p.liveDemoUrl || '');
+      if (incomingLive && pLive && incomingLive === pLive) return true;
       const pTitleKey = normalizeMatchKey(p.title || '');
       const pSlugKey = normalizeMatchKey(p.slug || '');
-      return Boolean(incomingTitleKey && (pTitleKey === incomingTitleKey || pSlugKey === incomingTitleKey));
+      if (incomingTitleKey && (pTitleKey === incomingTitleKey || pSlugKey === incomingTitleKey)) return true;
+      if (incomingBaseTitleKey && (!pGh || !incomingGh) && (pTitleKey === incomingBaseTitleKey || pSlugKey === incomingBaseTitleKey)) {
+        return true;
+      }
+      return false;
     });
 
     if (matched) {
       const hasNewImage = Boolean(fileName && mimeType.startsWith('image/'));
+      const hasNewGh = Boolean(data.githubUrl && !matched.githubUrl);
       const hasNewLive = Boolean(data.liveDemoUrl && !matched.liveDemoUrl);
       const hasMoreTech =
         Array.isArray(data.techStack) &&
         data.techStack.some((t: string) => !(matched.techStack || []).some((m) => m.toLowerCase() === String(t).toLowerCase()));
+      const hasBetterDesc =
+        Boolean(data.shortDescription && !matched.shortDescription) ||
+        Boolean(data.detailedDescription && String(data.detailedDescription).length > String(matched.detailedDescription || '').length + 40);
 
-      if (hasNewImage || hasNewLive || hasMoreTech) {
+      if (hasNewImage || hasNewGh || hasNewLive || hasMoreTech || hasBetterDesc) {
         return {
           shouldAdd: true,
           action: 'update_existing',
@@ -360,7 +377,7 @@ export function evaluateScanDecision(params: {
           matchedLabel: matched.title,
           reason: hasNewImage
             ? `Matched project "${matched.title}". Will attach this screenshot/cover and merge updated tech details without duplicating the project.`
-            : `Matched existing project "${matched.title}". Will enrich live link / tech stack without creating a duplicate.`,
+            : `Matched existing project "${matched.title}". Will enrich repo/live link and tech stack without creating a duplicate.`,
           normalizedData: data,
           suggestedStorageFolder: folder,
           warnings,
@@ -431,6 +448,10 @@ export function evaluateScanDecision(params: {
           };
         }
 
+        if (typeof data.percentage !== 'number' && typeof data.totalMarks !== 'number') {
+          warnings.push('Marks/percentage could not be read automatically — review and enter percentage manually before saving.');
+        }
+
         return {
           shouldAdd: true,
           action: 'update_existing',
@@ -452,9 +473,16 @@ export function evaluateScanDecision(params: {
     const existingSem = Number.isFinite(semNum)
       ? semesters.find((s) => s.semesterNumber === semNum)
       : undefined;
+    const incomingSgpa =
+      typeof data.sgpa === 'number' && !Number.isNaN(data.sgpa) && data.sgpa > 0 && data.sgpa <= 10
+        ? data.sgpa
+        : null;
+
+    if (incomingSgpa === null) {
+      warnings.push('SGPA could not be read clearly — click Review in Form to enter the exact SGPA manually.');
+    }
 
     if (existingSem) {
-      const incomingSgpa = typeof data.sgpa === 'number' ? data.sgpa : null;
       const sameSgpa =
         existingSem.isDeclared &&
         incomingSgpa !== null &&
@@ -485,7 +513,10 @@ export function evaluateScanDecision(params: {
         confidence,
         matchedId: `semester-${existingSem.semesterNumber}`,
         matchedLabel: `Semester ${existingSem.semesterNumber}`,
-        reason: `Will update Semester ${existingSem.semesterNumber} result${incomingSgpa !== null ? ` (SGPA ${incomingSgpa.toFixed(2)})` : ''} and recalculate academic overview.`,
+        reason:
+          incomingSgpa !== null
+            ? `Will update Semester ${existingSem.semesterNumber} result (SGPA ${incomingSgpa.toFixed(2)}) and recalculate academic overview.`
+            : `Detected Semester ${existingSem.semesterNumber} marksheet, but SGPA could not be read — click Review in Form to verify.`,
         normalizedData: data,
         suggestedStorageFolder: folder,
         warnings,
@@ -498,7 +529,10 @@ export function evaluateScanDecision(params: {
       detectedModule,
       detectedType,
       confidence,
-      reason: 'Academic record parsed and ready to sync into Education CMS.',
+      reason:
+        incomingSgpa !== null
+          ? `Academic record parsed (Sem ${Number.isFinite(semNum) ? semNum : '?'}, SGPA ${incomingSgpa.toFixed(2)}) and ready to sync.`
+          : 'Marksheet detected, but SGPA could not be read automatically — click Review in Form to confirm before publishing.',
       normalizedData: data,
       suggestedStorageFolder: folder,
       warnings,

@@ -251,3 +251,47 @@ test('normalizeScannerModule handles module aliases and filename hints cleanly',
   assert.equal(normalizeScannerModule('academic', 'marksheet'), 'education');
   assert.equal(normalizeScannerModule('profile_photo', 'headshot'), 'profile_photo');
 });
+
+test('matches existing project via liveDemoUrl and flags unread SGPA warning', () => {
+  const snapshotWithLive: PortfolioSnapshotForScan = {
+    ...snapshot,
+    projects: [
+      {
+        ...snapshot.projects![0],
+        liveDemoUrl: 'https://worksphere.demo.app',
+      },
+    ],
+  };
+
+  const projMatch = evaluateScanDecision({
+    raw: {
+      detectedModule: 'project',
+      detectedType: 'live_web_project',
+      confidence: 0.9,
+      data: {
+        title: 'WorkSphere Dashboard',
+        liveDemoUrl: 'https://www.worksphere.demo.app/',
+        techStack: ['React', 'Tailwind CSS'],
+      },
+    },
+    portfolio: snapshotWithLive,
+    url: 'https://worksphere.demo.app',
+  });
+  assert.equal(projMatch.action, 'update_existing');
+  assert.equal(projMatch.matchedId, 'proj-1');
+
+  const unreadSgpaDecision = evaluateScanDecision({
+    raw: {
+      detectedModule: 'education',
+      detectedType: 'University Semester Marksheet',
+      confidence: 0.72,
+      data: { semesterNumber: 3, status: 'PASS' },
+    },
+    portfolio: snapshot,
+    fileName: 'sem3_blurry.jpg',
+    mimeType: 'image/jpeg',
+  });
+  assert.equal(unreadSgpaDecision.detectedModule, 'education');
+  assert.ok(unreadSgpaDecision.warnings.some((w) => /SGPA/i.test(w)));
+});
+

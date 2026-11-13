@@ -111,14 +111,47 @@ export async function autoApplyScanDecision(params: {
     throw new Error('Admin sign-in required to auto-save changes to Firebase.');
   }
 
+  const data = decision.normalizedData || {};
+
+  // Guard Education auto-apply BEFORE uploading any storage files so we never publish PASS without real extracted grades
+  if (decision.detectedModule === 'education') {
+    const isSchool = Boolean(decision.matchedId && !decision.matchedId.startsWith('semester-'));
+    if (isSchool) {
+      const hasSchoolNumeric =
+        (typeof data.percentage === 'number' && !Number.isNaN(data.percentage)) ||
+        (typeof data.totalMarks === 'number' && !Number.isNaN(data.totalMarks));
+      if (!hasSchoolNumeric) {
+        return {
+          applied: false,
+          status: 'error',
+          message: 'Marks or percentage could not be read from this file. Click Review in Form to enter it manually.',
+          targetRoute: '/admin/education',
+          savedId: decision.matchedId,
+        };
+      }
+    } else {
+      const validSgpa =
+        typeof data.sgpa === 'number' && !Number.isNaN(data.sgpa) && data.sgpa > 0 && data.sgpa <= 10
+          ? data.sgpa
+          : null;
+      if (validSgpa === null) {
+        return {
+          applied: false,
+          status: 'error',
+          message: 'SGPA could not be read from this marksheet. Click Review in Form to enter exact SGPA manually.',
+          targetRoute: '/admin/education',
+          savedId: decision.matchedId,
+        };
+      }
+    }
+  }
+
   let uploadedUrl = '';
   if (file) {
     const idToken = (await auth.currentUser?.getIdToken().catch(() => '')) || '';
     const uploaded = await uploadFileProxy(file, decision.suggestedStorageFolder, idToken);
     uploadedUrl = uploaded.url;
   }
-
-  const data = decision.normalizedData || {};
 
   // 1. Certificate auto-create / auto-merge
   if (decision.detectedModule === 'certificate') {
@@ -289,7 +322,7 @@ export async function autoApplyScanDecision(params: {
     const requestedSem = Number(data.semesterNumber) || 1;
     const targetSem = uni?.semesters?.find((s) => s.semesterNumber === requestedSem) || uni?.semesters?.[0];
     if (!targetSem) throw new Error('Semester slot not found.');
-    const sgpaVal = typeof data.sgpa === 'number' ? data.sgpa : targetSem.sgpa ?? null;
+    const sgpaVal = Number(data.sgpa);
     await publishSemesterResult(
       {
         ...targetSem,
@@ -299,8 +332,8 @@ export async function autoApplyScanDecision(params: {
             targetSem.resultDeclarationDate ||
             new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
         ),
-        status: 'PASS',
-        statusLabel: 'Pass',
+        status: data.passFailStatus === 'FAIL' ? 'FAIL' : 'PASS',
+        statusLabel: data.passFailStatus === 'FAIL' ? 'Fail' : 'Pass',
         isDeclared: true,
       },
       {
@@ -313,7 +346,7 @@ export async function autoApplyScanDecision(params: {
     return {
       applied: true,
       status: 'updated',
-      message: `Published Semester ${targetSem.semesterNumber} result${sgpaVal !== null ? ` (SGPA ${sgpaVal})` : ''} & updated audit log.`,
+      message: `Published Semester ${targetSem.semesterNumber} result (SGPA ${sgpaVal}) & updated audit log.`,
       targetRoute: '/admin/education',
       savedId: `semester-${targetSem.semesterNumber}`,
     };

@@ -123,11 +123,41 @@ export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
       if (pendingResult.sourceFile) setFile(pendingResult.sourceFile);
       setPendingResult(null);
     }
-  }, [pendingResult]);
+  }, [pendingResult, items]);
 
   const handleAIExtractedData = (result: any) => {
     if (!result || !result.data) return;
     const data = result.data;
+    const matched = result.matchedId ? items.find((c) => c.id === result.matchedId) : undefined;
+
+    if (matched) {
+      setEditing(matched.id);
+      setForm(() => {
+        const merged = {
+          ...blank(),
+          ...matched,
+          title: matched.title || data.title || '',
+          issuer: matched.issuer || data.issuer || '',
+          category: matched.category || data.category || CERTIFICATE_CATEGORIES[0],
+          issueDate: matched.issueDate || data.issueDate || '',
+          credentialId: matched.credentialId || data.credentialId || '',
+          credentialUrl: matched.credentialUrl || data.credentialUrl || '',
+          skills: Array.from(new Set([...(matched.skills || []), ...(Array.isArray(data.skills) ? data.skills : [])])),
+          description:
+            data.description && String(data.description).length > String(matched.description || '').length
+              ? data.description
+              : matched.description || '',
+        };
+        if (!merged.credentialUrl && merged.credentialId) {
+          const autoUrl = detectVerificationUrl({ ...merged, id: matched.id } as PortfolioCertificate);
+          if (autoUrl) merged.credentialUrl = autoUrl;
+        }
+        return merged;
+      });
+      showToast(`Loaded existing certificate "${matched.title}" with AI merged updates.`, 'success');
+      return;
+    }
+
     setForm(prev => {
       const next = {
         ...prev,
@@ -398,19 +428,26 @@ export const CertificateAdminPage: React.FC<Props> = ({ onBack }) => {
       if (file) {
         validateFile(file, ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'], 15 * 1024 * 1024);
         const { path, url } = await uploadFileProxy(file, 'certificates', idToken);
-        imageUrl = url;
-        fileUrl = path;
+        const isPdfUpload = file.type === 'application/pdf';
+        if (isPdfUpload) {
+          imageUrl = form.imageUrl && !form.imageUrl.toLowerCase().endsWith('.pdf') ? form.imageUrl : '';
+          fileUrl = path || url;
+        } else {
+          imageUrl = url;
+          fileUrl = path || url;
+        }
       }
 
       if (!fileUrl && !form.sourceAsset && !imageUrl) {
         throw new Error('Please upload a file or specify a source asset / image URL.');
       }
 
+      const isPdfFinal = file ? file.type === 'application/pdf' : form.fileType === 'pdf' || String(fileUrl || '').toLowerCase().endsWith('.pdf');
       const payload = {
         ...form,
-        imageUrl: imageUrl || resolveCertificateUrl(form.sourceAsset || ''),
+        imageUrl: isPdfFinal ? (imageUrl || '') : (imageUrl || resolveCertificateUrl(form.sourceAsset || '')),
         fileUrl: fileUrl || form.sourceAsset || imageUrl || '',
-        fileType: file ? (file.type === 'application/pdf' ? 'pdf' : 'image') : form.fileType
+        fileType: (isPdfFinal ? 'pdf' : 'image') as 'pdf' | 'image'
       };
 
       const existingMatch = !editing
